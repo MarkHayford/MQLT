@@ -1,0 +1,83 @@
+import { getApi } from './api-client.uts'
+import { ApiEndpoints } from './api-endpoints.uts'
+
+export type PlatformContact = {
+	name: string
+	phone: string
+	hours: string
+	email: string
+}
+
+export type PlatformLegalDoc = {
+	title: string
+	updatedAt: string
+	intro: string
+	sections: PlatformLegalSection[]
+}
+
+export type PlatformLegalSection = {
+	heading: string
+	body: string
+}
+
+export type PlatformSettings = {
+	contact: PlatformContact
+	legal: {
+		agreement: PlatformLegalDoc | null
+		privacy: PlatformLegalDoc | null
+	}
+}
+
+let cached: PlatformSettings | null = null
+
+function emptyContact(): PlatformContact {
+	const c: PlatformContact = {
+		name: '蒙企链探',
+		phone: '19931708002',
+		hours: '工作日 09:00–18:00',
+		email: '203790885@qq.com'
+	}
+	return c
+}
+
+export function formatServicePhone(raw: string): string {
+	const s = raw.split('-').join('').split(' ').join('')
+	if (s === '19931708002') return '199-3170-8002'
+	return raw
+}
+
+export function fetchPlatformSettings(): Promise<PlatformSettings> {
+	if (cached != null) {
+		return Promise.resolve(cached as PlatformSettings)
+	}
+	return getApi<any>(ApiEndpoints.studyPlatform, false).then((raw) => {
+		const contact = emptyContact()
+		if (raw != null && raw['contact'] != null) {
+			const c = raw['contact']
+			const name = c['name'] != null ? c['name'].toString() : contact.name
+			const phone = c['phone'] != null ? c['phone'].toString() : contact.phone
+			const hours = c['hours'] != null ? c['hours'].toString() : contact.hours
+			const email = c['email'] != null ? c['email'].toString() : contact.email
+			contact.name = name
+			contact.phone = phone
+			contact.hours = hours
+			contact.email = email
+		}
+		const legalRaw = raw != null ? raw['legal'] : null
+		const out: PlatformSettings = {
+			contact: contact,
+			legal: {
+				agreement: legalRaw != null ? (legalRaw['agreement'] as PlatformLegalDoc | null) : null,
+				privacy: legalRaw != null ? (legalRaw['privacy'] as PlatformLegalDoc | null) : null
+			}
+		}
+		cached = out
+		return out
+	}).catch((_err) => {
+		const fallback: PlatformSettings = {
+			contact: emptyContact(),
+			legal: { agreement: null, privacy: null }
+		}
+		return fallback
+	})
+}

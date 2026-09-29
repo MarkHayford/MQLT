@@ -1,0 +1,1177 @@
+<template>
+	<view class="page">
+		<!-- full-screen entrance gate -->
+		<view v-if="showGate" class="gate-screen" :style="{ paddingTop: (statusBarHeight + 12) + 'px' }">
+			<view class="gate-nav uni-row">
+				<view class="nav-chip" @click="goBack"><text class="nav-chip-txt">返回</text></view>
+				<text class="gate-nav-title">入场核销</text>
+			</view>
+			<view class="gate-card">
+				<text class="gate-h">请向工作人员出示今日核销码</text>
+				<text class="gate-sub">核销完成后自动进入研学导览</text>
+				<image
+					v-if="gateQrPayload.length > 0"
+					:src="checkInQrUrl(gateQrPayload)"
+					class="gate-qr"
+					mode="aspectFit"
+				></image>
+				<text v-else class="gate-wait">{{ gateHint }}</text>
+				<text class="gate-poll">等待核销中…</text>
+				<view class="gate-refresh" @click="refreshGate">
+					<text class="gate-refresh-txt">刷新状态</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- map guide after entrance -->
+		<view v-else class="tour-page uni-column">
+			<view class="hud" :style="{ paddingTop: (statusBarHeight + 8) + 'px' }">
+				<view class="hud-back" @click="goBack"><text class="hud-back-txt">返回</text></view>
+				<text class="hud-title">{{ projectTitle }}</text>
+			</view>
+			<view class="live-banner pause" v-if="tourPausedBanner">
+				<text class="live-banner-txt">导览已暂停 · 当前只读，暂不可进关/扫码</text>
+			</view>
+			<view class="live-banner broadcast" v-if="broadcastText.length > 0" @click="showBroadcast = true">
+				<text class="live-banner-txt">📢 {{ broadcastText }}</text>
+			</view>
+
+			<view class="tour-stage">
+				<map
+					id="tour-live-map"
+					class="tour-map"
+					:latitude="mapLat"
+					:longitude="mapLng"
+					:scale="mapScale"
+					:markers="mapMarkers"
+					:include-points="includePoints"
+					:enable-scroll="true"
+					:enable-zoom="true"
+					:show-location="true"
+					@markertap="onMarkerTap"
+					@callouttap="onCalloutTap"
+				></map>
+				<view class="locate-fab" @click="locateMe">
+					<text class="locate-fab-txt">{{ locating ? '定位中' : '我的位置' }}</text>
+				</view>
+
+				<view class="sheet-panel uni-column" :style="{ height: panelHeight + 'px' }">
+					<view
+						class="sheet-handle-hit"
+						@touchstart="onSheetStart"
+						@touchmove.stop.prevent="onSheetMove"
+						@touchend="onSheetEnd"
+						@click="togglePanel"
+					>
+						<view class="sheet-handle"></view>
+						<view class="sheet-handle-row uni-row">
+							<view class="sheet-pts" v-if="entranceOk">
+								<text class="sheet-pts-txt">{{ totalPoints.toString() }}分</text>
+							</view>
+							<text class="sheet-handle-txt">{{ panelOpen ? '下拉收起' : '上拉查看积分·拼图·商城' }}</text>
+						</view>
+					</view>
+					<scroll-view class="sheet-body" scroll-y="true" :show-scrollbar="false">
+						<view class="sec">
+							<view class="sec-head uni-row">
+								<text class="sec-title">导览总积分</text>
+								<text class="sec-count">可用 {{ availablePoints.toString() }}</text>
+							</view>
+							<view class="pts-row uni-row">
+								<view class="pts-pill uni-column">
+									<text class="pts-num">{{ totalPoints.toString() }}</text>
+									<text class="pts-lbl">累计</text>
+								</view>
+								<view class="pts-pill uni-column">
+									<text class="pts-num">{{ availablePoints.toString() }}</text>
+									<text class="pts-lbl">可用</text>
+								</view>
+								<view class="pts-pill uni-column">
+									<text class="pts-num">{{ spentPoints.toString() }}</text>
+									<text class="pts-lbl">已兑</text>
+								</view>
+							</view>
+							<text class="pts-note">总积分来自各站累计；站点页显示的是「本站积分」。</text>
+							<view class="quick-row uni-row">
+								<view class="quick-btn" @click="openBackpack"><text class="quick-btn-txt">卡券背包</text></view>
+								<view :class="['quick-btn', mallCanEnter ? 'gold' : 'muted']" @click="openMall">
+									<text class="quick-btn-txt">{{ mallCanEnter ? '积分商城' : '商城未开放' }}</text>
+								</view>
+							</view>
+							<text class="pts-note" v-if="mallHint.length > 0">{{ mallHint }}</text>
+						</view>
+
+						<view class="sec">
+							<view class="sec-head uni-row">
+								<text class="sec-title">拼图收集</text>
+								<text class="sec-count">{{ puzzleCollected }}/{{ puzzleTotal }}</text>
+							</view>
+							<view class="progress-bar"><view class="progress-fill" :style="{ width: progressPct + '%' }"></view></view>
+							<view class="piece-grid">
+								<view v-for="piece in puzzlePieces" :key="piece.id" :class="['piece-card', piece.collected ? 'on' : '']">
+									<view v-if="piece.imageUrl.length > 0" class="piece-tile" :style="pieceTileStyle(piece)"></view>
+									<text class="piece-name">{{ piece.title }}</text>
+									<text class="piece-state">{{ piece.collected ? '已收集' : '未收集' }}</text>
+								</view>
+							</view>
+							<text v-if="puzzlePieces.length === 0" class="empty-txt">暂无拼图点位</text>
+						</view>
+
+						<view class="sec">
+							<view class="sec-head uni-row">
+								<text class="sec-title">本场站点奖品</text>
+								<text class="sec-count">{{ rewardGotCount }}/{{ rewards.length }}</text>
+							</view>
+							<view v-for="rw in rewards" :key="rw.id" class="reward-row uni-row">
+								<view :class="['reward-dot', rw.got ? 'on' : '']"></view>
+								<view class="reward-main uni-column">
+									<text class="reward-name">{{ rw.name }}</text>
+									<text class="reward-from">{{ rw.from }}</text>
+								</view>
+								<text :class="['reward-state', rw.got ? 'got' : '']">{{ rw.got ? '已获得' : '未获得' }}</text>
+							</view>
+							<text v-if="rewards.length === 0" class="empty-txt">本场次暂未配置奖品卡券</text>
+						</view>
+
+						<view class="sec" v-if="dutyContact != null">
+							<view class="sec-head uni-row">
+								<text class="sec-title">今日现场负责人</text>
+								<text class="sec-count">值班</text>
+							</view>
+							<view class="reward-row uni-row" @click="callOwnerPhone(dutyContact!.phone)">
+								<view class="reward-dot on"></view>
+								<view class="reward-main uni-column">
+									<text class="reward-name">{{ dutyContact!.name }} · {{ dutyContact!.role }}</text>
+									<text class="reward-from" v-if="dutyContact!.phone.length > 0">{{ dutyContact!.phone }}</text>
+									<text class="reward-from" v-if="dutyContact!.wechat.length > 0">微信 {{ dutyContact!.wechat }}</text>
+								</view>
+							</view>
+						</view>
+
+						<view class="sec" v-if="studyContacts.length > 0">
+							<view class="sec-head uni-row">
+								<text class="sec-title">研学联系人</text>
+								<text class="sec-count">帮助</text>
+							</view>
+							<view v-for="c in studyContacts" :key="c.id" class="reward-row uni-row" @click="callOwnerPhone(c.phone)">
+								<view class="reward-dot on"></view>
+								<view class="reward-main uni-column">
+									<text class="reward-name">{{ c.name }} · {{ c.role }}</text>
+									<text class="reward-from" v-if="c.phone.length > 0">{{ c.phone }}</text>
+									<text class="reward-from" v-if="c.wechat.length > 0">微信 {{ c.wechat }}</text>
+								</view>
+							</view>
+						</view>
+
+						<view class="sec" v-if="!earlyDone && !allDone">
+							<text class="sec-title">研学操作</text>
+							<view class="act-row uni-row">
+								<view class="act-btn" @click="confirmPause"><text class="act-btn-txt">临时退出</text></view>
+								<view class="act-btn danger" @click="showEarly = true"><text class="act-btn-txt danger">提前结束</text></view>
+							</view>
+						</view>
+						<view class="sec settle-leave-sec" v-if="earlyDone || allDone">
+							<text class="sec-title">研学状态</text>
+							<text class="sec-hint">{{ earlyDone ? '已提前结束，过程奖励已保留' : '研学已完成' }}</text>
+							<view class="leave-cta" @click="leaveToSettleDetail">
+								<text class="leave-cta-txt">完成结算并离开</text>
+							</view>
+						</view>
+						<view class="sheet-pad"></view>
+					</scroll-view>
+				</view>
+			</view>
+		</view>
+
+		<view class="overlay" v-if="showBroadcast" @click="showBroadcast = false">
+			<view class="modal" @click.stop="">
+				<text class="modal-h">现场广播</text>
+				<text class="modal-p">{{ broadcastText }}</text>
+				<view class="modal-row">
+					<view class="cta mini" @click="showBroadcast = false"><text class="cta-txt">知道了</text></view>
+				</view>
+			</view>
+		</view>
+
+		<view class="overlay" v-if="showEarly" @click="showEarly = false">
+			<view class="modal" @click.stop="">
+				<text class="modal-h">提前结束研学？</text>
+				<text class="modal-p">拼图未集齐则无证书与最终奖，过程中已获得的拼图与卡券会保留。</text>
+				<view class="modal-row">
+					<view class="btn-ghost" @click="showEarly = false"><text class="btn-ghost-txt">再想想</text></view>
+					<view class="cta mini" @click="confirmEarly"><text class="cta-txt">确认提前结束</text></view>
+				</view>
+			</view>
+		</view>
+
+		<view class="overlay" v-if="showSettle">
+			<view class="modal settle-modal">
+				<text class="modal-h">{{ earlyDone ? '已提前结束' : (puzzleComplete ? '拼图集齐 · 结业成功' : '研学已完成') }}</text>
+				<text class="modal-p">{{ settleMsg }}</text>
+				<view class="settle-stats uni-row" v-if="!earlyDone">
+					<view class="settle-stat uni-column">
+						<text class="settle-stat-num">{{ puzzleCollected.toString() }}/{{ puzzleTotal.toString() }}</text>
+						<text class="settle-stat-lbl">拼图</text>
+					</view>
+					<view class="settle-stat uni-column">
+						<text class="settle-stat-num">{{ totalPoints.toString() }}</text>
+						<text class="settle-stat-lbl">总积分</text>
+					</view>
+				</view>
+				<view class="cert-mini uni-column" v-if="certNo.length > 0 && !earlyDone">
+					<text class="cert-mini-kicker">结业证书</text>
+					<text class="cert-mini-no">{{ certNo }}</text>
+					<text class="cert-mini-sum" v-if="certSummary.length > 0">{{ certSummary }}</text>
+				</view>
+				<view class="modal-col" v-if="!earlyDone">
+					<view class="cta" v-if="certNo.length > 0" @click="openCert"><text class="cta-txt">查看证书</text></view>
+					<view class="cta gold" @click="leaveToSettleDetail">
+						<text class="cta-txt dark">去订单详情结算 / 兑换</text>
+					</view>
+					<view class="btn-ghost full" @click="dismissSettle"><text class="btn-ghost-txt">知道了并离开</text></view>
+				</view>
+				<view class="cta" v-else @click="dismissSettle"><text class="cta-txt">知道了并离开</text></view>
+			</view>
+		</view>
+
+		<view class="overlay" v-if="showCert">
+			<view class="modal cert-modal">
+				<image v-if="certBgUrl.length > 0" :src="certBgUrl" class="cert-bg" mode="aspectFill"></image>
+				<text class="modal-h">结业证书</text>
+				<text class="cert-holder" v-if="certHolder.length > 0">{{ certHolder }}</text>
+				<text class="cert-no-line">证书编号 {{ certNo }}</text>
+				<rich-text v-if="certBodyHtml.length > 0" :nodes="certBodyHtml" class="cert-rich"></rich-text>
+				<text v-else class="modal-p">{{ certSummary.length > 0 ? certSummary : '恭喜完成本次研学' }}</text>
+				<image v-if="certSealUrl.length > 0" :src="certSealUrl" class="cert-seal" mode="aspectFit"></image>
+				<view class="cta" @click="showCert = false"><text class="cta-txt">关闭</text></view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref } from 'vue'
+	import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo, getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { earlyExitStudyTour, fetchStudyCheckInTicket, fetchStudyExploreSession, pauseStudyTour, resumeStudyTour } from '../../utils/study-projects.uts'
+
+	type TourNode = {
+		id: string
+		title: string
+		state: string
+		latitude: number
+		longitude: number
+		markerId: number
+	}
+	type PuzzlePiece = {
+		id: string
+		title: string
+		collected: boolean
+		imageUrl: string
+		rectCol: number
+		rectRow: number
+		rectCols: number
+		rectRows: number
+	}
+	type RewardItem = {
+		id: string
+		name: string
+		from: string
+		got: boolean
+	}
+
+	const statusBarHeight = getStatusBarHeight()
+	const projectId = ref('')
+	const bookingId = ref('')
+	const studyContacts = ref<Array<{ id: string, name: string, phone: string, wechat: string, role: string }>>([])
+	const dutyContact = ref<{ id: string, name: string, phone: string, wechat: string, role: string } | null>(null)
+	const tourPausedBanner = ref(false)
+	const broadcastText = ref('')
+	const showBroadcast = ref(false)
+	const closedSpotIds = ref<string[]>([])
+	const seenBroadcastId = ref('')
+
+	const callOwnerPhone = (phone: string) => {
+		const raw = phone.split('-').join('').split(' ').join('')
+		if (raw.length === 0) return
+		uni.makePhoneCall({ phoneNumber: raw })
+	}
+	const applyStudyContacts = (proj: any) => {
+		const next: Array<{ id: string, name: string, phone: string, wechat: string, role: string }> = []
+		const raw = proj != null ? proj.contacts : null
+		if (raw != null && Array.isArray(raw)) {
+			for (let i = 0; i < raw.length; i++) {
+				const row = raw[i]
+				const name = row != null && row.name != null ? ('' + row.name).trim() : ''
+				const role = row != null && row.role != null ? ('' + row.role).trim() : ''
+				const p = row != null && row.phone != null ? ('' + row.phone).trim() : ''
+				const wx = row != null && row.wechat != null ? ('' + row.wechat).trim() : ''
+				const id = row != null && row.id != null ? ('' + row.id) : ('c' + i.toString())
+				if (name.length > 0 || p.length > 0) next.push({ id: id, name: name.length > 0 ? name : p, phone: p, wechat: wx, role: role })
+			}
+		}
+		studyContacts.value = next
+		dutyContact.value = null
+		const d = proj != null ? proj.dutyContact : null
+		if (d != null) {
+			const name = d.name != null ? ('' + d.name).trim() : ''
+			const role = d.role != null ? ('' + d.role).trim() : '现场负责人'
+			const ph = d.phone != null ? ('' + d.phone).trim() : ''
+			const wx = d.wechat != null ? ('' + d.wechat).trim() : ''
+			const id = d.id != null ? ('' + d.id) : 'duty'
+			if (name.length > 0 || ph.length > 0) {
+				dutyContact.value = { id: id, name: name.length > 0 ? name : ph, phone: ph, wechat: wx, role: role }
+			}
+		}
+	}
+	const projectTitle = ref('研学')
+	const nodes = ref<TourNode[]>([])
+	const puzzlePieces = ref<PuzzlePiece[]>([])
+	const rewards = ref<RewardItem[]>([])
+	const puzzleCollected = ref(0)
+	const puzzleTotal = ref(0)
+	const entranceOk = ref(false)
+	const allDone = ref(false)
+	const liveSessionActive = ref(false)
+	const earlyDone = ref(false)
+	const dayBlocked = ref(false)
+	const dayBlockMsg = ref('')
+	const showEarly = ref(false)
+	const showSettle = ref(false)
+	const settleMsg = ref('')
+	const totalPoints = ref(0)
+	const spentPoints = ref(0)
+	const availablePoints = ref(0)
+	const mallCanEnter = ref(false)
+	const mallRedeemUnlocked = ref(false)
+	const mallHint = ref('')
+	const puzzleComplete = ref(false)
+	const showCert = ref(false)
+	const certNo = ref('')
+	const certHolder = ref('')
+	const certSummary = ref('')
+	const certBodyHtml = ref('')
+	const certBgUrl = ref('')
+	const certSealUrl = ref('')
+	const settleShownOnce = ref(false)
+	const loading = ref(false)
+	const showGate = ref(true)
+	const gateQrPayload = ref('')
+	const gateHint = ref('正在获取今日核销码…')
+	const tourStatus = ref('')
+	const locating = ref(false)
+	const userLat = ref(0)
+	const userLng = ref(0)
+	const mapLat = ref(40.509204)
+	const mapLng = ref(111.826493)
+	const mapScale = ref(15)
+	const mapFitted = ref(false)
+	const includePoints = ref<any[]>([])
+	const panelMin = ref(196)
+	const panelMax = ref(420)
+	const panelHeight = ref(196)
+	const panelOpen = ref(false)
+	let pollTimer: number = 0
+	let dragging = false
+	let dragStartY = 0
+	let dragStartH = 196
+
+	const progressPct = computed((): number => {
+		if (puzzleTotal.value <= 0) return 0
+		return Math.round(puzzleCollected.value * 100 / puzzleTotal.value)
+	})
+	const rewardGotCount = computed((): number => {
+		let n = 0
+		const list = rewards.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].got) n++
+		}
+		return n
+	})
+
+	const mapMarkers = computed((): any[] => {
+		const list = nodes.value
+		const markers: any[] = []
+		for (let i = 0; i < list.length; i++) {
+			const n = list[i]
+			if (!(n.latitude > 0) || !(n.longitude > 0)) continue
+			const done = n.state === 'done'
+			let label = n.title
+			if (done) label = '✓ ' + n.title
+			const marker: any = {
+				id: n.markerId,
+				latitude: n.latitude,
+				longitude: n.longitude,
+				iconPath: done ? '/static/map-pin-on.png' : '/static/map-pin.png',
+				width: 28,
+				height: 36,
+				callout: {
+					content: label,
+					display: 'ALWAYS',
+					padding: 6,
+					borderRadius: 8,
+					fontSize: 11,
+					color: done ? '#1A1A1A' : '#FFFFFF',
+					bgColor: done ? '#1A73E8' : '#1A1A1A'
+				}
+			}
+			markers.push(marker)
+		}
+		return markers
+	})
+
+	function checkInQrUrl(payload: string): string {
+		return 'https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=8&data=' + encodeURIComponent(payload)
+	}
+
+	function pieceTileStyle(piece: PuzzlePiece): string {
+		if (piece.imageUrl.length === 0) return ''
+		const cols = piece.rectCols > 0 ? piece.rectCols : 1
+		const rows = piece.rectRows > 0 ? piece.rectRows : 1
+		const col = piece.rectCol
+		const row = piece.rectRow
+		return 'background-image:url(' + piece.imageUrl + ');background-size:' + (cols * 100).toString() + '% ' + (rows * 100).toString() + '%;background-position:' + ((-col) * 100).toString() + '% ' + ((-row) * 100).toString() + '%;'
+	}
+
+	function openMall() {
+		if (!mallCanEnter.value) {
+			uni.showToast({ title: mallHint.value.length > 0 ? mallHint.value : '积分商城暂未开放', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/appointment/tour-mall?projectId=' + encodeURIComponent(projectId.value) })
+	}
+
+	function openMallFromSettle() {
+		showSettle.value = false
+		openMall()
+	}
+
+	function openBackpack() {
+		uni.navigateTo({ url: '/pages/appointment/tour-backpack?projectId=' + encodeURIComponent(projectId.value) })
+	}
+
+	function openCert() {
+		if (certNo.value.length === 0) {
+			uni.showToast({ title: '暂无证书', icon: 'none' })
+			return
+		}
+		showCert.value = true
+	}
+
+	function sanitizeCertificateHtml(raw: string): string {
+		let html = raw
+		html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+		html = html.replace(/<(iframe|object|embed|form)[^>]*>[\s\S]*?<\/(iframe|object|embed|form)>/gi, '')
+		html = html.replace(/<(iframe|object|embed|form|input|button)[^>]*\/?\s*>/gi, '')
+		html = html.replace(/\son[a-z]+\s*=\s*(["'])[^"']*\1/gi, '')
+		html = html.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+		html = html.replace(/javascript\s*:/gi, '')
+		return html
+	}
+
+	function applyCertificate(cert: any) {
+		if (cert == null) {
+			certNo.value = ''
+			certHolder.value = ''
+			certSummary.value = ''
+			certBodyHtml.value = ''
+			certBgUrl.value = ''
+			certSealUrl.value = ''
+			return
+		}
+		let source: any = cert
+		if (cert.certificate != null) source = cert.certificate
+		certNo.value = String(source.certificateNo || '')
+		certHolder.value = String(source.holderName || '')
+		certSummary.value = String(source.summary || '')
+		certBodyHtml.value = sanitizeCertificateHtml(String(source.bodyHtml || source.certBodyHtml || ''))
+		certBgUrl.value = String(source.bgUrl || '')
+		certSealUrl.value = String(source.sealUrl || '')
+	}
+
+	function goBack() {
+		uni.navigateBack({})
+	}
+
+	function stopPoll() {
+		if (pollTimer != 0) {
+			clearInterval(pollTimer)
+			pollTimer = 0
+		}
+	}
+
+	function startPoll() {
+		stopPoll()
+		pollTimer = setInterval(() => {
+			loadSession(true)
+		}, 4000) as number
+	}
+
+	function findNodeByMarkerId(markerId: number): TourNode | null {
+		const list = nodes.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].markerId === markerId) return list[i]
+		}
+		return null
+	}
+
+	function onNodeTap(node: TourNode) {
+		if (!entranceOk.value) {
+			uni.showToast({ title: '请先入场核销', icon: 'none' })
+			return
+		}
+		if (dayBlocked.value) {
+			uni.showToast({ title: dayBlockMsg.value.length > 0 ? dayBlockMsg.value : '今日不可导览', icon: 'none' })
+			return
+		}
+		if (earlyDone.value || allDone.value) {
+			uni.showToast({ title: earlyDone.value ? '研学已提前结束' : '研学已完成', icon: 'none' })
+			showSettle.value = true
+			return
+		}
+		if (tourPausedBanner.value) {
+			uni.showToast({ title: '导览已暂停（只读）', icon: 'none' })
+			return
+		}
+		if (node.state == 'closed' || closedSpotIds.value.indexOf(node.id) >= 0) {
+			uni.showToast({ title: '该点位今日临时关闭', icon: 'none' })
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/appointment/tour-point?projectId=' + encodeURIComponent(projectId.value) + '&routePointId=' + encodeURIComponent(node.id) + '&bookingId=' + encodeURIComponent(bookingId.value) + '&title=' + encodeURIComponent(node.title)
+		})
+	}
+
+	function onMarkerTap(e: any) {
+		const detail = e != null ? e.detail : null
+		const mid = detail != null && detail.markerId != null ? Number(detail.markerId) : 0
+		const node = findNodeByMarkerId(mid)
+		if (node != null) onNodeTap(node)
+	}
+
+	function onCalloutTap(e: any) {
+		onMarkerTap(e)
+	}
+
+	function fitMap(list: TourNode[]) {
+		const pts: any[] = []
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].latitude > 0 && list[i].longitude > 0) {
+				pts.push({ latitude: list[i].latitude, longitude: list[i].longitude })
+			}
+		}
+		if (userLat.value > 0 && userLng.value > 0) {
+			pts.push({ latitude: userLat.value, longitude: userLng.value })
+		}
+		if (pts.length === 0) return
+		if (!mapFitted.value) {
+			mapLat.value = pts[0].latitude
+			mapLng.value = pts[0].longitude
+			if (pts.length === 1) mapScale.value = 16
+			mapFitted.value = true
+		}
+		includePoints.value = pts
+	}
+
+	function locateMe() {
+		if (locating.value) return
+		locating.value = true
+		uni.getLocation({
+			type: 'gcj02',
+			isHighAccuracy: true,
+			success: (res) => {
+				locating.value = false
+				userLat.value = res.latitude
+				userLng.value = res.longitude
+				mapLat.value = res.latitude
+				mapLng.value = res.longitude
+				mapScale.value = 16
+				loadSession(true)
+			},
+			fail: (_err) => {
+				locating.value = false
+				uni.showToast({ title: '定位失败，请打开定位权限', icon: 'none' })
+			}
+		})
+	}
+
+	function requestUserLocation(thenLoad: boolean) {
+		uni.getLocation({
+			type: 'gcj02',
+			isHighAccuracy: true,
+			success: (res) => {
+				userLat.value = res.latitude
+				userLng.value = res.longitude
+				if (thenLoad) loadSession(false)
+			},
+			fail: (_err) => {
+				if (thenLoad) loadSession(false)
+			}
+		})
+	}
+
+	function onSheetStart(e: any) {
+		dragging = true
+		const touches = e.touches
+		if (touches != null && touches.length > 0) {
+			dragStartY = Number(touches[0].clientY)
+		}
+		dragStartH = panelHeight.value
+	}
+
+	function onSheetMove(e: any) {
+		if (!dragging) return
+		const touches = e.touches
+		if (touches == null || touches.length == 0) return
+		const y = Number(touches[0].clientY)
+		let h = dragStartH + (dragStartY - y)
+		if (h < panelMin.value) h = panelMin.value
+		if (h > panelMax.value) h = panelMax.value
+		panelHeight.value = Math.round(h)
+	}
+
+	function onSheetEnd() {
+		if (!dragging) return
+		dragging = false
+		const mid = (panelMin.value + panelMax.value) / 2
+		if (panelHeight.value >= mid) {
+			panelHeight.value = panelMax.value
+			panelOpen.value = true
+		} else {
+			panelHeight.value = panelMin.value
+			panelOpen.value = false
+		}
+	}
+
+	function togglePanel() {
+		if (dragging) return
+		if (panelOpen.value) {
+			panelOpen.value = false
+			panelHeight.value = panelMin.value
+		} else {
+			panelOpen.value = true
+			panelHeight.value = panelMax.value
+		}
+	}
+
+	async function loadGateTicket() {
+		if (bookingId.value.length === 0) {
+			gateHint.value = '缺少订单信息'
+			return
+		}
+		try {
+			const ticket = await fetchStudyCheckInTicket(bookingId.value)
+			const days = ticket != null && ticket.days != null ? ticket.days : []
+			let payload = ''
+			let hint = '今日核销码尚未开放'
+			for (let i = 0; i < days.length; i++) {
+				const d = days[i]
+				if (d.state === 'open' && d.payload != null && String(d.payload).length > 0) {
+					payload = String(d.payload)
+					hint = d.hint != null ? String(d.hint) : '请向现场工作人员出示'
+					break
+				}
+				if (d.state === 'redeemed') {
+					hint = '本场次已核销，正在同步状态…'
+				} else if (d.state === 'locked') {
+					hint = d.hint != null ? String(d.hint) : '未到预约日'
+				} else if (d.state === 'expired') {
+					hint = d.hint != null ? String(d.hint) : '预约日已过'
+				}
+			}
+			gateQrPayload.value = payload
+			gateHint.value = hint
+		} catch (e) {
+			gateHint.value = '核销码加载失败，请下拉刷新'
+		}
+	}
+
+	async function refreshGate() {
+		await loadGateTicket()
+		await loadSession(false)
+	}
+
+	async function maybeResume() {
+		if (bookingId.value.length === 0) return
+		const st = tourStatus.value
+		if (st === 'paused' || st === 'entered' || st === '') {
+			try {
+				await resumeStudyTour(bookingId.value)
+			} catch (_e) {}
+		}
+	}
+
+	async function loadSession(silent: boolean) {
+		if (projectId.value.length === 0) return
+		if (!silent) loading.value = true
+		try {
+			const ses = await fetchStudyExploreSession(projectId.value, userLat.value, userLng.value, '', bookingId.value)
+			const entered = ses.entranceOk === true || ses.entranceCheckedIn === true
+			entranceOk.value = entered
+			projectTitle.value = (ses.project != null && ses.project.title != null) ? String(ses.project.title) : '研学'
+			applyStudyContacts(ses.project)
+			try {
+				const ops = (ses.liveDayOps != null ? ses.liveDayOps : (ses.project != null ? ses.project.liveDayOps : null)) as any
+				if (ops != null) {
+					tourPausedBanner.value = ops.tourPaused === true
+					const bc = ops.broadcast
+					const bt = (bc != null && bc.text != null) ? String(bc.text) : ''
+					broadcastText.value = bt
+					const bid = (bc != null && bc.id != null) ? String(bc.id) : bt
+					if (bt.length > 0 && bid.length > 0 && bid != seenBroadcastId.value) {
+						seenBroadcastId.value = bid
+						showBroadcast.value = true
+					}
+					const cs = ops.closedSpots
+					closedSpotIds.value = Array.isArray(cs) ? cs.map((x: any) => String(x)) : []
+				} else {
+					tourPausedBanner.value = false
+					broadcastText.value = ''
+					closedSpotIds.value = []
+				}
+			} catch (_e) {}
+			if (ses.booking != null && ses.booking.id != null) bookingId.value = String(ses.booking.id)
+			const tour = ses.tour != null ? ses.tour : null
+			tourStatus.value = ses.tourStatus != null ? String(ses.tourStatus) : (tour != null && tour.status != null ? String(tour.status) : '')
+			const puzzle = ses.puzzle != null ? ses.puzzle : ses.progress
+			puzzleTotal.value = puzzle != null ? Number(puzzle.total || puzzle.puzzleTotal || 0) : 0
+			puzzleCollected.value = puzzle != null ? Number(puzzle.collected || puzzle.puzzleCollected || puzzle.completed || 0) : 0
+			allDone.value = (ses.progress != null && ses.progress.allDone === true) || ses.mode === 'completed' || (tour != null && (String(tour.status) === 'completed' || tour.graduated === true))
+			earlyDone.value = ses.mode === 'early_exit' || (tour != null && tour.earlyExit === true)
+			if (redirectIfTourFinished(ses)) {
+				loading.value = false
+				return
+			}
+
+			const dw = ses.dayWindow != null ? ses.dayWindow : null
+			const modeStr = ses.mode != null ? String(ses.mode) : ''
+			if (modeStr === 'day_expired' || modeStr === 'day_closed' || (dw != null && dw.open === false)) {
+				const tip = (dw != null && dw.message != null && String(dw.message).length > 0) ? String(dw.message) : (modeStr === 'day_expired' ? '预约日已结束，导览已关闭' : '今日非预约日')
+				dayBlocked.value = true
+				dayBlockMsg.value = tip
+				if (modeStr === 'day_expired' || (dw != null && dw.reason === 'expired')) {
+					earlyDone.value = true
+					settleMsg.value = tip
+					showSettle.value = true
+				} else if (!silent) {
+					uni.showToast({ title: tip, icon: 'none' })
+				}
+			} else {
+				dayBlocked.value = false
+				dayBlockMsg.value = ''
+			}
+
+			const tp = ses.tourPoints != null ? ses.tourPoints : null
+			if (tp != null) {
+				totalPoints.value = Number(tp.totalPoints || 0)
+				spentPoints.value = Number(tp.spentPoints || 0)
+				availablePoints.value = Number(tp.availablePoints != null ? tp.availablePoints : (totalPoints.value - spentPoints.value))
+			}
+			const tm = ses.tourMall != null ? ses.tourMall : null
+			if (tm != null) {
+				mallCanEnter.value = tm.canEnter === true
+				mallRedeemUnlocked.value = tm.mallRedeemUnlocked === true || tm.canRedeem === true || tm.graduated === true
+				mallHint.value = String(tm.hint || tm.message || '')
+				if (tp == null) {
+					totalPoints.value = Number(tm.totalPoints || totalPoints.value)
+					spentPoints.value = Number(tm.spentPoints || spentPoints.value)
+					availablePoints.value = Number(tm.availablePoints != null ? tm.availablePoints : availablePoints.value)
+				}
+			} else {
+				mallCanEnter.value = false
+				mallRedeemUnlocked.value = false
+				mallHint.value = ''
+			}
+			let backpackCert: any = null
+			if (ses.backpack != null && ses.backpack.certificate != null) backpackCert = ses.backpack.certificate
+			else if (ses.puzzle != null && ses.puzzle.certificate != null) backpackCert = ses.puzzle.certificate
+			else if (ses.progress != null && ses.progress.certificate != null) backpackCert = ses.progress.certificate
+			applyCertificate(ses.certificate != null ? ses.certificate : backpackCert)
+			puzzleComplete.value = allDone.value || (puzzle != null && puzzle.complete === true) || (ses.progress != null && ses.progress.puzzleComplete === true)
+			let list = (ses.myPoints != null ? ses.myPoints : []) as any[]
+			if (list.length === 0 && ses.points != null) list = ses.points as any[]
+			if (list.length === 0) list = [] as any[]
+			const cleared: string[] = (ses.progress != null && ses.progress.clearedRoutePointIds != null) ? ses.progress.clearedRoutePointIds as string[] : []
+			const mapped: TourNode[] = []
+			const pieces: PuzzlePiece[] = []
+			const rws: RewardItem[] = []
+			for (let i = 0; i < list.length; i++) {
+				const p = list[i]
+				const id = String(p.id)
+				let state = 'open'
+				const done = cleared.indexOf(id) >= 0 || (p.checkedIn === true && (!(p.knowledgeEnabled === true) || p.knowledgeDone === true))
+				if (done) state = 'done'
+				if (p.closedToday === true || closedSpotIds.value.indexOf(id) >= 0) state = 'closed'
+				if (tourPausedBanner.value && state == 'open') state = 'paused'
+				mapped.push({
+					id: id,
+					title: String(p.title || '') + (state == 'closed' ? '（临时关闭）' : (state == 'paused' ? '（已暂停）' : '')),
+					state: state,
+					latitude: Number(p.latitude || 0),
+					longitude: Number(p.longitude || 0),
+					markerId: i + 1
+				})
+				pieces.push({
+					id: id,
+					title: String(p.title || '点位'),
+					collected: done,
+					imageUrl: '',
+					rectCol: 0,
+					rectRow: 0,
+					rectCols: 1,
+					rectRows: 1
+				})
+				const rw = p.rewards
+				if (rw != null) {
+					if (rw.checkInPrize === true) {
+						let pname = String(rw.checkInPrizeName || '打卡奖品')
+						if (pname.length === 0) pname = '打卡奖品'
+						rws.push({
+							id: id + '-prize',
+							name: pname,
+							from: String(p.title || '点位') + ' · 到站打卡',
+							got: p.checkedIn === true
+						})
+					}
+					if (rw.knowledgePrize === true) {
+						let kname = String(rw.knowledgePrizeName || '答题奖品')
+						if (kname.length === 0) kname = '答题奖品'
+						rws.push({
+							id: id + '-know',
+							name: kname,
+							from: String(p.title || '点位') + ' · 知识答题',
+							got: p.knowledgeDone === true
+						})
+					}
+				}
+			}
+			nodes.value = mapped
+			const apiPieces = (puzzle != null && puzzle.pieces != null) ? puzzle.pieces as any[] : []
+			const sourceUrl = puzzle != null ? String(puzzle.sourceImageUrl || '') : ''
+			if (apiPieces.length > 0) {
+				const over: PuzzlePiece[] = []
+				for (let pi = 0; pi < apiPieces.length; pi++) {
+					const ap = apiPieces[pi]
+					const rid = String(ap.routePointId || ap.id || '')
+					let collected = ap.collected === true
+					for (let pj = 0; pj < pieces.length; pj++) {
+						if (pieces[pj].id === rid) { collected = pieces[pj].collected || collected; break }
+					}
+					const rect = ap.rect != null ? ap.rect : null
+					over.push({
+						id: rid.length > 0 ? rid : ('p' + pi.toString()),
+						title: String(ap.title || ap.name || '拼图'),
+						collected: collected,
+						imageUrl: String(ap.imageUrl || sourceUrl || ''),
+						rectCol: rect != null ? Number(rect.col || 0) : 0,
+						rectRow: rect != null ? Number(rect.row || 0) : 0,
+						rectCols: rect != null ? Number(rect.cols || 1) : 1,
+						rectRows: rect != null ? Number(rect.rows || 1) : 1
+					})
+				}
+				puzzlePieces.value = over
+			} else {
+				puzzlePieces.value = pieces
+			}
+			rewards.value = rws
+			if (puzzleTotal.value <= 0) puzzleTotal.value = puzzlePieces.value.length
+			if (puzzleCollected.value <= 0) {
+				let c = 0
+				const curPieces = puzzlePieces.value
+				for (let j = 0; j < curPieces.length; j++) {
+					if (curPieces[j].collected) c++
+				}
+				puzzleCollected.value = c
+			}
+			fitMap(mapped)
+
+			const liveStatuses = ['entered', 'touring', 'paused']
+			const statusLive = liveStatuses.indexOf(tourStatus.value) >= 0
+			if (entered || statusLive) {
+				showGate.value = false
+				stopPoll()
+				if (!earlyDone.value && !allDone.value) {
+					liveSessionActive.value = true
+					await maybeResume()
+				}
+			} else {
+				showGate.value = true
+				await loadGateTicket()
+				startPoll()
+			}
+
+			if (allDone.value) {
+				let msg = '拼图已集齐，结业成功！'
+				msg = msg + ' 总积分 ' + totalPoints.value.toString() + '。'
+				if (certNo.value.length > 0) msg = msg + '证书编号 ' + certNo.value + '。'
+				if (mallRedeemUnlocked.value) msg = msg + '积分商城已解锁兑换。'
+				else if (mallCanEnter.value) msg = msg + '可先浏览积分商城。'
+				settleMsg.value = msg
+				puzzleComplete.value = true
+				if (!settleShownOnce.value) {
+					showSettle.value = true
+					settleShownOnce.value = true
+				}
+			} else if (earlyDone.value) {
+				settleMsg.value = '已提前结束，过程奖励已保留，无结业证书与最终奖券'
+			}
+		} catch (e) {
+			if (!silent) uni.showToast({ title: '加载研学进度失败', icon: 'none' })
+		} finally {
+			loading.value = false
+		}
+	}
+
+	
+	function goBookingDetailSettle() {
+		const bid = bookingId.value
+		const pid = projectId.value
+		if (bid.length > 0) {
+			uni.redirectTo({
+				url: '/pages/appointment/booking-detail?id=' + encodeURIComponent(bid)
+			})
+			return
+		}
+		if (pid.length > 0) {
+			uni.redirectTo({
+				url: '/pages/appointment/project-detail?id=' + encodeURIComponent(pid)
+			})
+			return
+		}
+		uni.navigateBack({})
+	}
+
+	/** 中途结业后离开：进订单详情看结算/卡券商城，不再滞留导览 */
+	function leaveToSettleDetail() {
+		showSettle.value = false
+		goBookingDetailSettle()
+	}
+
+	function dismissSettle() {
+		showSettle.value = false
+		if (earlyDone.value || allDone.value) {
+			setTimeout(() => { goBookingDetailSettle() }, 200)
+		}
+	}
+
+	/** 已结业/提前结束/过期结算：禁止重进导览，直接去订单详情 */
+	function redirectIfTourFinished(ses: any): boolean {
+		const modeStr = ses != null && ses.mode != null ? String(ses.mode) : ''
+		const tour = ses != null ? ses.tour : null
+		const booking = ses != null ? ses.booking : null
+		const st = booking != null && booking.status != null ? String(booking.status).toLowerCase() : ''
+		const early = modeStr === 'early_exit' || (tour != null && tour.earlyExit === true)
+		const completed = modeStr === 'completed' || st === 'completed' || (tour != null && (String(tour.status) === 'completed' || tour.graduated === true))
+		const expiredSettled = modeStr === 'day_expired' || (ses != null && ses.dayWindow != null && ses.dayWindow.reason === 'expired' && (early || completed || st === 'completed'))
+		if (!(early || completed || expiredSettled)) return false
+		if (liveSessionActive.value) return false
+		uni.showToast({ title: '研学已结束，请在订单详情查看结算', icon: 'none' })
+		setTimeout(() => { goBookingDetailSettle() }, 350)
+		return true
+	}
+
+	async function confirmPause() {
+		if (bookingId.value.length === 0) {
+			uni.navigateBack({})
+			return
+		}
+		try {
+			await pauseStudyTour(bookingId.value)
+			uni.showToast({ title: '已临时退出', icon: 'none' })
+			setTimeout(() => { uni.navigateBack({}) }, 400)
+		} catch (e: any) {
+			const msg = e != null && e.message != null && String(e.message).length > 0 ? String(e.message) : '临时退出失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	}
+
+	async function confirmEarly() {
+		showEarly.value = false
+		if (bookingId.value.length === 0) {
+			uni.showToast({ title: '缺少订单', icon: 'none' })
+			return
+		}
+		try {
+			await earlyExitStudyTour(bookingId.value)
+			earlyDone.value = true
+			allDone.value = false
+			settleMsg.value = '已提前结束，过程奖励已保留，无结业证书与最终奖券'
+			showSettle.value = true
+			await loadSession(false)
+		} catch (e: any) {
+			const msg = e != null && e.message != null && String(e.message).length > 0 ? String(e.message) : '提前结束失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	}
+
+	onLoad((query: any) => {
+		projectId.value = query != null && query.projectId != null ? String(query.projectId) : ''
+		bookingId.value = query != null && query.bookingId != null ? String(query.bookingId) : ''
+		const win = getLayoutWindowInfo()
+		panelMin.value = 196
+		let maxH = Math.round(win.windowHeight * 0.68)
+		if (maxH < 320) maxH = 320
+		panelMax.value = maxH
+		panelHeight.value = panelMin.value
+	})
+	onShow(() => {
+		if (userLat.value > 0) {
+			loadSession(false)
+		} else {
+			requestUserLocation(true)
+		}
+	})
+	onHide(() => { stopPoll() })
+	onUnload(() => { stopPoll() })
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; position: relative; flex: 1; height: 100%; background-color: #F5F7FB; overflow: hidden; }
+	.gate-screen { min-height: 100vh; background-color: #F5F7FB; padding-left: 16px; padding-right: 16px; padding-bottom: 32px; }
+	.gate-nav { align-items: center; margin-bottom: 18px; padding-right: 96px; }
+	.nav-chip { background-color: #1A73E8; border-radius: 999px; padding: 6px 14px; }
+	.nav-chip-txt { color: #FFFFFF; font-size: 12px; font-weight: 600; }
+	.gate-nav-title { flex: 1; text-align: center; color: #1A1A1A; font-size: 16px; font-weight: 700; }
+	.gate-card { background-color: #FFFFFF; border-width: 1px; border-style: solid; border-color: rgba(32, 33, 36,.12); border-radius: 18px; padding: 22px 18px; align-items: center; }
+	.gate-h { color: #1A1A1A; font-size: 17px; font-weight: 800; text-align: center; }
+	.gate-sub { color: #374151; font-size: 13px; margin-top: 6px; margin-bottom: 18px; text-align: center; }
+	.gate-qr { width: 240px; height: 240px; background-color: #FFFFFF; border-radius: 12px; }
+	.gate-wait { color: #374151; font-size: 14px; padding: 40px 12px; text-align: center; }
+	.gate-poll { margin-top: 16px; color: #374151; font-size: 13px; font-weight: 600; }
+	.gate-refresh { margin-top: 14px; background-color: #1A73E8; border-radius: 12px; padding: 12px 28px; }
+	.gate-refresh-txt { color: #FFFFFF; font-size: 14px; font-weight: 700; }
+
+	.tour-page { flex: 1; height: 100%; }
+	.hud {
+		z-index: 10; flex-direction: row; align-items: center;
+		padding-left: 12px; padding-right: 12px; padding-bottom: 8px;
+		background-color: #1A73E8;
+	}
+	.hud-back { height: 32px; padding: 0 12px; border-radius: 16px; background-color: rgba(255,248,238,.12); align-items: center; justify-content: center; flex-shrink: 0; }
+	.hud-back-txt { color: #FFFFFF; font-size: 13px; font-weight: 700; }
+	.hud-title { flex: 1; color: #FFFFFF; font-size: 15px; font-weight: 700; margin-left: 10px; lines: 1; overflow: hidden; text-overflow: ellipsis; }
+
+	.tour-stage { flex: 1; position: relative; background-color: #E5E7EB; }
+	.tour-map { width: 100%; height: 100%; }
+	.locate-fab {
+		position: absolute; left: 12px; top: 12px; z-index: 12;
+		height: 34px; padding: 0 12px; border-radius: 17px;
+		background-color: #FFFFFF; align-items: center; justify-content: center;
+	}
+	.locate-fab-txt { font-size: 12px; font-weight: 800; color: #1A1A1A; }
+
+	.sheet-panel {
+		position: absolute; left: 0; right: 0; bottom: 0; z-index: 14;
+		background-color: #FFFFFF;
+		border-top-left-radius: 18px; border-top-right-radius: 18px;
+		overflow: hidden;
+	}
+	.sheet-handle-hit { align-items: center; padding: 10px 16px 8px 16px; }
+	.sheet-handle { width: 36px; height: 4px; border-radius: 2px; background-color: #E5E7EB; margin-bottom: 6px; }
+	.sheet-handle-txt { flex: 1; font-size: 11px; color: #374151; font-weight: 700; text-align: center; }
+	.sheet-body { flex: 1; }
+	.sec { padding: 4px 16px 14px 16px; }
+	.sec-head { align-items: center; margin-bottom: 8px; }
+	.sec-hint { font-size: 12px; color: #8A7A62; margin-top: 4px; margin-bottom: 10px; }
+	.sec-title { flex: 1; font-size: 15px; font-weight: 800; color: #1A1A1A; }
+	.sec-count { font-size: 13px; font-weight: 800; color: #1A73E8; }
+	.progress-bar { height: 8px; border-radius: 999px; background-color: rgba(32, 33, 36,.12); overflow: hidden; margin-bottom: 10px; }
+	.progress-fill { height: 8px; background-color: #374151; border-radius: 999px; }
+	.piece-grid { flex-direction: row; flex-wrap: wrap; }
+	.piece-card {
+		width: 31%; margin-right: 2%; margin-bottom: 8px;
+		padding: 10px 8px; border-radius: 12px; background-color: #F5F7FB;
+	}
+	.piece-card.on { background-color: #1A73E8; }
+	.piece-name { font-size: 12px; font-weight: 700; color: #1A1A1A; lines: 2; overflow: hidden; }
+	.piece-card.on .piece-name { color: #FFFFFF; }
+	.piece-state { font-size: 10px; color: #374151; margin-top: 4px; }
+	.piece-card.on .piece-state { color: #1A73E8; }
+	.reward-row { align-items: center; padding: 8px 0; }
+	.reward-dot { width: 10px; height: 10px; border-radius: 5px; background-color: #E5E7EB; margin-right: 10px; flex-shrink: 0; }
+	.reward-dot.on { background-color: #1A73E8; }
+	.reward-main { flex: 1; min-width: 0; }
+	.reward-name { font-size: 13px; font-weight: 700; color: #1A1A1A; }
+	.reward-from { font-size: 11px; color: #374151; margin-top: 2px; }
+	.reward-state { font-size: 12px; font-weight: 700; color: #374151; }
+	.reward-state.got { color: #1A73E8; }
+	.empty-txt { font-size: 12px; color: #374151; padding: 8px 0; }
+	.act-row { margin-top: 8px; }
+	.act-btn {
+		flex: 1; height: 40px; border-radius: 12px; background-color: #1A73E8;
+		align-items: center; justify-content: center; margin-right: 8px;
+	}
+	.act-btn.danger { background-color: #FFFFFF; border-width: 1px; border-style: solid; border-color: #DC2626; margin-right: 0; }
+	.act-btn.ghost { background-color: #F5F7FB; margin-top: 8px; height: 40px; border-radius: 12px; align-items: center; justify-content: center; }
+	.settle-leave-sec { margin-top: 4px; }
+	.leave-cta {
+		margin-top: 12px;
+		min-height: 48px;
+		padding: 14px 16px;
+		border-radius: 14px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+	}
+	.leave-cta-txt { color: #FFFFFF; font-size: 15px; font-weight: 800; letter-spacing: 0.5px; }
+	.modal-col .cta { margin-bottom: 10px; width: 100%; }
+	.modal-col .cta.gold { margin-top: 0; margin-bottom: 10px; }
+	.modal-col .btn-ghost.full { margin-top: 2px; width: 100%; min-height: 44px; }
+	.modal-col { flex-direction: column; align-items: stretch; gap: 0; }
+
+	.act-btn-txt { color: #FFFFFF; font-size: 13px; font-weight: 800; }
+	.act-btn-txt.danger { color: #DC2626; }
+	.act-btn-txt.dark { color: #1A1A1A; }
+	.sheet-pad { height: 18px; }
+
+	.overlay { position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 40; background-color: rgba(32, 33, 36,.55); align-items: flex-end; justify-content: center; padding: 24px; }
+	.modal { width: 100%; background-color: #FFFFFF; border-radius: 18px; padding: 22px 18px 18px; align-items: center; margin-bottom: 40px; }
+	.modal-h { color: #1A1A1A; font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+	.modal-p { color: #374151; font-size: 13px; text-align: center; margin-bottom: 16px; }
+	.modal-row { flex-direction: row; width: 100%; }
+	.btn-ghost { flex: 1; border-width: 1px; border-style: solid; border-color: rgba(32, 33, 36,.2); background-color: #F5F7FB; border-radius: 12px; padding: 14px; align-items: center; justify-content: center; margin-right: 8px; }
+	.btn-ghost-txt { color: #1A1A1A; font-size: 14px; font-weight: 600; }
+	.cta { border-radius: 14px; padding: 15px; background-color: #1A73E8; align-items: center; justify-content: center; }
+	.cta.mini { flex: 1; padding: 14px; }
+	.cta.gold { background-color: #1A73E8; margin-top: 8px; }
+	.cta-txt { color: #FFFFFF; font-size: 15px; font-weight: 700; }
+	.cta-txt.dark { color: #1A1A1A; }
+	.sheet-handle-row { width: 100%; align-items: center; justify-content: center; padding: 0 12px; }
+	.sheet-pts { height: 24px; padding: 0 10px; border-radius: 12px; background-color: #1A73E8; align-items: center; justify-content: center; margin-right: 8px; flex-shrink: 0; }
+	.sheet-pts-txt { font-size: 11px; font-weight: 800; color: #1A1A1A; }
+	.pts-row { margin-bottom: 8px; }
+	.pts-pill { flex: 1; align-items: center; padding: 10px 6px; margin-right: 6px; border-radius: 12px; background-color: #F5F7FB; }
+	.pts-num { font-size: 18px; font-weight: 800; color: #1A1A1A; }
+	.pts-lbl { font-size: 10px; color: #374151; margin-top: 2px; font-weight: 700; }
+	.pts-note { font-size: 11px; color: #374151; margin-bottom: 8px; line-height: 16px; }
+	.quick-row { margin-bottom: 4px; }
+	.quick-btn { flex: 1; height: 40px; border-radius: 12px; background-color: #1A73E8; align-items: center; justify-content: center; margin-right: 8px; }
+	.quick-btn.gold { background-color: #1A73E8; margin-right: 0; }
+	.quick-btn.muted { background-color: #E5E7EB; margin-right: 0; }
+	.quick-btn-txt { font-size: 13px; font-weight: 800; color: #FFFFFF; }
+	.quick-btn.gold .quick-btn-txt { color: #FFFFFF; }
+	.piece-tile { width: 100%; height: 48px; border-radius: 8px; margin-bottom: 6px; background-color: #E5E7EB; background-repeat: no-repeat; }
+	.settle-modal { align-items: stretch; }
+	.settle-stats { margin-bottom: 12px; }
+	.settle-stat { flex: 1; align-items: center; padding: 10px; border-radius: 12px; background-color: #F5F7FB; margin-right: 8px; }
+	.settle-stat-num { font-size: 18px; font-weight: 800; color: #1A1A1A; }
+	.settle-stat-lbl { font-size: 11px; color: #374151; margin-top: 2px; }
+	.cert-mini { padding: 12px; border-radius: 12px; background-color: #1A73E8; margin-bottom: 12px; align-items: center; }
+	.cert-mini-kicker { font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1px; }
+	.cert-mini-no { font-size: 14px; font-weight: 800; color: #FFFFFF; margin-top: 4px; }
+	.cert-mini-sum { font-size: 11px; color: #E5E7EB; margin-top: 6px; text-align: center; }
+	.modal-col { width: 100%; }
+	.btn-ghost.full { margin-right: 0; margin-top: 8px; width: 100%; }
+	.cert-modal { align-items: center; position: relative; overflow: hidden; }
+	.cert-bg { position: absolute; left: 0; right: 0; top: 0; bottom: 0; opacity: 0.18; }
+	.cert-holder { font-size: 16px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px; }
+	.cert-no-line { font-size: 12px; font-weight: 700; color: #1A73E8; margin-bottom: 8px; }
+	.cert-rich { width: 100%; color: #374151; font-size: 14px; line-height: 22px; margin-bottom: 12px; }
+	.cert-seal { width: 72px; height: 72px; margin-bottom: 12px; }
+
+	.live-banner { margin: 6px 12px 0; padding: 8px 12px; border-radius: 10px; }
+	.live-banner.pause { background: #7c2d12; }
+	.live-banner.broadcast { background: #1e3a8a; }
+	.live-banner-txt { color: #fff; font-size: 12px; font-weight: 600; }
+</style>

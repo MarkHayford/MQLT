@@ -1,0 +1,790 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">司机入口</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view v-if="loading" class="state uni-column">
+				<text class="state-text">加载中…</text>
+			</view>
+			<view v-else-if="denied" class="state uni-column">
+				<text class="state-title">仅司机可进入</text>
+				<text class="state-text">企业后台和平台运营请使用网页控制台。</text>
+				<view class="primary-btn" @click="goBack">
+					<text class="primary-btn-text">返回</text>
+				</view>
+			</view>
+			<view v-else class="content uni-column">
+				<view class="hero">
+					<view class="hero-flock">
+						
+					</view>
+					<view class="hero-top uni-row">
+						<view class="hero-id uni-column">
+							<view class="hero-name-row uni-row">
+								<text class="hero-name">{{ driver.realName }}</text>
+								<view :class="online ? 'live-pill live-on' : 'live-pill'">
+									<view :class="online ? 'live-dot live-dot-on' : 'live-dot'"></view>
+									<text :class="online ? 'live-pill-text live-pill-text-on' : 'live-pill-text'">{{ online ? '出车中' : '已收车' }}</text>
+								</view>
+							</view>
+							<text class="hero-meta">{{ driver.vehicleName }} · {{ driver.plateNo }}</text>
+							<text class="hero-meta">{{ driver.statusLabel }} · 评分 {{ driver.ratingAvg }}</text>
+							<view class="city-row uni-row">
+								<text class="hero-meta">常驻城市 {{ driver.city != null && driver.city.toString().length > 0 ? driver.city : '未设置' }}</text>
+								<view class="city-btn" @click="changeServiceCity">
+									<text class="city-btn-text">更改服务城市</text>
+								</view>
+							</view>
+						</view>
+						<view :class="online ? 'online-btn online-on' : 'online-btn'" @click="toggleOnline">
+							<text :class="online ? 'online-text online-text-on' : 'online-text'">{{ online ? '收车' : '出车' }}</text>
+						</view>
+					</view>
+					<view class="kpi-row uni-row">
+						<view class="kpi uni-column">
+							<text class="kpi-v">{{ kpis.todayJobs }}</text>
+							<text class="kpi-l">今日单</text>
+						</view>
+						<view class="kpi-split"></view>
+						<view class="kpi uni-column">
+							<text class="kpi-v">{{ kpis.todayIncomeText }}</text>
+							<text class="kpi-l">今日收入</text>
+						</view>
+						<view class="kpi-split"></view>
+						<view class="kpi uni-column">
+							<text class="kpi-v">{{ kpis.openCount }}</text>
+							<text class="kpi-l">待确认</text>
+						</view>
+						<view class="kpi-split"></view>
+						<view class="kpi uni-column">
+							<text class="kpi-v">{{ kpis.completedJobs }}</text>
+							<text class="kpi-l">累计完成</text>
+						</view>
+					</view>
+					<view class="wallet-row uni-row">
+						<view class="wallet-info uni-column">
+							<text class="wallet-label">可提现</text>
+							<text class="wallet-amount">{{ wallet.availableText }}</text>
+						</view>
+						<view class="withdraw-btn" @click="goWithdraw">
+							<text class="withdraw-btn-text">提现</text>
+						</view>
+					</view>
+				</view>
+
+				<view class="sec uni-column">
+					<text class="sec-title">进行中</text>
+					<view v-for="j in activeJobs" :key="j.id" class="job uni-column">
+						<view class="job-top uni-row">
+							<text class="job-no">{{ j.jobNo }}</text>
+							<view class="st-chip">
+								<text class="st-chip-text">{{ j.statusLabel }}</text>
+							</view>
+						</view>
+						<text class="job-price">{{ j.priceText }}</text>
+						<text class="job-line">上车 {{ j.pickupAddress.length > 0 ? j.pickupAddress : '待确认' }}</text>
+						<text class="job-line">乘客 {{ j.passengerName }} {{ j.passengerPhone }} · {{ j.passengerCount }}人</text>
+						<view class="job-ops uni-column">
+							<view v-if="j.status === 'ACCEPTED'" class="act-btn" @click="setStatus(j, 'EN_ROUTE')">
+								<text class="act-btn-text">前往上车点</text>
+							</view>
+							<view v-if="j.status === 'EN_ROUTE'" class="act-btn" @click="setStatus(j, 'ARRIVED')">
+								<text class="act-btn-text">已到达</text>
+							</view>
+							<view v-if="j.status === 'ARRIVED'" class="act-btn" @click="setStatus(j, 'IN_TRIP')">
+								<text class="act-btn-text">开始行程</text>
+							</view>
+							<view v-if="j.status === 'IN_TRIP'" class="act-btn" @click="setStatus(j, 'COMPLETED')">
+								<text class="act-btn-text">完成订单</text>
+							</view>
+							<view class="ghost-btn" @click="setStatus(j, 'CANCELLED')">
+								<text class="ghost-btn-text">取消订单</text>
+							</view>
+						</view>
+					</view>
+					<view v-if="activeJobs.length === 0" class="empty">
+						<text class="empty-t">暂无进行中订单</text>
+					</view>
+				</view>
+
+				<view class="sec uni-column" v-if="rentalPool.length > 0 || rentalMine.length > 0 || rentalActive.length > 0">
+					<text class="sec-title">租车</text>
+					<view v-for="r in rentalMine" :key="'rn-'+r.id" class="job uni-column">
+						<view class="job-top uni-row">
+							<text class="job-no">{{ r.orderNo }}</text>
+							<view class="st-chip"><text class="st-chip-text">{{ r.statusLabel }}</text></view>
+						</view>
+						<text class="job-line">{{ r.projectTitle }} · {{ r.travelDateText }} · {{ r.passengerCount }}人</text>
+						<text class="job-line">上车 {{ r.pickupAddress.length > 0 ? r.pickupAddress : '待确认' }}</text>
+						<text v-if="r.offeredPriceText != null && r.offeredPriceText.length > 0" class="job-line">报价 {{ r.offeredPriceText }}</text>
+						<text v-if="r.agreedPriceText != null && r.agreedPriceText.length > 0" class="job-line">成交 {{ r.agreedPriceText }}</text>
+						<view class="job-ops uni-column">
+							<view v-if="r.status === 'NEGOTIATING' || r.status === 'PRICE_CONFIRMED'" class="act-btn" @click="openRentalNegotiate(r)">
+								<text class="act-btn-text">{{ r.status === 'NEGOTIATING' ? '进入协商/报价' : '查看协商' }}</text>
+							</view>
+							<view v-if="r.status === 'NEGOTIATING'" class="ghost-btn" @click="releaseRental(r)">
+								<text class="ghost-btn-text">释放回池</text>
+							</view>
+							<view v-if="r.status === 'PAID'" class="act-btn" @click="setRentalStatus(r, 'EN_ROUTE')">
+								<text class="act-btn-text">出车前往</text>
+							</view>
+							<view v-if="r.status === 'EN_ROUTE'" class="act-btn" @click="setRentalStatus(r, 'ARRIVED')">
+								<text class="act-btn-text">已到达上车点</text>
+							</view>
+							<view v-if="r.status === 'ARRIVED'" class="act-btn" @click="setRentalStatus(r, 'IN_TRIP')">
+								<text class="act-btn-text">开始行程</text>
+							</view>
+							<view v-if="r.status === 'IN_TRIP'" class="act-btn" @click="setRentalStatus(r, 'COMPLETED')">
+								<text class="act-btn-text">完成行程</text>
+							</view>
+							<view v-if="r.status === 'PAID' || r.status === 'EN_ROUTE' || r.status === 'ARRIVED' || r.status === 'IN_TRIP'" class="ghost-btn" @click="openRentalNegotiate(r)">
+								<text class="ghost-btn-text">查看详情/聊天</text>
+							</view>
+						</view>
+					</view>
+					<view v-for="r in rentalPool" :key="'ro-'+r.id" class="job uni-column">
+						<view class="job-top uni-row">
+							<text class="job-no">{{ r.orderNo }}</text>
+							<view class="st-chip"><text class="st-chip-text">派单中</text></view>
+						</view>
+						<text class="job-line">{{ r.projectTitle }} · {{ r.travelDateText }} · {{ r.passengerCount }}人</text>
+						<text class="job-line">上车 {{ r.pickupAddress.length > 0 ? r.pickupAddress : '待确认' }}</text>
+						<view class="job-ops uni-column">
+							<view class="act-btn" @click="claimRental(r)">
+								<text class="act-btn-text">抢单协商</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<view class="sec uni-column" v-if="pendingJobs.length > 0">
+					<text class="sec-title">历史指定单（旧·仅存量）</text>
+					<view v-for="j in pendingJobs" :key="j.id" class="job uni-column">
+						<view class="job-top uni-row">
+							<text class="job-no">{{ j.jobNo }}</text>
+							<view class="st-chip">
+								<text class="st-chip-text">{{ j.statusLabel.length > 0 ? j.statusLabel : '待确认' }}</text>
+							</view>
+							<text class="job-price-inline">{{ j.priceText }}</text>
+						</view>
+						<text class="job-line">上车 {{ j.pickupAddress.length > 0 ? j.pickupAddress : '待确认地点' }}</text>
+						<text class="job-line">{{ j.vehicleType }} · {{ j.passengerCount }}人 · {{ j.passengerName }}</text>
+						<view class="job-ops uni-column">
+							<view class="act-btn" @click="accept(j)">
+								<text class="act-btn-text">确认接单</text>
+							</view>
+						</view>
+					</view>
+					<view v-if="pendingJobs.length === 0" class="empty">
+						<text class="empty-t">暂无待确认指定单</text>
+					</view>
+				</view>
+
+				<view class="sec uni-column" v-if="grabJobs.length > 0">
+					<text class="sec-title">附近待抢单</text>
+					<view v-for="j in grabJobs" :key="j.id" class="job uni-column">
+						<view class="job-top uni-row">
+							<text class="job-no">{{ j.jobNo }}</text>
+							<text class="job-price-inline">{{ j.priceText }}</text>
+						</view>
+						<text class="job-line">上车 {{ j.pickupAddress.length > 0 ? j.pickupAddress : '待确认地点' }}</text>
+						<text class="job-line">{{ j.vehicleType }} · {{ j.passengerCount }}人 · {{ j.passengerName }}</text>
+						<view class="job-ops uni-column">
+							<view class="act-btn" @click="accept(j)">
+								<text class="act-btn-text">抢单</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<view class="sec uni-column">
+					<text class="sec-title">历史</text>
+					<view v-for="j in history" :key="j.id" class="job job-dim uni-column">
+						<view class="job-top uni-row">
+							<text class="job-no">{{ j.jobNo }}</text>
+							<text class="job-hist-st">{{ j.statusLabel }}</text>
+						</view>
+						<text class="job-line">{{ j.priceText }} · {{ j.pickupAddress }}</text>
+					</view>
+					<view v-if="history.length === 0" class="empty">
+						<text class="empty-t">暂无历史订单</text>
+					</view>
+				</view>
+				<view class="pad"></view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { fetchDriverHome, setDriverOnline, acceptDriverJob, updateDriverJobStatus, updateDriverCity, parseDriverWallet, emptyDriverWallet, fetchDriverWallet, type DriverWallet } from '../../utils/commerce.uts'
+	import { postApi } from '../../utils/api-client.uts'
+	import { ApiEndpoints } from '../../utils/api-endpoints.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const loading = ref(true)
+	const driver = ref<any>({ realName: '', vehicleName: '', plateNo: '', statusLabel: '', ratingAvg: 5, city: '' })
+	const kpis = ref<any>({ todayJobs: 0, todayIncomeText: '¥0', openCount: 0, completedJobs: 0 })
+	const openJobs = ref<any[]>([])
+	const pendingJobs = ref<any[]>([])
+	const grabJobs = ref<any[]>([])
+	const activeJobs = ref<any[]>([])
+	const history = ref<any[]>([])
+	const rentalPool = ref<any[]>([])
+	const rentalMine = ref<any[]>([])
+	const rentalActive = ref<any[]>([])
+	const online = ref(false)
+	const denied = ref(false)
+	const wallet = ref<DriverWallet>(emptyDriverWallet())
+
+	const goBack = () => { uni.navigateBack() }
+
+	const goWithdraw = () => {
+		uni.navigateTo({ url: '/pages/commerce/driver-withdraw' })
+	}
+
+	const refreshWallet = (homeRaw: any) => {
+		wallet.value = parseDriverWallet(homeRaw)
+		fetchDriverWallet().then((w) => {
+			wallet.value = w
+		}).catch((_e) => {})
+	}
+
+	const load = () => {
+		loading.value = true
+		denied.value = false
+		fetchDriverHome().then((res) => {
+			loading.value = false
+			driver.value = res.driver != null ? res.driver : driver.value
+			kpis.value = res.kpis != null ? res.kpis : kpis.value
+			openJobs.value = res.openJobs != null ? res.openJobs : []
+			pendingJobs.value = res.pendingConfirmJobs != null ? res.pendingConfirmJobs : openJobs.value.filter((j: any) => j.status === 'OFFERED')
+			grabJobs.value = res.openGrabJobs != null ? res.openGrabJobs : openJobs.value.filter((j: any) => j.status === 'OPEN')
+			activeJobs.value = res.activeJobs != null ? res.activeJobs : []
+			history.value = res.history != null ? res.history : []
+			rentalPool.value = res.rentalOpenPool != null ? res.rentalOpenPool : []
+			const mineAll = res.rentalMineAll != null ? res.rentalMineAll : (res.rentalNegotiating != null ? res.rentalNegotiating : [])
+			const act = res.rentalActive != null ? res.rentalActive : []
+			rentalActive.value = act
+			// Merge negotiating + active for one list with status actions
+			const neg = res.rentalNegotiating != null ? res.rentalNegotiating : []
+			const merged: any[] = []
+			const seen: string[] = []
+			for (let i = 0; i < act.length; i++) { merged.push(act[i]); seen.push(act[i].id) }
+			for (let j = 0; j < neg.length; j++) { if (seen.indexOf(neg[j].id) < 0) merged.push(neg[j]) }
+			for (let k = 0; k < mineAll.length; k++) { if (seen.indexOf(mineAll[k].id) < 0 && merged.filter((x:any)=>x.id===mineAll[k].id).length===0) merged.push(mineAll[k]) }
+			rentalMine.value = merged.length > 0 ? merged : mineAll
+			const st = driver.value.status != null ? driver.value.status.toString() : 'OFFLINE'
+			online.value = st === 'ONLINE' || st === 'BUSY'
+			refreshWallet(res)
+		}).catch((e) => {
+			loading.value = false
+			denied.value = true
+			const msg = e != null && e.message != null ? e.message.toString() : '仅司机可进入'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	const toggleOnline = () => {
+		const next = !online.value
+		setDriverOnline(next, true).then((d) => {
+			driver.value = d
+			online.value = next
+			uni.showToast({ title: next ? '已出车' : '已收车', icon: 'success' })
+			load()
+		}).catch((e) => {
+			uni.showToast({ title: e != null && e.message != null ? e.message.toString() : '失败', icon: 'none' })
+		})
+	}
+
+	const accept = (j: any) => {
+		acceptDriverJob(j.id).then((_r) => {
+			uni.showToast({ title: '已确认接单', icon: 'success' })
+			load()
+		}).catch((e) => {
+			uni.showToast({ title: e != null && e.message != null ? e.message.toString() : '确认失败', icon: 'none' })
+		})
+	}
+
+
+	const claimRental = (r: any) => {
+		const id = r != null && r.id != null ? r.id.toString() : ''
+		if (id.length === 0) return
+		const url = ApiEndpoints.commerceDriverRentalClaim.replace('{id}', id)
+		postApi<any>(url, {}, true).then((_d) => {
+			uni.showToast({ title: '已接单，进入协商', icon: 'success' })
+			load()
+			uni.navigateTo({ url: '/pages/appointment/rental-negotiate?id=' + id + '&role=driver' })
+		}).catch((e) => {
+			uni.showToast({ title: e != null && e.message != null ? e.message.toString() : '抢单失败', icon: 'none' })
+		})
+	}
+
+	const openRentalNegotiate = (r: any) => {
+		const id = r != null && r.id != null ? r.id.toString() : ''
+		if (id.length === 0) return
+		uni.navigateTo({ url: '/pages/appointment/rental-negotiate?id=' + id + '&role=driver' })
+	}
+
+	const releaseRental = (r: any) => {
+		const id = r != null && r.id != null ? r.id.toString() : ''
+		if (id.length === 0) return
+		uni.showModal({
+			title: '释放回池',
+			content: '确定放弃该协商单？',
+			success: (res) => {
+				if (!res.confirm) return
+				const url = ApiEndpoints.commerceDriverRentalRelease.replace('{id}', id)
+				postApi<any>(url, {}, true).then((_d) => {
+					uni.showToast({ title: '已释放', icon: 'success' })
+					load()
+				}).catch((e) => {
+					uni.showToast({ title: e != null && e.message != null ? e.message.toString() : '释放失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const setStatus = (j: any, st: string) => {
+		updateDriverJobStatus(j.id, st, '').then((_r) => {
+			uni.showToast({ title: '已更新', icon: 'success' })
+			load()
+		}).catch((e) => {
+			uni.showToast({ title: e != null && e.message != null ? e.message.toString() : '失败', icon: 'none' })
+		})
+	}
+
+	const cityFromAddress = (addr: string): string => {
+		const a = addr != null ? addr.trim() : ''
+		if (a.length === 0) return ''
+		const idx = a.indexOf('市')
+		if (idx <= 0) {
+			if (a.endsWith('市') && a.length > 1) return a.substring(0, a.length - 1)
+			return a
+		}
+		let start = 0
+		const p1 = a.lastIndexOf('省', idx)
+		const p2 = a.lastIndexOf('自治区', idx)
+		if (p2 >= 0 && p2 + 3 < idx) start = p2 + 3
+		else if (p1 >= 0 && p1 + 1 < idx) start = p1 + 1
+		let name = a.substring(start, idx)
+		if (name.length > 6) name = name.substring(name.length - 4)
+		return name
+	}
+
+	const changeServiceCity = () => {
+		const lat0 = driver.value != null && driver.value.baseLatitude != null ? Number(driver.value.baseLatitude) : 0
+		const lng0 = driver.value != null && driver.value.baseLongitude != null ? Number(driver.value.baseLongitude) : 0
+		const opts: any = {}
+		if (lat0 != 0 && lng0 != 0) {
+			opts.latitude = lat0
+			opts.longitude = lng0
+		}
+		opts.success = (res: any) => {
+			const name = res.name != null ? res.name.toString() : ''
+			const addr = res.address != null ? res.address.toString() : ''
+			let city = cityFromAddress(addr)
+			if (city.length === 0) city = cityFromAddress(name)
+			if (city.length === 0 && name.length > 0) {
+				let n = name
+				if (n.endsWith('市')) n = n.substring(0, n.length - 1)
+				city = n
+			}
+			if (city.length === 0) {
+				uni.showToast({ title: '未能识别城市，请重选', icon: 'none' })
+				return
+			}
+			const lat = res.latitude != null ? Number(res.latitude) : 0
+			const lng = res.longitude != null ? Number(res.longitude) : 0
+			const label = addr.length > 0 ? addr : name
+			updateDriverCity(city, lat, lng, label).then((d) => {
+				if (d != null) driver.value = d
+				uni.showToast({ title: '服务城市已更新', icon: 'success' })
+				load()
+			}).catch((e) => {
+				uni.showToast({ title: e != null && e.message != null ? e.message.toString() : '更新失败', icon: 'none' })
+			})
+		}
+		opts.fail = (_err: any) => {}
+		uni.chooseLocation(opts)
+	}
+
+	onShow(() => { load() })
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #F5F7FB;
+	}
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 48px;
+		padding: 0 16px;
+		flex-direction: row;
+		align-items: center;
+		position: relative;
+		background-color: #F5F7FB;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.body {
+		flex: 1;
+	}
+	.content {
+		padding: 8px 16px 0 16px;
+	}
+	.state {
+		padding: 64px 24px;
+		align-items: center;
+	}
+	.state-title {
+		font-size: 18px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 8px;
+	}
+	.state-text {
+		color: #374151;
+		font-size: 14px;
+		text-align: center;
+		line-height: 22px;
+	}
+	.primary-btn {
+		margin-top: 24px;
+		height: 44px;
+		padding: 0 28px;
+		border-radius: 22px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.primary-btn-text {
+		color: #FFFFFF;
+		font-size: 15px;
+		font-weight: 700;
+	}
+	.hero {
+		background-color: #1A73E8;
+		border-radius: 16px;
+		padding: 20px 18px 16px 18px;
+		margin-bottom: 18px;
+		overflow: hidden;
+		position: relative;
+		border-width: 0;
+		border-color: #1A73E8;
+	}
+	.hero-flock {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		pointer-events: none;
+		z-index: 0;
+	}
+	.hero-flock-img {
+		width: 100%;
+	}
+	.hero-top {
+		align-items: flex-start;
+		margin-bottom: 16px;
+		position: relative;
+		z-index: 1;
+	}
+	.hero-id {
+		flex: 1;
+		padding-right: 12px;
+	}
+	.hero-name-row {
+		align-items: center;
+		margin-bottom: 6px;
+	}
+	.hero-name {
+		font-size: 20px;
+		font-weight: 800;
+		color: #FFFFFF;
+		margin-right: 8px;
+	}
+	.live-pill {
+		flex-direction: row;
+		align-items: center;
+		padding: 3px 8px;
+		border-radius: 10px;
+		background-color: rgba(255,255,255,0.12);
+	}
+	.live-on {
+		background-color: rgba(26, 115, 232, 0.22);
+	}
+	.live-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		background-color: rgba(255, 248, 238, 0.45);
+		margin-right: 5px;
+	}
+	.live-dot-on {
+		background-color: #1A73E8;
+	}
+	.live-pill-text {
+		font-size: 11px;
+		font-weight: 700;
+		color: rgba(255, 248, 238, 0.7);
+	}
+	.live-pill-text-on {
+		color: #1A73E8;
+	}
+	.hero-meta {
+		font-size: 12px;
+		color: #FFFFFF;
+		margin-top: 3px;
+	}
+
+	.city-row {
+		margin-top: 6px;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	.city-btn {
+		margin-left: 10px;
+		padding: 4px 10px;
+		border-radius: 999px;
+		background-color: rgba(32, 33, 36, 0.1);
+	}
+	.city-btn-text {
+		font-size: 12px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.online-btn {
+		height: 40px;
+		padding: 0 18px;
+		border-radius: 20px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.online-on {
+		background-color: rgba(255, 248, 238, 0.16);
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(26, 115, 232, 0.55);
+	}
+	.online-text {
+		font-size: 14px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.online-text-on {
+		color: #1A73E8;
+	}
+	.kpi-row {
+		align-items: center;
+		padding-top: 14px;
+		border-top-width: 0.5px;
+		border-top-style: solid;
+		border-top-color: rgba(255, 255, 255, 0.15);
+		position: relative;
+		z-index: 1;
+	}
+	.kpi {
+		flex: 1;
+		align-items: center;
+	}
+	.kpi-v {
+		font-size: 15px;
+		font-weight: 800;
+		color: #FFFFFF;
+		margin-bottom: 3px;
+	}
+	.kpi-l {
+		font-size: 11px;
+		color: rgba(255, 248, 238, 0.7);
+	}
+	.kpi-split {
+		width: 1px;
+		height: 22px;
+		background-color: rgba(255, 255, 255, 0.15);
+	}
+	.wallet-row {
+		margin-top: 14px;
+		padding-top: 14px;
+		border-top-width: 0.5px;
+		border-top-style: solid;
+		border-top-color: rgba(255, 255, 255, 0.15);
+		align-items: center;
+		position: relative;
+		z-index: 1;
+	}
+	.wallet-info {
+		flex: 1;
+	}
+	.wallet-label {
+		font-size: 11px;
+		color: rgba(255, 248, 238, 0.7);
+		margin-bottom: 4px;
+	}
+	.wallet-amount {
+		font-size: 26px;
+		font-weight: 800;
+		color: #1A73E8;
+	}
+	.withdraw-btn {
+		height: 36px;
+		padding: 0 16px;
+		border-radius: 18px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.withdraw-btn-text {
+		font-size: 14px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.sec {
+		margin-bottom: 8px;
+	}
+	.sec-title {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		letter-spacing: 0.4px;
+		margin: 4px 4px 10px 4px;
+	}
+	.job {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.job-dim {
+		opacity: 0.78;
+	}
+	.job-top {
+		align-items: center;
+		margin-bottom: 8px;
+	}
+	.job-no {
+		flex: 1;
+		font-size: 12px;
+		font-weight: 700;
+		color: #374151;
+	}
+	.st-chip {
+		padding: 3px 8px;
+		border-radius: 8px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.st-chip-text {
+		font-size: 11px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.job-price {
+		font-size: 22px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 8px;
+	}
+	.job-price-inline {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.job-hist-st {
+		font-size: 12px;
+		font-weight: 700;
+		color: #374151;
+	}
+	.job-line {
+		font-size: 13px;
+		color: #374151;
+		line-height: 20px;
+		margin-bottom: 2px;
+	}
+	.job-ops {
+		margin-top: 12px;
+	}
+	.act-btn {
+		height: 42px;
+		border-radius: 21px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.act-btn-text{
+		font-size: 15px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.ghost-btn {
+		margin-top: 8px;
+		height: 36px;
+		align-items: center;
+		justify-content: center;
+	}
+	.ghost-btn-text {
+		font-size: 13px;
+		font-weight: 600;
+		color: #374151;
+	}
+	.empty {
+		padding: 18px 12px 8px 12px;
+		align-items: center;
+	}
+	.empty-t {
+		color: #374151;
+		font-size: 13px;
+	}
+	.pad {
+		height: 36px;
+	}
+</style>

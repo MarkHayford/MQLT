@@ -1,0 +1,1566 @@
+<template>
+	<view class="page-wrapper uni-column">
+		<view class="header-section uni-column">
+			<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">{{ isPending ? '订单处理' : '订单详情' }}</text>
+			</view>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false">
+			<view class="content">
+				<view v-if="booking != null" class="summary-card uni-column">
+					<view class="summary-top uni-row">
+						<view class="summary-title-block uni-column">
+							<text class="summary-title">{{ booking.project.title }}</text>
+							<text class="summary-subtitle">{{ booking.project.location }}</text>
+						</view>
+						<view :class="['status-badge', statusBadgeClass]">
+							<text :class="['status-badge-text', statusTextClass]">{{ statusLabel }}</text>
+						</view>
+					</view>
+					<view class="summary-line"></view>
+					<view class="summary-meta uni-row">
+						<view class="meta-item uni-column">
+							<text class="meta-label">参与人数</text>
+							<text class="meta-value">{{ booking.participantCount }} 人</text>
+						</view>
+						<view class="meta-item uni-column">
+							<text class="meta-label">应付金额</text>
+							<text class="meta-price">¥{{ booking.amount }}</text>
+						</view>
+						<view class="meta-item uni-column">
+							<text class="meta-label">订单说明</text>
+							<text class="meta-value">{{ orderHintText }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="booking != null && studyContacts.length > 0" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">研学联系人</text>
+						<text class="section-subtitle">行程相关问题可联系</text>
+					</view>
+					<view v-for="c in studyContacts" :key="c.id" class="participant-row uni-row" @click="callOwnerPhone(c.phone)">
+						<view class="participant-main uni-column">
+							<view class="participant-name-row uni-row">
+								<text class="participant-name">{{ c.name }}</text>
+								<text class="role-tag">{{ c.role }}</text>
+							</view>
+							<text class="participant-phone" v-if="c.phone.length > 0">{{ c.phone }}</text>
+							<text class="participant-message" v-if="c.wechat.length > 0">微信 {{ c.wechat }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="booking != null" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">{{ participantSectionTitle }}</text>
+						<text class="section-subtitle">{{ participantSectionSubtitle }}</text>
+					</view>
+					<view
+						v-for="item in booking.participants"
+						:key="item.bookingId"
+						class="participant-row uni-row"
+					>
+						<view class="participant-main uni-column">
+							<view class="participant-name-row uni-row">
+								<text class="participant-name">{{ item.name }}</text>
+								<text v-if="item.isBooker" class="role-tag">发起人</text>
+								<text v-if="item.isCurrentUser" class="self-tag">我</text>
+							</view>
+							<text class="participant-phone">{{ maskPhone(item.phone) }}</text>
+							<text v-if="item.verificationMessage.length > 0" class="participant-message">{{ item.verificationMessage }}</text>
+						</view>
+						<view class="participant-side uni-column">
+							<text :class="['verify-label', verifyLabelClass(item.verificationStatus)]">{{ item.verificationLabel }}</text>
+							<view v-if="canManage && !item.isBooker" class="remove-btn" @click="removeParticipant(item.bookingId)">
+								<text class="remove-btn-text">删除</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="canManage" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">增加游客</text>
+					</view>
+					<view class="form-row uni-row">
+						<text class="form-label">姓名</text>
+						<input class="form-input" v-model="formName" placeholder="真实姓名" placeholder-style="color:#9CA3AF;" />
+					</view>
+					<view class="form-row uni-row">
+						<text class="form-label">身份证</text>
+						<input class="form-input" maxlength="18" v-model="formIdCard" placeholder="18位身份证号" placeholder-style="color:#9CA3AF;" />
+					</view>
+					<view class="form-row uni-row">
+						<text class="form-label">手机号</text>
+						<input class="form-input" type="number" maxlength="11" v-model="formPhone" placeholder="11位手机号" placeholder-style="color:#9CA3AF;" />
+					</view>
+					<view class="add-btn" @click="addParticipant">
+						<text class="add-btn-text">添加到订单</text>
+					</view>
+				</view>
+
+				<view v-if="booking != null && routeMapPoints.length > 0" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">预约路线点位</text>
+						<text class="section-subtitle">共 {{ routeMapPoints.length }} 站</text>
+					</view>
+					<view class="route-map-wrap">
+						<map
+							class="route-map"
+							:latitude="routeMapLat"
+							:longitude="routeMapLng"
+							:scale="routeMapScale"
+							:markers="routeMapMarkers"
+							:include-points="routeMapInclude"
+							:enable-scroll="true"
+							:enable-zoom="true"
+							:show-location="false"
+						></map>
+					</view>
+					<view v-for="(sp, idx) in routeMapPoints" :key="sp.id" class="route-spot-row uni-row">
+						<view class="route-spot-idx"><text class="route-spot-idx-txt">{{ (idx + 1).toString() }}</text></view>
+						<text class="route-spot-name">{{ sp.title }}</text>
+					</view>
+				</view>
+
+				<view v-if="rentalVisible" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">出行租车</text>
+						<text class="section-subtitle">{{ rentalTitle }}</text>
+					</view>
+					<view class="rental-card uni-column">
+						<text class="rental-line">司机 {{ rentalDriverName }}</text>
+						<text class="rental-line">电话 {{ rentalDriverPhone }}</text>
+						<text v-if="rentalDriverWechat.length > 0" class="rental-line">微信 {{ rentalDriverWechat }}</text>
+						<text class="rental-line">车辆 {{ rentalVehicle }}</text>
+						<text v-if="rentalPickup.length > 0" class="rental-line">上车 {{ rentalPickup }}</text>
+						<text class="rental-fee">司机报价 ¥{{ rentalFeeText }}</text>
+					</view>
+				</view>
+
+				<!-- 结业结算摘要：直接在订单详情展示，不再重进导览 -->
+				<view v-if="booking != null && showSettleSection" class="section settle-section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">结算</text>
+						<text class="section-subtitle">{{ settleHeadline }}</text>
+					</view>
+					<text class="settle-msg">{{ settleMsg }}</text>
+					<view class="settle-stats uni-row" v-if="!settleEarly">
+						<view class="settle-stat uni-column">
+							<text class="settle-stat-num">{{ puzzleCollected.toString() }}/{{ puzzleTotal.toString() }}</text>
+							<text class="settle-stat-lbl">拼图</text>
+						</view>
+						<view class="settle-stat uni-column">
+							<text class="settle-stat-num">{{ totalPoints.toString() }}</text>
+							<text class="settle-stat-lbl">总积分</text>
+						</view>
+						<view class="settle-stat uni-column">
+							<text class="settle-stat-num">{{ availablePoints.toString() }}</text>
+							<text class="settle-stat-lbl">可用</text>
+						</view>
+					</view>
+					<view class="cert-card uni-column" v-if="certNo.length > 0 && !settleEarly">
+						<text class="cert-kicker">结业证书</text>
+						<text class="cert-no">{{ certNo }}</text>
+						<text class="cert-sum" v-if="certSummary.length > 0">{{ certSummary }}</text>
+						<view class="cert-btn" v-if="certNo.length > 0" @click="showCertModal = true">
+							<text class="cert-btn-txt">查看证书</text>
+						</view>
+					</view>
+					<view class="coupon-list uni-column" v-if="issuedCoupons.length > 0">
+						<text class="coupon-head">已发放卡券 / 奖品</text>
+						<view v-for="c in issuedCoupons" :key="c.id" class="coupon-row uni-row">
+							<text class="coupon-name">{{ c.name }}</text>
+							<text class="coupon-from">{{ c.from }}</text>
+						</view>
+					</view>
+					<view class="my-coupon-link" @click="goMyCoupons">
+						<text class="my-coupon-link-txt">前往「我的卡券」</text>
+					</view>
+				</view>
+
+				<!-- 卡券商城：结业后独立区块，不依附导览地图 -->
+				<view v-if="booking != null && showMallSection" class="section mall-section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">卡券商城</text>
+						<text class="section-subtitle">{{ mallTitle }}</text>
+					</view>
+					<view class="mall-points uni-row">
+						<view class="mall-pt uni-column">
+							<text class="mall-pt-num">{{ availablePoints.toString() }}</text>
+							<text class="mall-pt-lbl">可用积分</text>
+						</view>
+						<view class="mall-pt uni-column">
+							<text class="mall-pt-num dim">{{ totalPoints.toString() }}</text>
+							<text class="mall-pt-lbl">累计</text>
+						</view>
+						<view class="mall-pt uni-column">
+							<text class="mall-pt-num dim">{{ spentPoints.toString() }}</text>
+							<text class="mall-pt-lbl">已兑</text>
+						</view>
+					</view>
+					<text class="mall-hint" v-if="mallHint.length > 0">{{ mallHint }}</text>
+					<view v-for="item in mallItems" :key="item.id" class="mall-sku uni-column">
+						<view class="mall-sku-top uni-row">
+							<image v-if="item.imageUrl.length > 0" :src="item.imageUrl" class="mall-sku-img" mode="aspectFill"></image>
+							<view class="mall-sku-main uni-column">
+								<text class="mall-sku-name">{{ item.name }}</text>
+								<text class="mall-sku-sub" v-if="item.note.length > 0">{{ item.note }}</text>
+								<text class="mall-sku-pts">{{ item.points.toString() }} 积分</text>
+							</view>
+						</view>
+						<view :class="['mall-sku-btn', canRedeemSku(item) ? '' : 'disabled']" @click="onRedeemMall(item)">
+							<text class="mall-sku-btn-txt">{{ redeemBtnLabel(item) }}</text>
+						</view>
+					</view>
+					<text v-if="mallItems.length === 0" class="mall-empty">{{ mallEmptyMsg }}</text>
+					<view class="mall-full-link" @click="openTourMallPage">
+						<text class="mall-full-link-txt">打开完整卡券商城</text>
+					</view>
+				</view>
+
+				<view v-if="showCertModal" class="cert-overlay" @click="showCertModal = false">
+					<view class="cert-modal uni-column" @click.stop="onCertModalNop">
+						<text class="cert-modal-h">结业证书</text>
+						<text class="cert-modal-holder" v-if="certHolder.length > 0">{{ certHolder }}</text>
+						<text class="cert-modal-no">证书编号 {{ certNo }}</text>
+						<text class="cert-modal-p">{{ certSummary.length > 0 ? certSummary : '恭喜完成本次研学' }}</text>
+						<view class="cert-btn" @click="showCertModal = false"><text class="cert-btn-txt">关闭</text></view>
+					</view>
+				</view>
+
+				<view v-if="booking != null" class="actions uni-column">
+					<view v-if="tourCtaMode === 'locked'" class="primary-btn primary-btn-disabled">
+						<text class="primary-btn-text">预约日未到 / 非预约日</text>
+					</view>
+					<text v-if="tourCtaMode === 'locked'" class="tour-cta-sub">仅可在预约日当天进入导览</text>
+					<view v-if="tourCtaMode === 'expired'" class="primary-btn primary-btn-disabled">
+						<text class="primary-btn-text">预约日已过</text>
+					</view>
+					<text v-if="tourCtaMode === 'expired'" class="tour-cta-sub">导览已关闭，无法再次进入</text>
+					<view v-if="tourCtaMode === 'start'" class="primary-btn" @click="startTour">
+						<text class="primary-btn-text">开始研学</text>
+					</view>
+					<view v-if="tourCtaMode === 'resume'" class="primary-btn" @click="startTour">
+						<text class="primary-btn-text">继续研学</text>
+					</view>
+					<view v-if="tourCtaMode === 'done'" class="primary-btn primary-btn-disabled">
+						<text class="primary-btn-text">{{ tourDoneLabel }}</text>
+					</view>
+					<text v-if="tourCtaMode === 'done'" class="tour-cta-sub">结算与卡券商城见上方，导览已关闭</text>
+					<view v-if="booking.payable" class="primary-btn" @click="payCurrentBooking">
+					<text class="primary-btn-text">去支付</text>
+				</view>
+				<view v-if="canManage && isPending" class="primary-btn" @click="confirmAndPay">
+					<text class="primary-btn-text">确认订单</text>
+				</view>
+					<view v-if="canInvoice" class="secondary-btn" @click="goInvoice">
+						<text class="secondary-btn-text">开发票</text>
+					</view>
+					<view v-if="canShowCancel" class="secondary-btn" @click="cancelBooking">
+						<text class="secondary-btn-text">取消订单</text>
+					</view>
+				</view>
+
+				<view v-if="booking == null && !isLoading" class="empty-state uni-column">
+					<text class="empty-title">订单不存在</text>
+					<text class="empty-desc">已完成或已取消的订单仍可在「我的订单」中查看；请返回后重新进入</text>
+				</view>
+
+				<view class="bottom-safe"></view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { addProjectBooking, isStudyBookingPendingStatus, isStudyBookingUnpaidStatus, syncStudyBookingsFromApi } from '../../utils/study-booking.uts'
+	import { addStudyBookingParticipant, cancelStudyBooking, confirmStudyBooking, fetchStudyBookingDetail, fetchStudyExploreSession, fetchStudyProjectDetail, fetchStudyTourMall, payStudyBooking, redeemStudyTourMall, removeStudyBookingParticipant, verifyStudyBooking, type StudyBookingParticipant, type StudyBookingRecord } from '../../utils/study-projects.uts'
+	// StudyProjectContact used for 研学联系人
+
+	const statusBarHeight = getStatusBarHeight()
+	const bookingId = ref('')
+
+	type MallSkuItem = {
+		id: string
+		name: string
+		points: number
+		imageUrl: string
+		note: string
+		canAfford: boolean
+		redeemBlockedReason: string
+	}
+	type IssuedCouponItem = {
+		id: string
+		name: string
+		from: string
+	}
+
+	const showSettleSection = ref(false)
+	const showMallSection = ref(false)
+	const settleEarly = ref(false)
+	const settleHeadline = ref('研学已完成')
+	const settleMsg = ref('')
+	const puzzleCollected = ref(0)
+	const puzzleTotal = ref(0)
+	const totalPoints = ref(0)
+	const spentPoints = ref(0)
+	const availablePoints = ref(0)
+	const certNo = ref('')
+	const certHolder = ref('')
+	const certSummary = ref('')
+	const showCertModal = ref(false)
+	const issuedCoupons = ref<IssuedCouponItem[]>([])
+	const mallTitle = ref('积分商城')
+	const mallHint = ref('')
+	const mallEmptyMsg = ref('暂无商品')
+	const mallCanRedeem = ref(false)
+	const mallGraduated = ref(false)
+	const mallItems = ref<MallSkuItem[]>([])
+	const mallBusy = ref(false)
+
+	const studyContacts = ref<Array<{ id: string, name: string, phone: string, wechat: string, role: string }>>([])
+	const callOwnerPhone = (phone: string) => {
+		const raw = phone.split('-').join('').split(' ').join('')
+		if (raw.length === 0) return
+		uni.makePhoneCall({ phoneNumber: raw })
+	}
+	const applyStudyContacts = (proj: any) => {
+		const next: Array<{ id: string, name: string, phone: string, wechat: string, role: string }> = []
+		const raw = proj != null ? proj.contacts : null
+		if (raw != null && Array.isArray(raw)) {
+			for (let i = 0; i < raw.length; i++) {
+				const row = raw[i]
+				const name = row != null && row.name != null ? ('' + row.name).trim() : ''
+				const role = row != null && row.role != null ? ('' + row.role).trim() : ''
+				const p = row != null && row.phone != null ? ('' + row.phone).trim() : ''
+				const wx = row != null && row.wechat != null ? ('' + row.wechat).trim() : ''
+				const id = row != null && row.id != null ? ('' + row.id) : ('c' + i.toString())
+				if (name.length > 0 || p.length > 0) next.push({ id, name: name.length > 0 ? name : p, phone: p, wechat: wx, role })
+			}
+		}
+		studyContacts.value = next
+	}
+	const booking = ref<StudyBookingRecord | null>(null)
+	const isLoading = ref(false)
+	const formName = ref('')
+	const formPhone = ref('')
+	const formIdCard = ref('')
+	let isSubmitting = false
+
+	const isPending = computed((): boolean => {
+		const b = booking.value
+		return b != null && isStudyBookingPendingStatus(b.status)
+	})
+
+	const canManage = computed((): boolean => {
+		const b = booking.value
+		return b != null && b.isBooker && isStudyBookingPendingStatus(b.status)
+	})
+
+	const allParticipantsVerified = computed((): boolean => {
+		const b = booking.value
+		if (b == null) return false
+		const list = b.participants
+		if (list.length === 0) return false
+		for (let i = 0; i < list.length; i++) {
+			if (!list[i].verified) return false
+		}
+		return true
+	})
+
+	const verificationSummaryReady = computed((): boolean => {
+		const b = booking.value
+		if (b == null) return false
+		if (isStudyBookingPendingStatus(b.status)) return b.pendingReady
+		return allParticipantsVerified.value
+	})
+
+	const verificationSummaryText = computed((): string => {
+		const b = booking.value
+		if (b == null) return ''
+		const s = b.status.trim().toLowerCase()
+		if (s === 'pending') return b.pendingReady ? '全部通过' : '等待处理'
+		if (s === 'cancelled') return '已取消'
+		if (allParticipantsVerified.value) return '已完成'
+		return '已锁定'
+	})
+
+	const participantSectionTitle = computed((): string => {
+		const b = booking.value
+		if (b == null) return '订单人员'
+		return b.isBooker ? '订单人员' : '我的信息'
+	})
+
+	const participantSectionSubtitle = computed((): string => {
+		const b = booking.value
+		if (b == null) return ''
+		if (b.isBooker) return '共 ' + b.participantCount.toString() + ' 人 · 对方实名一致后自动获得预约'
+		return '实名与订单一致即自动关联'
+	})
+
+	const orderHintText = computed((): string => {
+		const b = booking.value
+		if (b == null) return ''
+		const s = b.status.trim().toLowerCase()
+		if (s === 'unpaid') return '可直接支付'
+		if (s === 'booked') return '已预约'
+		if (s === 'pending') return '待确认'
+		if (s === 'cancelled') return '已取消'
+		if (s === 'completed') return '已完成'
+		return ''
+	})
+
+	const currentParticipant = computed((): StudyBookingParticipant | null => {
+		const b = booking.value
+		if (b == null) return null
+		const list = b.participants
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].isCurrentUser) return list[i]
+		}
+		return null
+	})
+
+	const showVerifyAction = computed((): boolean => {
+		const p = currentParticipant.value
+		if (p == null || !p.canVerify || p.verified) return false
+		return p.verificationStatus === 'pending_realname' || p.verificationStatus === 'mismatch'
+	})
+
+	const verifyActionText = computed((): string => {
+		const p = currentParticipant.value
+		if (p != null && p.verificationStatus === 'pending_realname') return '去实名认证'
+		return '再次验证'
+	})
+
+	function chinaDateKeyNow(): string {
+		const now = new Date()
+		const utc = now.getTime() + now.getTimezoneOffset() * 60000
+		const china = new Date(utc + 8 * 3600000)
+		const y = china.getFullYear()
+		const m = china.getMonth() + 1
+		const d = china.getDate()
+		const ms = m < 10 ? '0' + m.toString() : m.toString()
+		const ds = d < 10 ? '0' + d.toString() : d.toString()
+		return y.toString() + '-' + ms + '-' + ds
+	}
+
+	function firstTripDayKey(b: StudyBookingRecord): string {
+		const plan = b.tripPlan
+		if (plan != null && plan.dayKeys != null) {
+			const keys = plan.dayKeys as any[]
+			if (keys.length > 0 && keys[0] != null && String(keys[0]).length >= 8) {
+				return String(keys[0])
+			}
+		}
+		if (b.project != null && b.project.date != null && String(b.project.date).length >= 8) {
+			return String(b.project.date).substring(0, 10)
+		}
+		if (b.createdAt != null && String(b.createdAt).length >= 8) {
+			return String(b.createdAt).substring(0, 10)
+		}
+		return chinaDateKeyNow()
+	}
+
+	function allTripDayKeys(b: StudyBookingRecord): string[] {
+		const keys: string[] = []
+		const plan = b.tripPlan
+		if (plan != null && plan.dayKeys != null) {
+			const arr = plan.dayKeys as any[]
+			for (let i = 0; i < arr.length; i++) {
+				const k = arr[i] != null ? String(arr[i]) : ''
+				if (k.length >= 8 && keys.indexOf(k) < 0) keys.push(k)
+			}
+		}
+		if (plan != null && plan.days != null) {
+			const days = plan.days as any[]
+			for (let i = 0; i < days.length; i++) {
+				const k = days[i] != null && days[i].dayKey != null ? String(days[i].dayKey) : ''
+				if (k.length >= 8 && keys.indexOf(k) < 0) keys.push(k)
+			}
+		}
+		keys.sort()
+		return keys
+	}
+
+	function lastTripDayKey(b: StudyBookingRecord): string {
+		const keys = allTripDayKeys(b)
+		if (keys.length > 0) return keys[keys.length - 1]
+		return firstTripDayKey(b)
+	}
+
+	function isTodayInTripDays(b: StudyBookingRecord): boolean {
+		const keys = allTripDayKeys(b)
+		const today = chinaDateKeyNow()
+		if (keys.length === 0) return today === firstTripDayKey(b)
+		return keys.indexOf(today) >= 0
+	}
+
+	function tourMetaOf(b: StudyBookingRecord): any {
+		if (b.tripPlan != null && b.tripPlan.tour != null) return b.tripPlan.tour
+		return null
+	}
+
+	const tourCtaMode = computed((): string => {
+		const b = booking.value
+		if (b == null) return 'none'
+		const s = b.status.trim().toLowerCase()
+		const tour = tourMetaOf(b)
+		const tourStatus = tour != null && tour.status != null ? String(tour.status) : ''
+		const early = (tour != null && tour.earlyExit === true) || tourStatus === 'early_exit'
+		if (s === 'completed' || early) return 'done'
+		if (s !== 'booked') return 'none'
+		const today = chinaDateKeyNow()
+		const firstDay = firstTripDayKey(b)
+		const lastDay = lastTripDayKey(b)
+		if (today < firstDay) return 'locked'
+		if (today > lastDay) return 'expired'
+		if (!isTodayInTripDays(b)) return 'locked'
+		const entered = b.checkedInAt != null && String(b.checkedInAt).length > 0
+		if (entered || tourStatus === 'entered' || tourStatus === 'touring' || tourStatus === 'paused') return 'resume'
+		return 'start'
+	})
+
+	const tourDoneLabel = computed((): string => {
+		const b = booking.value
+		if (b == null) return '研学已结束'
+		const tour = tourMetaOf(b)
+		if (tour != null && (tour.earlyExit === true || String(tour.status) === 'early_exit')) return '已提前结束'
+		return '研学已完成'
+	})
+
+	/** 已入场核销后不允许取消（核销后 status 仍为 booked，后端 cancellable 仍可能为 true） */
+	const isEntranceCheckedIn = computed((): boolean => {
+		const b = booking.value
+		if (b == null) return false
+		if (b.entranceCheckedIn === true) return true
+		if (b.checkedInAt != null && String(b.checkedInAt).length > 0) return true
+		const tour = tourMetaOf(b)
+		if (tour != null) {
+			const ts = tour.status != null ? String(tour.status) : ''
+			if (ts === 'entered' || ts === 'touring' || ts === 'paused') return true
+		}
+		return false
+	})
+
+	const canShowCancel = computed((): boolean => {
+		const b = booking.value
+		if (b == null || !b.cancellable) return false
+		if (isEntranceCheckedIn.value) return false
+		return true
+	})
+
+	const statusLabel = computed((): string => {
+		const b = booking.value
+		if (b == null) return ''
+		const s = b.status.trim().toLowerCase()
+		if (s === 'pending') return '待确认'
+		if (s === 'unpaid') return '待支付'
+		if (s === 'booked') return '待出行'
+		if (s === 'completed') return '已完成'
+		if (s === 'cancelled') return '已取消'
+		return '已预约'
+	})
+
+	const statusBadgeClass = computed((): string => {
+		const b = booking.value
+		if (b == null) return 'status-blue'
+		const s = b.status.trim().toLowerCase()
+		if (s === 'pending') return 'status-purple'
+		if (s === 'unpaid') return 'status-orange'
+		if (s === 'cancelled') return 'status-red'
+		return 'status-blue'
+	})
+
+	const rentalOptionId = computed((): string => {
+		const b = booking.value
+		if (b == null || b.rental == null) return 'none'
+		const id = b.rental.optionId != null ? b.rental.optionId.toString() : 'none'
+		return id.length > 0 ? id : 'none'
+	})
+	const rentalVisible = computed((): boolean => {
+		return rentalOptionId.value !== 'none'
+	})
+	const rentalTitle = computed((): string => {
+		const b = booking.value
+		if (b != null && b.rental != null && b.rental.optionLabel != null && b.rental.optionLabel.toString().length > 0) {
+			return b.rental.optionLabel.toString()
+		}
+		const id = rentalOptionId.value
+		if (id === 'range_s' || id === 'van7') return '1–7人 · 小车'
+		if (id === 'range_m' || id === 'mpv9' || id === 'bus14') return '8–14人 · 中巴'
+		if (id === 'range_l' || id === 'bus20') return '15人以上 · 大巴'
+		return '租车'
+	})
+	const rentalDriverName = computed((): string => {
+		const b = booking.value
+		if (b == null || b.rental == null) return '未指定'
+		const n = b.rental.driverName != null ? b.rental.driverName.toString() : ''
+		return n.length > 0 ? n : '未指定'
+	})
+	const rentalDriverPhone = computed((): string => {
+		const b = booking.value
+		if (b == null || b.rental == null) return '—'
+		const n = b.rental.driverPhone != null ? b.rental.driverPhone.toString() : ''
+		return n.length > 0 ? n : '—'
+	})
+	const rentalDriverWechat = computed((): string => {
+		const b = booking.value
+		if (b == null || b.rental == null) return ''
+		return b.rental.driverWechat != null ? b.rental.driverWechat.toString() : ''
+	})
+	const rentalVehicle = computed((): string => {
+		const b = booking.value
+		if (b == null || b.rental == null) return '—'
+		const name = b.rental.vehicleName != null ? b.rental.vehicleName.toString() : ''
+		const plate = b.rental.plateNo != null ? b.rental.plateNo.toString() : ''
+		if (name.length > 0 && plate.length > 0) return name + ' · ' + plate
+		if (name.length > 0) return name
+		if (plate.length > 0) return plate
+		return '—'
+	})
+	const rentalPickup = computed((): string => {
+		const b = booking.value
+		if (b == null || b.pickup == null) return ''
+		return b.pickup.address != null ? b.pickup.address.toString() : ''
+	})
+	const rentalFeeText = computed((): string => {
+		const b = booking.value
+		if (b == null || b.rental == null) return '0'
+		if (b.rental.feeText != null && b.rental.feeText.toString().length > 0) return b.rental.feeText.toString()
+		const n = b.rental.fee != null ? Number(b.rental.fee) : 0
+		if (n != n) return '0'
+		return n.toString()
+	})
+
+	const statusTextClass = computed((): string => {
+		const b = booking.value
+		if (b == null) return 'status-text-blue'
+		const s = b.status.trim().toLowerCase()
+		if (s === 'pending') return 'status-text-purple'
+		if (s === 'unpaid') return 'status-text-orange'
+		if (s === 'cancelled') return 'status-text-red'
+		return 'status-text-blue'
+	})
+
+
+	function applyRouteMap(detail: StudyBookingRecord | null) {
+		routeMapPoints.value = [] as Array<{ id: string, title: string, latitude: number, longitude: number }>
+		if (detail == null) return
+		const selectedIds = detail.routePointIds != null ? detail.routePointIds : ([] as string[])
+		const projectId = detail.projectId != null ? String(detail.projectId) : ''
+		if (projectId.length === 0) return
+		fetchStudyProjectDetail(projectId).then((proj) => {
+			if (proj == null) return
+			const raw = proj.routePoints != null ? proj.routePoints : ([] as any[])
+			const mapped: Array<{ id: string, title: string, latitude: number, longitude: number }> = []
+			for (let i = 0; i < raw.length; i++) {
+				const rp = raw[i]
+				const id = String(rp.id != null ? rp.id : '')
+				if (id.length === 0) continue
+				if (selectedIds.length > 0 && selectedIds.indexOf(id) < 0) continue
+				const lat = Number(rp.latitude != null ? rp.latitude : 0)
+				const lng = Number(rp.longitude != null ? rp.longitude : 0)
+				if (!(lat > 0) || !(lng > 0)) continue
+				mapped.push({ id: id, title: String(rp.title != null ? rp.title : ('点位' + (i + 1).toString())), latitude: lat, longitude: lng })
+			}
+			// 行程点为空时展示项目全部有效点位
+			if (mapped.length === 0) {
+				for (let j = 0; j < raw.length; j++) {
+					const rp2 = raw[j]
+					const id2 = String(rp2.id != null ? rp2.id : '')
+					const lat2 = Number(rp2.latitude != null ? rp2.latitude : 0)
+					const lng2 = Number(rp2.longitude != null ? rp2.longitude : 0)
+					if (id2.length === 0 || !(lat2 > 0) || !(lng2 > 0)) continue
+					mapped.push({ id: id2, title: String(rp2.title != null ? rp2.title : ('点位' + (j + 1).toString())), latitude: lat2, longitude: lng2 })
+				}
+			}
+			routeMapPoints.value = mapped
+			if (mapped.length > 0) {
+				routeMapLat.value = mapped[0].latitude
+				routeMapLng.value = mapped[0].longitude
+				routeMapScale.value = mapped.length === 1 ? 16 : 14
+			}
+		}).catch((_e) => {})
+	}
+
+	function goInvoice() {
+		const b = booking.value
+		if (b == null) return
+		uni.navigateTo({ url: '/pages/mine/invoice-apply?preselect=' + encodeURIComponent('STUDY_BOOKING:' + b.id) })
+	}
+
+	const loadBooking = () => {
+		if (bookingId.value.length === 0) return
+		isLoading.value = true
+		fetchStudyBookingDetail(bookingId.value).then((detail) => {
+			isLoading.value = false
+			booking.value = detail
+			applyStudyContacts(detail != null ? detail.project : null)
+			applyRouteMap(detail)
+			syncStudyBookingsFromApi().catch((_err) => {})
+			if (detail != null) {
+				loadSettleAndMall(detail).catch((_e) => {})
+			} else {
+				resetSettleMall()
+			}
+		}).catch((err) => {
+			isLoading.value = false
+			booking.value = null
+			applyRouteMap(null)
+			resetSettleMall()
+			const msg = err != null && err.message != null ? err.message.toString() : '订单加载失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const idParam = options['id'] != null ? options['id'] : (options['bookingId'] != null ? options['bookingId'] : options['bookingGroupId'])
+		bookingId.value = idParam != null ? idParam.toString() : ''
+		loadBooking()
+	})
+
+	onShow(() => {
+		loadBooking()
+	})
+
+	function startTour() {
+		const b = booking.value
+		if (b == null) return
+		const mode = tourCtaMode.value
+		if (mode === 'locked' || mode === 'expired' || mode === 'none' || mode === 'done') {
+			uni.showToast({
+				title: mode === 'done'
+					? '研学已结束，请在本页查看结算与卡券商城'
+					: (mode === 'expired' ? '预约日已过，无法进入' : (mode === 'locked' ? '仅预约日可进入导览' : '当前不可进入导览')),
+				icon: 'none'
+			})
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/appointment/tour-live?projectId=' + encodeURIComponent(b.projectId) + '&bookingId=' + encodeURIComponent(b.id)
+		})
+	}
+
+	function onCertModalNop() {}
+
+	function goMyCoupons() {
+		uni.navigateTo({ url: '/pages/mine/my-coupons' })
+	}
+
+	function openTourMallPage() {
+		const b = booking.value
+		if (b == null) return
+		uni.navigateTo({ url: '/pages/appointment/tour-mall?projectId=' + encodeURIComponent(b.projectId) })
+	}
+
+	function canRedeemSku(item: MallSkuItem): boolean {
+		if (!mallCanRedeem.value) return false
+		if (item.redeemBlockedReason.length > 0) return false
+		return item.canAfford && item.points > 0
+	}
+
+	function redeemBtnLabel(item: MallSkuItem): string {
+		if (!mallCanRedeem.value) {
+			if (!mallGraduated.value) return '结业后可兑'
+			return '暂不可兑'
+		}
+		if (item.redeemBlockedReason.length > 0) return item.redeemBlockedReason
+		if (!item.canAfford) return '积分不足'
+		return '兑换'
+	}
+
+	function mapMallItem(raw: any): MallSkuItem {
+		return {
+			id: String(raw.id || raw.skuId || ''),
+			name: String(raw.name || raw.title || '兑换商品'),
+			points: Number(raw.points || raw.cost || 0),
+			imageUrl: String(raw.imageUrl || raw.coverUrl || raw.image || ''),
+			note: String(raw.note || raw.remark || raw.desc || ''),
+			canAfford: raw.canAfford !== false,
+			redeemBlockedReason: String(raw.redeemBlockedReason || '')
+		}
+	}
+
+	function resetSettleMall() {
+		showSettleSection.value = false
+		showMallSection.value = false
+		settleEarly.value = false
+		settleHeadline.value = '研学已完成'
+		settleMsg.value = ''
+		puzzleCollected.value = 0
+		puzzleTotal.value = 0
+		totalPoints.value = 0
+		spentPoints.value = 0
+		availablePoints.value = 0
+		certNo.value = ''
+		certHolder.value = ''
+		certSummary.value = ''
+		issuedCoupons.value = []
+		mallItems.value = []
+		mallHint.value = ''
+		mallCanRedeem.value = false
+		mallGraduated.value = false
+	}
+
+	async function loadSettleAndMall(b: StudyBookingRecord) {
+		const mode = tourCtaMode.value
+		const tour = tourMetaOf(b)
+		const early = (tour != null && tour.earlyExit === true) || (tour != null && String(tour.status) === 'early_exit')
+		const completed = b.status.trim().toLowerCase() === 'completed'
+		if (!(completed || early || mode === 'done')) {
+			resetSettleMall()
+			return
+		}
+		showSettleSection.value = true
+		showMallSection.value = true
+		settleEarly.value = early && !(tour != null && tour.graduated === true)
+		if (settleEarly.value) {
+			settleHeadline.value = '已提前结束'
+			settleMsg.value = '已提前结束，过程奖励已保留，无结业证书与最终奖券'
+		} else {
+			settleHeadline.value = '研学已完成'
+			settleMsg.value = '拼图集齐，结业成功。可在下方兑换卡券商城商品。'
+		}
+		try {
+			const ses = await fetchStudyExploreSession(b.projectId, 0, 0, '', b.id)
+			if (ses != null) {
+				const puzzle = ses.puzzle != null ? ses.puzzle : ses.progress
+				puzzleTotal.value = puzzle != null ? Number(puzzle.total || puzzle.puzzleTotal || 0) : 0
+				puzzleCollected.value = puzzle != null ? Number(puzzle.collected || puzzle.puzzleCollected || puzzle.completed || 0) : 0
+				const tp = ses.tourPoints != null ? ses.tourPoints : null
+				if (tp != null) {
+					totalPoints.value = Number(tp.totalPoints || 0)
+					spentPoints.value = Number(tp.spentPoints || 0)
+					availablePoints.value = Number(tp.availablePoints != null ? tp.availablePoints : (totalPoints.value - spentPoints.value))
+				}
+				const tm = ses.tourMall != null ? ses.tourMall : null
+				if (tm != null && tp == null) {
+					totalPoints.value = Number(tm.totalPoints || totalPoints.value)
+					spentPoints.value = Number(tm.spentPoints || spentPoints.value)
+					availablePoints.value = Number(tm.availablePoints != null ? tm.availablePoints : availablePoints.value)
+				}
+				const cert = ses.certificate != null ? ses.certificate : null
+				if (cert != null) {
+					certNo.value = String(cert.certificateNo || cert.no || '')
+					certHolder.value = String(cert.holderName || '')
+					certSummary.value = String(cert.summary || '')
+				}
+				const modeStr = ses.mode != null ? String(ses.mode) : ''
+				if (modeStr === 'early_exit' || (ses.tour != null && ses.tour.earlyExit === true)) {
+					settleEarly.value = true
+					settleHeadline.value = '已提前结束'
+					settleMsg.value = '已提前结束，过程奖励已保留，无结业证书与最终奖券'
+				} else if (modeStr === 'day_expired') {
+					settleEarly.value = true
+					settleHeadline.value = '预约日已结束'
+					const dw = ses.dayWindow != null ? ses.dayWindow : null
+					settleMsg.value = (dw != null && dw.message != null && String(dw.message).length > 0) ? String(dw.message) : '预约日已结束，导览已关闭'
+				} else if (certNo.value.length > 0) {
+					settleMsg.value = '拼图已集齐，结业成功！总积分 ' + totalPoints.value.toString() + '。证书编号 ' + certNo.value + '。'
+				} else {
+					settleMsg.value = '研学已完成。总积分 ' + totalPoints.value.toString() + '。'
+				}
+				const coupons: IssuedCouponItem[] = []
+				const list = (ses.myPoints != null ? ses.myPoints : (ses.points != null ? ses.points : [])) as any[]
+				for (let i = 0; i < list.length; i++) {
+					const pt = list[i]
+					const id = String(pt.id || i)
+					const rw = pt.rewards
+					if (rw != null) {
+						if (rw.checkInPrize === true && pt.checkedIn === true) {
+							let pname = String(rw.checkInPrizeName || '打卡奖品')
+							if (pname.length === 0) pname = '打卡奖品'
+							coupons.push({ id: id + '-prize', name: pname, from: String(pt.title || '点位') + ' · 到站打卡' })
+						}
+						if (rw.knowledgePrize === true && pt.knowledgeDone === true) {
+							let kname = String(rw.knowledgePrizeName || '答题奖品')
+							if (kname.length === 0) kname = '答题奖品'
+							coupons.push({ id: id + '-know', name: kname, from: String(pt.title || '点位') + ' · 知识答题' })
+						}
+					}
+				}
+				const tourPlan = ses.tour != null ? ses.tour : (b.tripPlan != null ? b.tripPlan.tour : null)
+				if (tourPlan != null && tourPlan.mallRedeems != null) {
+					const rds = tourPlan.mallRedeems as any[]
+					for (let ri = 0; ri < rds.length; ri++) {
+						const rd = rds[ri]
+						coupons.push({
+							id: String(rd.id || ('rdm' + ri.toString())),
+							name: String(rd.name || '兑换商品'),
+							from: '卡券商城 · ' + String(rd.points || 0) + ' 积分'
+						})
+					}
+				}
+				issuedCoupons.value = coupons
+			}
+		} catch (_e) {}
+		try {
+			const res = await fetchStudyTourMall(b.projectId)
+			if (res != null) {
+				mallTitle.value = String(res.title || '积分商城')
+				totalPoints.value = Number(res.totalPoints != null ? res.totalPoints : totalPoints.value)
+				spentPoints.value = Number(res.spentPoints != null ? res.spentPoints : spentPoints.value)
+				availablePoints.value = Number(res.availablePoints != null ? res.availablePoints : availablePoints.value)
+				mallCanRedeem.value = res.canRedeem === true
+				mallGraduated.value = res.graduated === true || res.mallRedeemUnlocked === true
+				if (res.canRedeem === true) {
+					mallHint.value = '积分足够即可兑换，卡券将放入「我的卡券」'
+				} else {
+					mallHint.value = !mallGraduated.value
+						? '浏览模式：结业后即可兑换'
+						: String(res.message || '当前不在兑换窗口')
+				}
+				const mlist: MallSkuItem[] = []
+				const rawItems = res.items != null ? res.items as any[] : []
+				for (let i = 0; i < rawItems.length; i++) {
+					const it = mapMallItem(rawItems[i])
+					if (it.id.length > 0) mlist.push(it)
+				}
+				mallItems.value = mlist
+				if (res.canEnter === false) {
+					mallEmptyMsg.value = String(res.message || '暂不可进入积分商城')
+				} else if (mlist.length === 0) {
+					mallEmptyMsg.value = '暂无上架商品'
+				}
+			}
+		} catch (e) {
+			const msg = (e != null && (e as any).message != null) ? String((e as any).message) : '商城加载失败'
+			mallEmptyMsg.value = msg
+		}
+	}
+
+	async function onRedeemMall(item: MallSkuItem) {
+		const b = booking.value
+		if (b == null || mallBusy.value) return
+		if (!canRedeemSku(item)) {
+			uni.showToast({ title: redeemBtnLabel(item), icon: 'none' })
+			return
+		}
+		mallBusy.value = true
+		uni.showLoading({ title: '兑换中', mask: true })
+		try {
+			const res = await redeemStudyTourMall(b.projectId, item.id)
+			uni.hideLoading()
+			const tip = (res != null && res.message != null) ? String(res.message) : '兑换成功，已放入我的卡券'
+			uni.showToast({ title: tip, icon: 'success' })
+			await loadSettleAndMall(b)
+		} catch (e) {
+			uni.hideLoading()
+			const msg = (e != null && (e as any).message != null) ? String((e as any).message) : '兑换失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		} finally {
+			mallBusy.value = false
+		}
+	}
+
+		const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const maskPhone = (phone: string): string => {
+		if (phone.length === 11) return phone.substring(0, 3) + '****' + phone.substring(7)
+		return phone
+	}
+
+	const verifyLabelClass = (status: string): string => {
+		if (status === 'verified') return 'verify-green'
+		if (status === 'mismatch') return 'verify-red'
+		if (status === 'unregistered') return 'verify-gray'
+		return 'verify-orange'
+	}
+
+	const handleVerifyAction = () => {
+		const p = currentParticipant.value
+		if (p == null) return
+		if (p.verificationStatus === 'pending_realname') {
+			uni.navigateTo({ url: '/pages/mine/settings' })
+			return
+		}
+		verifyStudyBooking(p.bookingId).then((detail) => {
+			booking.value = detail
+			applyStudyContacts(detail != null ? detail.project : null)
+			applyRouteMap(detail)
+			uni.showToast({ title: detail.pendingReady ? '验证成功' : '已重新验证', icon: 'success' })
+		}).catch((err) => {
+			const msg = err != null && err.message != null ? err.message.toString() : '验证失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	const addParticipant = () => {
+		const b = booking.value
+		if (b == null || isSubmitting) return
+		const name = formName.value.trim()
+		const phone = formPhone.value.trim()
+		const idCard = formIdCard.value.trim().toUpperCase()
+		if (name.length < 2) {
+			uni.showToast({ title: '请输入游客姓名', icon: 'none' })
+			return
+		}
+		if (phone.length !== 11 || phone.charAt(0) !== '1') {
+			uni.showToast({ title: '请输入正确手机号', icon: 'none' })
+			return
+		}
+		if (idCard.length !== 18) {
+			uni.showToast({ title: '请输入18位身份证号', icon: 'none' })
+			return
+		}
+		isSubmitting = true
+		addStudyBookingParticipant(b.id, { name, phone, idCard }).then((detail) => {
+			isSubmitting = false
+			booking.value = detail
+			applyStudyContacts(detail != null ? detail.project : null)
+			applyRouteMap(detail)
+			formName.value = ''
+			formPhone.value = ''
+			formIdCard.value = ''
+			uni.showToast({ title: '已添加', icon: 'success' })
+		}).catch((err) => {
+			isSubmitting = false
+			const msg = err != null && err.message != null ? err.message.toString() : '添加失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	const removeParticipant = (participantBookingId: string) => {
+		const b = booking.value
+		if (b == null || isSubmitting) return
+		uni.showModal({
+			title: '删除游客',
+			content: '删除后该游客将从本订单移除。',
+			confirmText: '删除',
+			confirmColor: '#EF4444',
+			success: (res) => {
+				if (!res.confirm) return
+				isSubmitting = true
+				removeStudyBookingParticipant(b.id, participantBookingId).then((detail) => {
+					isSubmitting = false
+					booking.value = detail
+					applyStudyContacts(detail != null ? detail.project : null)
+					uni.showToast({ title: '已删除', icon: 'success' })
+				}).catch((err) => {
+					isSubmitting = false
+					const msg = err != null && err.message != null ? err.message.toString() : '删除失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const confirmAndPay = () => {
+		const b = booking.value
+		if (b == null || isSubmitting) return
+		isSubmitting = true
+		confirmStudyBooking(b.id).then((detail) => {
+			isSubmitting = false
+			booking.value = detail
+			applyStudyContacts(detail != null ? detail.project : null)
+			applyRouteMap(detail)
+			if (isStudyBookingUnpaidStatus(detail.status)) {
+				payConfirmedBooking(detail)
+			} else {
+				addProjectBooking(detail.projectId)
+				uni.showToast({ title: '预约成功', icon: 'success' })
+			}
+		}).catch((err) => {
+			isSubmitting = false
+			const msg = err != null && err.message != null ? err.message.toString() : '确认失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	const payConfirmedBooking = (target: StudyBookingRecord) => {
+		uni.showModal({
+			title: '确认支付',
+			content: '当前为模拟支付流程，确认后将完成研学预约并占用名额。',
+			confirmText: '确认支付',
+			cancelText: '稍后支付',
+			success: (res) => {
+				if (!res.confirm) {
+					uni.showToast({ title: '可在待支付中继续支付', icon: 'none' })
+					loadBooking()
+					return
+				}
+				payStudyBooking(target.id).then((paid) => {
+					booking.value = paid
+					applyStudyContacts(paid != null ? paid.project : null)
+					addProjectBooking(paid.projectId)
+					uni.showToast({ title: '支付成功', icon: 'success' })
+				}).catch((err) => {
+					const msg = err != null && err.message != null ? err.message.toString() : '支付失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const payCurrentBooking = () => {
+		const b = booking.value
+		if (b == null) return
+		payConfirmedBooking(b)
+	}
+
+	const cancelBooking = () => {
+		const b = booking.value
+		if (b == null || isSubmitting) return
+		if (isEntranceCheckedIn.value) {
+			uni.showToast({ title: '已核销，无法取消', icon: 'none' })
+			return
+		}
+		uni.showModal({
+			title: '取消订单',
+			content: '取消后整组订单会同步取消。',
+			confirmText: '确认取消',
+			cancelText: '再想想',
+			success: (res) => {
+				if (!res.confirm) return
+				isSubmitting = true
+				cancelStudyBooking(b.id).then((detail) => {
+					isSubmitting = false
+					booking.value = detail
+					applyStudyContacts(detail != null ? detail.project : null)
+					uni.showToast({ title: '已取消', icon: 'success' })
+				}).catch((err) => {
+					isSubmitting = false
+					const msg = err != null && err.message != null ? err.message.toString() : '取消失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.header-section {
+		border-width: 0;
+		border-color: #FFFFFF;
+		background-color: #FFFFFF;
+		border-bottom-width: 0.5px;
+		border-bottom-color: rgba(60, 60, 67, 0.12);
+	}
+	.status-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.main-scroll {
+		flex: 1;
+		width: 100%;
+	}
+	.content {
+		padding: 16px;
+	}
+	.summary-card,
+	.notice-card,
+	.section {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 14px;
+		border: 1px solid rgba(15, 23, 42, 0.06);
+	}
+	.summary-top,
+	.summary-meta,
+	.section-head,
+	.participant-row,
+	.participant-name-row,
+	.form-row {
+		flex-direction: row;
+	}
+	.summary-top,
+	.section-head,
+	.participant-row,
+	.form-row {
+		align-items: center;
+	}
+	.summary-title-block {
+		flex: 1;
+		margin-right: 12px;
+	}
+	.summary-title {
+		font-size: 18px;
+		font-weight: 700;
+		color: #0F172A;
+		line-height: 24px;
+	}
+	.summary-subtitle {
+		font-size: 13px;
+		color: #4B5563;
+		margin-top: 4px;
+	}
+	.status-badge {
+		padding: 6px 12px;
+		border-radius: 12px;
+	}
+	.status-badge-text {
+		font-size: 12px;
+		font-weight: 700;
+	}
+	.status-purple { background-color: rgba(99, 102, 241, 0.12); }
+	.status-orange { background-color: rgba(255, 149, 0, 0.12); }
+	.status-blue { background-color: rgba(26, 115, 232, 0.10); }
+	.status-red { background-color: rgba(255, 59, 48, 0.12); }
+	.status-text-purple { color: #6366F1; }
+	.status-text-orange { color: #FF9500; }
+	.status-text-blue { color: #1A1A1A; }
+	.status-text-red { color: #FF3B30; }
+	.summary-line {
+		height: 1px;
+		background-color: rgba(255,255,255,0.96);
+		margin: 14px 0;
+	}
+	.meta-item {
+		flex: 1;
+	}
+	.meta-label {
+		font-size: 12px;
+		color: #9CA3AF;
+		margin-bottom: 4px;
+	}
+	.meta-value,
+	.meta-price {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1E293B;
+	}
+	.meta-price {
+		color: #EF4444;
+	}
+	.ready-text {
+		color: #16A34A;
+	}
+	.notice-card {
+		background-color: #EEF2FF;
+		border-color: rgba(99, 102, 241, 0.18);
+	
+		box-shadow: none;
+	}
+	.notice-title {
+		font-size: 16px;
+		font-weight: 700;
+		color: #3730A3;
+	}
+	.notice-desc {
+		font-size: 13px;
+		color: #475569;
+		line-height: 20px;
+		margin-top: 6px;
+	}
+	.notice-action,
+	.add-btn,
+	.primary-btn,
+	.secondary-btn {
+		height: 44px;
+		border-radius: 12px;
+		align-items: center;
+		justify-content: center;
+	}
+	.notice-action {
+		background-color: #4F46E5;
+		margin-top: 12px;
+	}
+	.notice-action-text,
+	.add-btn-text,
+	.primary-btn-text {
+		font-size: 15px;
+		color: #FFFFFF;
+		font-weight: 700;
+	}
+	.section-title {
+		font-size: 17px;
+		font-weight: 700;
+		color: #0F172A;
+		flex: 1;
+	}
+	.section-subtitle {
+		font-size: 13px;
+		color: #4B5563;
+	}
+	.rental-card {
+		border: 1px solid #E5E7EB;
+		padding: 12px 0 4px 0;
+	
+		box-shadow: none;
+	}
+	.rental-line {
+		font-size: 14px;
+		color: #1E293B;
+		line-height: 22px;
+		margin-bottom: 4px;
+	}
+	.rental-fee {
+		margin-top: 6px;
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.participant-row {
+		padding: 14px 0;
+		border-bottom-width: 0.5px;
+		border-bottom-color: rgba(255,255,255,0.96);
+	}
+	.participant-main {
+		flex: 1;
+		margin-right: 12px;
+	}
+	.participant-name-row {
+		align-items: center;
+	}
+	.participant-name {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1E293B;
+	}
+	.role-tag,
+	.self-tag {
+		font-size: 11px;
+		padding: 2px 6px;
+		border-radius: 12px;
+		margin-left: 6px;
+	}
+	.role-tag {
+		color: #1A1A1A;
+		background-color: #E2E8F0;
+	}
+	.self-tag {
+		color: #166534;
+		background-color: #DCFCE7;
+	}
+	.participant-phone,
+	.participant-message {
+		font-size: 12px;
+		color: #4B5563;
+		margin-top: 5px;
+		line-height: 18px;
+	}
+	.participant-side {
+		align-items: flex-end;
+	}
+	.verify-label {
+		font-size: 12px;
+		font-weight: 700;
+	}
+	.verify-green { color: #16A34A; }
+	.verify-orange { color: #EA580C; }
+	.verify-red { color: #DC2626; }
+	.verify-gray { color: #4B5563; }
+	.remove-btn {
+		margin-top: 8px;
+		padding: 5px 10px;
+		border-radius: 10px;
+		background-color: #FEF2F2;
+	}
+	.remove-btn-text {
+		font-size: 12px;
+		color: #EF4444;
+		font-weight: 700;
+	}
+	.form-row {
+		height: 48px;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #E2E8F0;
+	}
+	.form-label {
+		width: 64px;
+		font-size: 14px;
+		color: #4B5563;
+	}
+	.form-input {
+		flex: 1;
+		font-size: 15px;
+		color: #0F172A;
+	}
+	.add-btn {
+		background-color: #1A73E8;
+		margin-top: 14px;
+	}
+	.actions {
+		margin-top: 6px;
+	}
+	.primary-btn {
+		background-color: #1A73E8;
+		margin-bottom: 10px;
+	}
+	.primary-btn-disabled {
+		background-color: #9CA3AF;
+	}
+	.tour-cta-sub {
+		font-size: 12px;
+		color: #4B5563;
+		text-align: center;
+		margin: -4px 0 12px;
+	}
+	.secondary-btn {
+		background-color: #FFFFFF;
+		border: 1px solid #E2E8F0;
+	}
+	.secondary-btn-text {
+		font-size: 15px;
+		color: #EF4444;
+		font-weight: 700;
+	}
+	.empty-state {
+		align-items: center;
+		padding: 80px 24px;
+	}
+	.empty-title {
+		font-size: 18px;
+		font-weight: 700;
+		color: #1E293B;
+	}
+	.empty-desc {
+		font-size: 13px;
+		color: #4B5563;
+		margin-top: 8px;
+	}
+	.bottom-safe {
+		height: 32px;
+	}
+
+	.route-map-wrap {
+		width: 100%;
+		height: 220px;
+		border-radius: 14px;
+		overflow: hidden;
+		background-color: #E2E8F0;
+		margin-bottom: 10px;
+	}
+	.route-map { width: 100%; height: 220px; }
+	.route-spot-row { align-items: center; padding: 8px 0; }
+	.route-spot-idx {
+		width: 22px; height: 22px; border-radius: 11px; background-color: #1A73E8;
+		align-items: center; justify-content: center; margin-right: 10px; flex-shrink: 0;
+	}
+	.route-spot-idx-txt { color: #FFFFFF; font-size: 11px; font-weight: 800; }
+	.route-spot-name { flex: 1; font-size: 13px; font-weight: 700; color: #1A1A1A; }
+
+	.settle-section { background-color: #FFFFFF; }
+	.settle-msg { font-size: 13px; color: #4B5563; line-height: 20px; margin-top: 8px; margin-bottom: 12px; }
+	.settle-stats { margin-bottom: 12px; }
+	.settle-stat { flex: 1; align-items: center; padding: 10px 6px; border-radius: 12px; background-color: #F5F7FB; margin-right: 8px; }
+	.settle-stat:last-child { margin-right: 0; }
+	.settle-stat-num { font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.settle-stat-lbl { font-size: 11px; color: #4B5563; margin-top: 2px; }
+	.cert-card {
+		border: 1px solid #E5E7EB;
+		padding: 12px; border-radius: 14px; background-color: #1A73E8; margin-bottom: 10px;
+	
+		box-shadow: none;
+	}
+	.cert-kicker { font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1px; }
+	.cert-no { font-size: 15px; font-weight: 800; color: #FFFFFF; margin-top: 6px; }
+	.cert-sum { font-size: 12px; color: #E5E7EB; margin-top: 6px; line-height: 18px; }
+	.cert-btn {
+		margin-top: 10px; height: 36px; border-radius: 12px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.cert-btn-txt { font-size: 13px; font-weight: 800; color: #FFFFFF; }
+	.coupon-list { margin-top: 4px; }
+	.coupon-head { font-size: 13px; font-weight: 800; color: #1A1A1A; margin-bottom: 8px; }
+	.coupon-row {
+		padding: 10px 0; border-bottom-width: 0.5px; border-bottom-color: rgba(255,255,255,0.96);
+		align-items: center; justify-content: space-between;
+	}
+	.coupon-name { font-size: 14px; font-weight: 700; color: #1E293B; flex: 1; }
+	.coupon-from { font-size: 11px; color: #4B5563; margin-left: 8px; }
+	.my-coupon-link {
+		margin-top: 12px; height: 40px; border-radius: 12px; background-color: #F5F7FB;
+		align-items: center; justify-content: center;
+	}
+	.my-coupon-link-txt { font-size: 13px; font-weight: 800; color: #1A1A1A; }
+	.mall-section { background-color: #FFFFFF; }
+	.mall-points {
+		margin-top: 8px; margin-bottom: 10px; padding: 12px; border-radius: 14px; background-color: #1A73E8;
+	}
+	.mall-pt { flex: 1; align-items: center; }
+	.mall-pt-num { font-size: 18px; font-weight: 800; color: #FFFFFF; }
+	.mall-pt-num.dim { color: #E5E7EB; font-size: 16px; }
+	.mall-pt-lbl { font-size: 11px; color: #E5E7EB; margin-top: 4px; }
+	.mall-hint { font-size: 12px; color: #4B5563; line-height: 18px; margin-bottom: 10px; }
+	.mall-sku {
+		padding: 12px; border-radius: 14px; background-color: #F5F7FB; margin-bottom: 10px;
+	}
+	.mall-sku-top { align-items: center; }
+	.mall-sku-img { width: 56px; height: 56px; border-radius: 12px; margin-right: 10px; background-color: #FFFFFF; flex-shrink: 0; }
+	.mall-sku-main { flex: 1; min-width: 0; }
+	.mall-sku-name { font-size: 14px; font-weight: 800; color: #1A1A1A; }
+	.mall-sku-sub { font-size: 12px; color: #4B5563; margin-top: 4px; }
+	.mall-sku-pts { font-size: 13px; font-weight: 800; color: #1A73E8; margin-top: 4px; }
+	.mall-sku-btn {
+		margin-top: 10px; height: 40px; border-radius: 12px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.mall-sku-btn.disabled { background-color: #E5E7EB; }
+	.mall-sku-btn-txt { color: #FFFFFF; font-size: 14px; font-weight: 800; }
+	.mall-empty { font-size: 13px; color: #4B5563; padding: 12px 0; }
+	.mall-full-link {
+		margin-top: 4px; height: 40px; border-radius: 12px; border-width: 1px; border-color: #1A1A1A;
+		align-items: center; justify-content: center;
+	}
+	.mall-full-link-txt { font-size: 13px; font-weight: 800; color: #1A1A1A; }
+	.cert-overlay {
+		position: fixed; left: 0; right: 0; top: 0; bottom: 0;
+		background-color: rgba(26,26,26, 0.55);
+		align-items: center; justify-content: center; z-index: 99;
+	}
+	.cert-modal {
+		width: 78%; padding: 20px; border-radius: 18px; background-color: #FFFFFF;
+	}
+	.cert-modal-h { font-size: 17px; font-weight: 800; color: #1A1A1A; }
+	.cert-modal-holder { font-size: 15px; font-weight: 700; color: #1E293B; margin-top: 10px; }
+	.cert-modal-no { font-size: 13px; color: #4B5563; margin-top: 8px; }
+	.cert-modal-p { font-size: 13px; color: #4B5563; line-height: 20px; margin-top: 10px; margin-bottom: 14px; }
+
+</style>

@@ -1,0 +1,146 @@
+<template>
+	<view v-if="visible" class="splash-mask">
+		<view class="splash-card uni-column" @click.stop="noop">
+			<view v-if="item != null && item.closable" class="splash-x" @click="dismiss">
+				<text class="splash-x-txt">关闭</text>
+			</view>
+			<text class="splash-kicker">PLATFORM</text>
+			<text class="splash-title">{{ item != null ? item.title : '平台公告' }}</text>
+			<scroll-view class="splash-body" scroll-y="true" :show-scrollbar="false">
+				<rich-text v-if="item != null && item.html.length > 0" class="splash-rich" :nodes="item.html"></rich-text>
+				<image
+					v-for="(img, ii) in (item != null ? item.images : [])"
+					:key="'si-' + ii.toString()"
+					class="splash-img"
+					:src="img.url"
+					mode="widthFix"
+					@click="previewImage(img.url)"
+				></image>
+				<video
+					v-for="(vid, vi) in (item != null ? item.videos : [])"
+					:key="'sv-' + vi.toString()"
+					class="splash-video"
+					:src="vid.url"
+					controls
+					object-fit="contain"
+				></video>
+				<view
+					v-for="(att, ai) in (item != null ? item.attachments : [])"
+					:key="'sa-' + ai.toString()"
+					class="splash-att uni-row"
+					@click="openAttach(att.url)"
+				>
+					<text class="splash-att-name">{{ att.name }}</text>
+					<text class="splash-att-go">打开</text>
+				</view>
+			</scroll-view>
+			<view class="splash-ok" @click="dismiss">
+				<text class="splash-ok-txt">我知道了</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { onMounted } from 'vue'
+import { fetchSplashAnnounce, isSplashSessionDismissed, markSplashDismissed, rememberSplashVersion, shouldShowSplash, type SplashAnnounce } from '../../utils/splash-announce.uts'
+
+const visible = ref(false)
+const item = ref(null as SplashAnnounce | null)
+
+const noop = () => {}
+
+const dismiss = () => {
+	const cur = item.value
+	if (cur != null) rememberSplashVersion(cur.version)
+	markSplashDismissed()
+	visible.value = false
+}
+
+const previewImage = (url: string) => {
+	if (url.length === 0) return
+	uni.previewImage({ urls: [url], current: url })
+}
+
+const openAttach = (url: string) => {
+	if (url.length === 0) return
+	uni.downloadFile({
+		url: url,
+		success: (dl) => {
+			if (dl.statusCode === 200) {
+				uni.openDocument({ filePath: dl.tempFilePath, showMenu: true })
+			}
+		}
+	})
+}
+
+onMounted(() => {
+	if (isSplashSessionDismissed()) return
+	fetchSplashAnnounce().then((data: SplashAnnounce | null) => {
+		if (!shouldShowSplash(data)) return
+		item.value = data
+		visible.value = true
+	})
+})
+</script>
+
+<style>
+.splash-mask {
+	position: fixed;
+	left: 0; right: 0; top: 0; bottom: 0;
+	background-color: rgba(26, 26, 26, 0.45);
+	align-items: center;
+	justify-content: center;
+	z-index: 1200;
+	padding: 24px;
+}
+.splash-card {
+	width: 100%;
+	max-width: 340px;
+	background-color: #FFFFFF;
+	border-radius: 16px;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #E5E7EB;
+	padding: 18px 16px 16px 16px;
+	max-height: 80%;
+}
+.splash-x {
+	align-self: flex-end;
+	padding: 4px 0 8px 0;
+}
+.splash-x-txt { font-size: 13px; font-weight: 700; color: #1A73E8; }
+.splash-kicker {
+	font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1px; margin-bottom: 4px;
+}
+.splash-title {
+	font-size: 18px; font-weight: 800; color: #1A1A1A; margin-bottom: 10px;
+}
+.splash-body {
+	width: 100%;
+	height: 320px;
+}
+.splash-rich { width: 100%; }
+.splash-img { width: 100%; margin-top: 8px; border-radius: 8px; }
+.splash-video { width: 100%; height: 180px; margin-top: 8px; }
+.splash-att {
+	margin-top: 8px;
+	padding: 10px 12px;
+	background-color: #F5F7FB;
+	border-radius: 8px;
+	align-items: center;
+	justify-content: space-between;
+}
+.splash-att-name { font-size: 13px; color: #1A1A1A; font-weight: 700; flex: 1; }
+.splash-att-go { font-size: 12px; font-weight: 800; color: #1A73E8; }
+.splash-ok {
+	margin-top: 14px;
+	height: 44px;
+	background-color: #1A73E8;
+	border-radius: 10px;
+	align-items: center;
+	justify-content: center;
+}
+.splash-ok-txt { font-size: 15px; font-weight: 800; color: #FFFFFF; }
+</style>

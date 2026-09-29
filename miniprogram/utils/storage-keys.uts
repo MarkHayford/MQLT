@@ -1,0 +1,21 @@
+export const StorageKeys = {
+	authToken: 'user_token',
+	userPhone: 'user_phone',
+	userNickname: 'user_nickname',
+	userGender: 'user_gender',
+	userRegion: 'user_region',
+	userAvatarTheme: 'user_avatar_theme',
+	userStudyNo: 'user_study_no',
+	userPuzzleCollected: 'user_puzzle_collected',
+	userAddresses: 'user_addresses',
+	userInvoiceTitles: 'user_invoice_titles',
+	userFeedbackList: 'user_feedback_list',
+	travelersList: 'travelers_list',
+	mallCart: 'mall_cart',
+	mallFavorites: 'mall_favorites',
+	mallShopProjectId: 'mall_shop_project_id',
+	mallFloatCartY: 'mall_float_cart_y',
+	studyBookedProjectIds: 'study_booked_project_ids',
+	studyProgressBannerDismissed: 'study_progress_banner_dismissed_ids',
+splashAnnounceVersion: 'mp_splash_announce_version'
+}

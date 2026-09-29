@@ -1,0 +1,684 @@
+<template>
+	<view class="page-wrapper" :style="pageStyle">
+		<view class="fixed-header">
+			<view class="status-bar" :style="statusBarStyle"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">电子发票</text>
+			</view>
+		</view>
+
+		<scroll-view class="main-scroll" :style="mainScrollStyle" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="section-container">
+				<view class="section-header">
+					<text class="section-title">我的发票</text>
+				</view>
+
+				<view v-if="invoiceList.length === 0" class="empty-state">
+					<image src="/static/icon-file.svg" class="empty-icon" mode="aspectFit"></image>
+					<text class="empty-text">暂无发票记录</text>
+					<text class="empty-hint">申请开票后将在此显示</text>
+				</view>
+
+				<view v-else class="invoice-list">
+					<view class="invoice-card" v-for="(invoice, index) in invoiceList" :key="invoice.id" @click="viewInvoiceDetail(invoice)">
+						<view class="invoice-header uni-row">
+							<view :class="['st-chip', statusChipClass(invoice.status)]">
+								<text class="st-chip-text">{{ invoice.status }}</text>
+							</view>
+							<text class="invoice-date">{{ invoice.date }}</text>
+						</view>
+						<text class="invoice-title">{{ invoice.title }}</text>
+						<view class="invoice-info-row uni-row">
+							<text class="invoice-label">发票金额</text>
+							<text class="invoice-amount">¥{{ invoice.amount }}</text>
+						</view>
+						<view class="invoice-info-row uni-row">
+							<text class="invoice-label">发票抬头</text>
+							<text class="invoice-value">{{ invoice.header }}</text>
+						</view>
+						<view class="invoice-info-row uni-row">
+							<text class="invoice-label">开票方</text>
+							<text class="invoice-value">{{ invoice.issuerLabel }}</text>
+						</view>
+						<view v-if="invoice.rejectReason.length > 0" class="invoice-info-row uni-row">
+							<text class="invoice-label">驳回原因</text>
+							<text class="invoice-value">{{ invoice.rejectReason }}</text>
+						</view>
+						<view v-if="invoice.status === '已开票' && invoice.pdfUrl.length > 0" class="pdf-hint">
+							<text class="pdf-hint-text">点击复制链接 / 下载打开 PDF</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<view class="section-container">
+				<view class="section-header uni-row">
+					<text class="section-title">发票抬头</text>
+					<text class="section-action" @click="addInvoiceHeader">+ 添加</text>
+				</view>
+
+				<view v-if="headerList.length === 0" class="empty-state">
+					<image src="/static/mine-invoice.svg" class="empty-icon" mode="aspectFit"></image>
+					<text class="empty-text">暂无发票抬头</text>
+					<text class="empty-hint">添加后可快速开票</text>
+				</view>
+
+				<view v-else class="header-list">
+					<view class="header-card" v-for="(header, index) in headerList" :key="header.id">
+						<view class="header-top uni-row">
+							<view :class="header.type === '企业' ? 'type-tag type-tag-co' : 'type-tag type-tag-ps'">
+								<text :class="header.type === '企业' ? 'type-tag-text type-tag-text-co' : 'type-tag-text type-tag-text-ps'">{{ header.type }}</text>
+							</view>
+							<view v-if="header.isDefault" class="default-badge">
+								<text class="default-text">默认</text>
+							</view>
+							<view class="header-actions uni-row">
+								<text class="action-btn" @click.stop="editHeader(header)">编辑</text>
+								<text class="action-btn action-delete" @click.stop="deleteHeader(index)">删除</text>
+							</view>
+						</view>
+						<text class="header-name">{{ header.name }}</text>
+						<text class="header-tax-no" v-if="header.type === '企业'">税号：{{ header.taxNo }}</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="bottom-spacer"></view>
+		</scroll-view>
+
+		<view class="bottom-action-bar">
+			<view class="apply-invoice-btn" @click="goApplyInvoice">
+				<text class="apply-btn-text">线上申请开发票</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { deleteInvoiceTitle, fetchInvoiceTitles, fetchInvoiceRequests } from '../../utils/user-services.uts'
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const windowHeight = layout.windowHeight
+	const screenHeight = layout.screenHeight
+	const navBarHeight = 44
+	const headerTotalHeight = statusBarHeight + navBarHeight
+
+	const pageStyle = 'height: ' + screenHeight + 'px;'
+	const statusBarStyle = 'height: ' + statusBarHeight + 'px;'
+	const mainScrollStyle = 'top: ' + headerTotalHeight + 'px; height: ' + (windowHeight - headerTotalHeight) + 'px;'
+
+	type Invoice = {
+		id: string
+		title: string
+		amount: string
+		header: string
+		date: string
+		status: string
+		pdfUrl: string
+		invoiceNo: string
+		rejectReason: string
+		issuerLabel: string
+	}
+
+	type InvoiceHeader = {
+		id: string
+		type: string
+		name: string
+		taxNo: string
+		isDefault: boolean
+	}
+
+	const invoiceList = ref<Invoice[]>([])
+	const headerList = ref<InvoiceHeader[]>([])
+
+	const formatTime = (value: any): string => {
+		if (value == null) return ''
+		const text = value.toString().replace('T', ' ')
+		if (text.length >= 16) return text.substring(0, 16)
+		return text
+	}
+
+	const statusText = (raw: string): string => {
+		const s = raw != null ? raw.toString().toUpperCase() : ''
+		if (s === 'PENDING') return '待开票'
+		if (s === 'ISSUED') return '已开票'
+		if (s === 'REJECTED') return '已驳回'
+		if (s === 'CANCELLED') return '已取消'
+		return raw
+	}
+
+	const loadInvoices = () => {
+		fetchInvoiceRequests<any>().then((list) => {
+			const mapped: Invoice[] = []
+			for (let i = 0; i < list.length; i++) {
+				const item = list[i]
+				const items = item['items'] as any[]
+				let title = '电子发票'
+				if (items != null && items.length > 0) {
+					title = items[0]['title'] != null ? (items[0]['title'] as string) : title
+					if (items.length > 1) title = title + ' 等 ' + items.length.toString() + ' 笔'
+				}
+				let issuerLabel = '企业'
+				if (item['issuerType'] != null && (item['issuerType'] as string) === 'PLATFORM') {
+					issuerLabel = '平台'
+				} else if (item['enterpriseName'] != null && (item['enterpriseName'] as string).length > 0) {
+					issuerLabel = item['enterpriseName'] as string
+				}
+				mapped.push({
+					id: item['id'] as string,
+					title,
+					amount: item['amount'] != null ? item['amount'].toString() : '0',
+					header: item['titleName'] != null ? (item['titleName'] as string) : '',
+					date: formatTime(item['createdAt']),
+					status: statusText(item['status'] != null ? item['status'].toString() : ''),
+					pdfUrl: item['pdfUrl'] != null ? (item['pdfUrl'] as string) : '',
+					invoiceNo: item['invoiceNo'] != null ? (item['invoiceNo'] as string) : '',
+					rejectReason: item['rejectReason'] != null ? (item['rejectReason'] as string) : '',
+					issuerLabel
+				})
+			}
+			invoiceList.value = mapped
+		}).catch((_err) => {
+			invoiceList.value = []
+		})
+	}
+
+	const loadHeaders = () => {
+		fetchInvoiceTitles<any>().then((fullList) => {
+			const mapped: InvoiceHeader[] = []
+			for (let i = 0; i < fullList.length; i++) {
+				const item = fullList[i]
+				mapped.push({
+					id: item['id'] as string,
+					type: item['type'] === 'company' ? '企业' : '个人',
+					name: item['name'] as string,
+					taxNo: item['taxNo'] != null ? (item['taxNo'] as string) : '',
+					isDefault: item['isDefault'] as boolean
+				})
+			}
+			headerList.value = mapped
+		}).catch((_err) => {
+			headerList.value = []
+			uni.showToast({ title: '发票抬头加载失败', icon: 'none' })
+		})
+	}
+
+	const statusChipClass = (status: string): string => {
+		if (status === '已开票') return 'st-done'
+		if (status === '待开票') return 'st-ing'
+		if (status === '已驳回') return 'st-wait'
+		return 'st-wait'
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const viewInvoiceDetail = (invoice: Invoice) => {
+		if (invoice.status === '已开票' && invoice.pdfUrl.length > 0) {
+			uni.showActionSheet({
+				itemList: ['复制 PDF 链接', '下载并打开', '分享链接'],
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						uni.setClipboardData({
+							data: invoice.pdfUrl,
+							success: () => {
+								uni.showToast({ title: '已复制链接', icon: 'success' })
+							}
+						})
+					} else if (res.tapIndex === 1) {
+						uni.downloadFile({
+							url: invoice.pdfUrl,
+							success: (dl) => {
+								if (dl.statusCode === 200) {
+									uni.openDocument({
+										filePath: dl.tempFilePath,
+										showMenu: true,
+										fail: (_e) => {
+											uni.setClipboardData({
+												data: invoice.pdfUrl,
+												success: () => {
+													uni.showToast({ title: '无法直接打开，已复制链接', icon: 'none' })
+												}
+											})
+										}
+									})
+								} else {
+									uni.showToast({ title: '下载失败', icon: 'none' })
+								}
+							},
+							fail: (_e) => {
+								uni.setClipboardData({
+									data: invoice.pdfUrl,
+									success: () => {
+										uni.showToast({ title: '下载失败，已复制链接', icon: 'none' })
+									}
+								})
+							}
+						})
+					} else if (res.tapIndex === 2) {
+						uni.setClipboardData({
+							data: invoice.pdfUrl,
+							success: () => {
+								uni.showToast({ title: '链接已复制，可粘贴分享', icon: 'none' })
+							}
+						})
+					}
+				}
+			})
+			return
+		}
+		if (invoice.status === '已驳回') {
+			uni.showModal({
+				title: '已驳回',
+				content: invoice.rejectReason.length > 0 ? invoice.rejectReason : '该申请已被驳回，相关订单可重新申请',
+				showCancel: false
+			})
+			return
+		}
+		uni.showToast({ title: '开票处理中，请稍候', icon: 'none' })
+	}
+
+	const addInvoiceHeader = () => {
+		uni.navigateTo({ url: '/pages/mine/invoice-titles' })
+	}
+
+	const editHeader = (header: InvoiceHeader) => {
+		uni.navigateTo({ url: '/pages/mine/invoice-titles' })
+	}
+
+	const deleteHeader = (index: number) => {
+		uni.showModal({
+			title: '确认删除',
+			content: '确定要删除该发票抬头吗？',
+			confirmText: '删除',
+			confirmColor: '#DC2626',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) {
+					const target = headerList.value[index]
+					if (target == null) return
+					deleteInvoiceTitle(target.id).then((_res) => {
+						loadHeaders()
+						uni.showToast({ title: '删除成功', icon: 'success' })
+					}).catch((_err) => {
+						uni.showToast({ title: '删除失败', icon: 'none' })
+					})
+				}
+			}
+		})
+	}
+
+	const goApplyInvoice = () => {
+		uni.navigateTo({ url: '/pages/mine/invoice-apply' })
+	}
+
+	onLoad(() => {
+		loadHeaders()
+		loadInvoices()
+	})
+
+	onShow(() => {
+		loadHeaders()
+		loadInvoices()
+	})
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+		position: relative;
+	}
+
+	.fixed-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1000;
+		background-color: #F5F7FB;
+	}
+
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.main-scroll {
+		position: absolute;
+		left: 0;
+		right: 0;
+	}
+
+	.section-container {
+		margin: 16px 16px 0 16px;
+	}
+
+	.section-header {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+
+	.section-title {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		letter-spacing: 0.4px;
+	}
+
+	.section-action {
+		font-size: 13px;
+		color: #1A73E8;
+		font-weight: 700;
+	}
+
+	.empty-state {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 40px 24px;
+		align-items: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.empty-icon {
+		width: 48px;
+		height: 48px;
+		margin-bottom: 12px;
+	}
+
+	.empty-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 600;
+		margin-bottom: 6px;
+	}
+
+	.empty-hint {
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.invoice-list {
+		flex-direction: column;
+	}
+
+	.invoice-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.invoice-issuer {
+		font-size: 22rpx;
+		color: #374151;
+		margin-top: 6rpx;
+	}
+	.invoice-header {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+
+	.st-chip {
+		padding: 3px 8px;
+		border-radius: 8px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.st-done {
+		background-color: #1A73E8;
+	}
+	.st-ing {
+		background-color: #1A73E8;
+	}
+	.st-wait {
+		background-color: #FFFFFF;
+	}
+	.st-chip-text {
+		font-size: 11px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.st-done .st-chip-text {
+		color: #1A73E8;
+	}
+	.st-ing .st-chip-text {
+		color: #1A1A1A;
+	}
+
+	.invoice-date {
+		font-size: 12px;
+		color: #374151;
+	}
+
+	.invoice-title {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 600;
+		margin-bottom: 12px;
+	}
+
+	.invoice-info-row {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 6px;
+	}
+
+	.invoice-label {
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.invoice-amount {
+		font-size: 18px;
+		color: #1A1A1A;
+		font-weight: 800;
+	}
+
+	.invoice-value {
+		font-size: 14px;
+		color: #1A1A1A;
+		font-weight: 500;
+		max-width: 200px;
+		text-align: right;
+	}
+
+	.pdf-hint {
+		margin-top: 8px;
+		padding-top: 8px;
+		border-top-width: 0.5px;
+		border-top-color: rgba(0, 0, 0, 0.08);
+	}
+
+	.pdf-hint-text {
+		font-size: 12px;
+		color: #1A73E8;
+		font-weight: 700;
+	}
+
+	.header-list {
+		flex-direction: column;
+	}
+
+	.header-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.header-top {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+
+	.type-tag {
+		padding: 3px 8px;
+		border-radius: 8px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.type-tag-co {
+		background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+	.type-tag-ps {
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.type-tag-text {
+		font-size: 11px;
+		font-weight: 800;
+	}
+	.type-tag-text-co {
+		color: #FFFFFF;
+	}
+	.type-tag-text-ps {
+		color: #1A1A1A;
+	}
+
+	.default-badge {
+		padding: 3px 8px;
+		background-color: #1A73E8;
+		border-radius: 8px;
+		margin-left: 8px;
+	}
+
+	.default-text {
+		font-size: 11px;
+		color: #1A1A1A;
+		font-weight: 800;
+	}
+
+	.header-actions {
+		flex: 1;
+		justify-content: flex-end;
+		align-items: center;
+	}
+
+	.action-btn {
+		font-size: 13px;
+		color: #1A73E8;
+		font-weight: 700;
+		margin-left: 16px;
+	}
+
+	.action-delete {
+		color: #DC2626;
+	}
+
+	.header-name {
+		font-size: 17px;
+		color: #1A1A1A;
+		font-weight: 600;
+		margin-bottom: 6px;
+	}
+
+	.header-tax-no {
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.bottom-spacer {
+		height: 100px;
+	}
+
+	.bottom-action-bar {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 12px 16px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+		background-color: #F5F7FB;
+		z-index: 999;
+	}
+
+	.apply-invoice-btn {
+		height: 48px;
+		background-color: #1A73E8;
+		border-radius: 24px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.apply-btn-text {
+		font-size: 16px;
+		color: #FFFFFF;
+		font-weight: 800;
+	}
+</style>

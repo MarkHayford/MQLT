@@ -1,0 +1,296 @@
+import { ApiEndpoints, endpointWithId } from './api-endpoints.uts'
+import { deleteApi, getApi, postApi, putApi } from './api-client.uts'
+import { completeUserAvatar, uploadFileDirect } from './upload.uts'
+
+export type UserProfile = {
+	id: string
+	nickname: string
+	phone: string
+	openId: string
+	avatarUrl: string
+	avatarTheme: number
+	gender: string
+	region: string
+	school: string
+	studyNo: string
+	realName: string
+	realNameIdCardMasked: string
+	realNameVerified: boolean
+	realNameVerifiedAt: string
+	updatedAt: string
+}
+
+export type UserCoupon = {
+	id: string
+	title: string
+	subtitle: string
+	type: string
+	value: string
+	minAmount: string
+	status: string
+	expireAt: string
+	usedAt: string
+	source: string
+	scope: string
+	productId: string
+}
+
+export type UserAvatarUploadResult = {
+	avatarUrl: string
+}
+
+function couponTextOf(value: any, fallback: string): string {
+	if (value == null) return fallback
+	const text = value.toString()
+	return text.length > 0 ? text : fallback
+}
+
+function parseCouponType(raw: string): string {
+	const t = raw.trim().toLowerCase()
+	if (t.indexOf('discount') >= 0 || t.indexOf('off') >= 0 || t.indexOf('折扣') >= 0) return 'discount'
+	if (t.indexOf('gift') >= 0 || t.indexOf('exchange') >= 0 || t.indexOf('兑换') >= 0) return 'gift'
+	return 'cash'
+}
+
+function mapUserCoupon(raw: any): UserCoupon {
+	const nested = raw != null && raw['coupon'] != null ? raw['coupon'] : raw
+	const src = nested != null ? nested : raw
+	return {
+		id: couponTextOf(src['id'] != null ? src['id'] : src['couponId'], ''),
+		title: couponTextOf(src['title'] != null ? src['title'] : src['name'], '优惠卡券'),
+		subtitle: couponTextOf(src['subtitle'] != null ? src['subtitle'] : src['description'], ''),
+		type: parseCouponType(couponTextOf(src['type'] != null ? src['type'] : src['couponType'], 'cash')),
+		value: couponTextOf(src['value'] != null ? src['value'] : src['amount'], '0'),
+		minAmount: couponTextOf(src['minAmount'] != null ? src['minAmount'] : src['threshold'], '0'),
+		status: couponTextOf(src['status'], 'unused').toLowerCase(),
+		expireAt: couponTextOf(src['expireAt'] != null ? src['expireAt'] : src['expiredAt'], ''),
+		usedAt: couponTextOf(src['usedAt'] != null ? src['usedAt'] : src['consumedAt'], ''),
+		source: couponTextOf(src['source'] != null ? src['source'] : src['from'], ''),
+		scope: couponTextOf(src['scope'] != null ? src['scope'] : src['applicable'], '文创商城'),
+		productId: couponTextOf(src['productId'], '')
+	}
+}
+
+function collectCouponRawList(raw: any): any[] {
+	if (raw == null) return []
+	if (Array.isArray(raw)) return raw as any[]
+	if (raw.items != null) return raw.items as any[]
+	if (raw.list != null) return raw.list as any[]
+	if (raw.coupons != null) return raw.coupons as any[]
+	const merged: any[] = []
+	if (raw.unused != null) {
+		const unused = raw.unused as any[]
+		for (let i = 0; i < unused.length; i++) merged.push(unused[i])
+	}
+	if (raw.used != null) {
+		const used = raw.used as any[]
+		for (let i = 0; i < used.length; i++) merged.push(used[i])
+	}
+	if (raw.expired != null) {
+		const expired = raw.expired as any[]
+		for (let i = 0; i < expired.length; i++) merged.push(expired[i])
+	}
+	return merged
+}
+
+export function couponBucket(item: UserCoupon): string {
+	const st = item.status.trim().toLowerCase()
+	if (st === 'used' || st === 'consumed' || item.usedAt.length > 0) return 'used'
+	if (st === 'expired' || st === 'invalid' || st === 'disabled') return 'expired'
+	return 'unused'
+}
+
+export function couponTypeLabel(item: UserCoupon): string {
+	if (item.type === 'discount') return '折扣'
+	if (item.type === 'gift' || item.type === 'study_prize') return '兑换'
+	return '满减'
+}
+
+export function couponFaceText(item: UserCoupon): string {
+	if (item.type === 'discount') return item.value + '折'
+	if (item.type === 'gift' || item.type === 'study_prize') return '免费兑'
+	return '¥' + item.value
+}
+
+export function couponMinText(item: UserCoupon): string {
+	const min = parseFloat(item.minAmount)
+	if (min > 0) return '满' + item.minAmount + '元可用'
+	return '无门槛'
+}
+
+export function couponDiscountYuan(item: UserCoupon, goodsAmount: number): number {
+	if (couponBucket(item) !== 'unused') return 0
+	const min = parseFloat(item.minAmount)
+	const need = min > 0 ? min : 0
+	if (goodsAmount + 0.0001 < need) return 0
+	if (item.type === 'gift' || item.type === 'study_prize') {
+		if (item.productId.length > 0) return goodsAmount
+		return goodsAmount
+	}
+	if (item.type === 'discount') {
+		let rate = parseFloat(item.value)
+		if (rate > 10) rate = rate / 10
+		if (rate <= 0 || rate >= 10) return 0
+		const pay = goodsAmount * (rate / 10)
+		const disc = goodsAmount - pay
+		return disc > 0 ? Math.floor(disc * 100) / 100 : 0
+	}
+	const cash = parseFloat(item.value)
+	if (cash <= 0) return 0
+	return cash > goodsAmount ? goodsAmount : Math.floor(cash * 100) / 100
+}
+
+export function countUnusedCoupons(list: UserCoupon[]): number {
+	let n = 0
+	for (let i = 0; i < list.length; i++) {
+		if (couponBucket(list[i]) === 'unused') n++
+	}
+	return n
+}
+
+export function fetchUserCoupons(): Promise<UserCoupon[]> {
+	return getApi<any>(ApiEndpoints.userCoupons, true).then((raw) => {
+		const list = collectCouponRawList(raw)
+		const out: UserCoupon[] = []
+		for (let i = 0; i < list.length; i++) {
+			const item = mapUserCoupon(list[i])
+			if (item.id.length > 0) out.push(item)
+		}
+		return out
+	})
+}
+
+export function displayUserName(profile: UserProfile | null): string {
+	if (profile == null) return '研学用户'
+	const real = profile.realName != null ? profile.realName.toString().trim() : ''
+	if (real.length > 0) return real
+	return '研学用户'
+}
+
+export function fetchUserProfile(): Promise<UserProfile> {
+	return getApi<UserProfile>(ApiEndpoints.userProfile, true)
+}
+
+export function updateUserProfile(data: any): Promise<UserProfile> {
+	return putApi<UserProfile>(ApiEndpoints.userProfile, data, true)
+}
+
+export function saveUserRealName(data: any): Promise<UserProfile> {
+	return putApi<UserProfile>(ApiEndpoints.userRealName, data, true)
+}
+
+export function uploadUserAvatar(filePath: string): Promise<UserAvatarUploadResult> {
+	return uploadFileDirect('avatar', filePath).then((uploaded) => {
+		return completeUserAvatar(uploaded.publicUrl).then((ret: any) => {
+			const result: UserAvatarUploadResult = {
+				avatarUrl: ret != null && ret.avatarUrl != null ? ret.avatarUrl.toString() : uploaded.publicUrl
+			}
+			return result
+		})
+	})
+}
+
+export function fetchTravelers<T>(): Promise<T[]> {
+	return getApi<T[]>(ApiEndpoints.userTravelers, true)
+}
+
+export function createTraveler<T>(data: any): Promise<T> {
+	return postApi<T>(ApiEndpoints.userTravelers, data, true)
+}
+
+export function updateTraveler<T>(id: string, data: any): Promise<T> {
+	return putApi<T>(ApiEndpoints.userTravelers + '/' + id, data, true)
+}
+
+export function deleteTraveler(id: string): Promise<any> {
+	return postApi<any>(endpointWithId(ApiEndpoints.userTravelerDelete, id), {}, true)
+}
+
+export function fetchAddresses<T>(): Promise<T[]> {
+	return getApi<T[]>(ApiEndpoints.userAddresses, true)
+}
+
+export function createAddress<T>(data: any): Promise<T> {
+	return postApi<T>(ApiEndpoints.userAddresses, data, true)
+}
+
+export function updateAddress<T>(id: string, data: any): Promise<T> {
+	return putApi<T>(ApiEndpoints.userAddresses + '/' + id, data, true)
+}
+
+export function deleteAddress(id: string): Promise<any> {
+	return postApi<any>(endpointWithId(ApiEndpoints.userAddressDelete, id), {}, true)
+}
+
+export function fetchInvoiceTitles<T>(): Promise<T[]> {
+	return getApi<T[]>(ApiEndpoints.userInvoiceTitles, true)
+}
+
+export function createInvoiceTitle<T>(data: any): Promise<T> {
+	return postApi<T>(ApiEndpoints.userInvoiceTitles, data, true)
+}
+
+export function updateInvoiceTitle<T>(id: string, data: any): Promise<T> {
+	return putApi<T>(ApiEndpoints.userInvoiceTitles + '/' + id, data, true)
+}
+
+export function deleteInvoiceTitle(id: string): Promise<any> {
+	return deleteApi<any>(ApiEndpoints.userInvoiceTitles + '/' + id, true)
+}
+
+export function fetchEligibleInvoiceOrders<T>(): Promise<T[]> {
+	return getApi<T[]>(ApiEndpoints.userInvoicesEligible, true)
+}
+
+export function fetchInvoiceRequests<T>(): Promise<T[]> {
+	return getApi<T[]>(ApiEndpoints.userInvoices, true)
+}
+
+export function fetchInvoiceRequestDetail<T>(id: string): Promise<T> {
+	return getApi<T>(ApiEndpoints.userInvoices + '/' + id, true)
+}
+
+export function submitInvoiceRequest<T>(data: any): Promise<T> {
+	return postApi<T>(ApiEndpoints.userInvoices, data, true)
+}
+
+
+export function submitFeedback<T>(data: any): Promise<T> {
+	return postApi<T>(ApiEndpoints.feedback, data, true)
+}
+
+export function fetchMyFeedback<T>(): Promise<T[]> {
+	return getApi<T[]>(ApiEndpoints.feedbackList, true)
+}
+
+export function deleteFeedback(id: string): Promise<any> {
+	return deleteApi<any>(ApiEndpoints.feedback + '/' + id, true)
+}
+
+export function fetchMallOrders<T>(status: string = 'all'): Promise<T[]> {
+	return getApi<T[]>(ApiEndpoints.mallOrders + '?status=' + status, true)
+}
+
+export function fetchMallOrderDetail<T>(id: string): Promise<T> {
+	return getApi<T>(ApiEndpoints.mallOrders + '/' + id, true)
+}
+
+export function createMallOrder<T>(data: any): Promise<T> {
+	return postApi<T>(ApiEndpoints.mallOrders, data, true)
+}
+
+export function payMallOrder<T>(id: string, data: any = {}): Promise<T> {
+	return postApi<T>(ApiEndpoints.mallOrders + '/' + id + '/pay', data, true)
+}
+
+export function completeMallOrder<T>(id: string): Promise<T> {
+	return postApi<T>(ApiEndpoints.mallOrders + '/' + id + '/complete', {}, true)
+}
+
+export function cancelMallOrder<T>(id: string): Promise<T> {
+	return postApi<T>(ApiEndpoints.mallOrders + '/' + id + '/cancel', {}, true)
+}
+
+export function deleteMallOrder(id: string): Promise<any> {
+	return postApi<any>(ApiEndpoints.mallOrders + '/' + id + '/delete', {}, true)
+}

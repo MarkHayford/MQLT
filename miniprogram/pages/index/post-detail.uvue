@@ -1,0 +1,603 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav uni-row">
+			<view class="nav-back uni-row" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">详情</text>
+			<view class="nav-space"></view>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" :show-scrollbar="false">
+			<view v-if="post != null" class="inner">
+				<view class="meta uni-row">
+					<view class="tag" :style="'background-color:' + tagColor">
+						<text class="tag-txt">{{ getChannelLabel(post.channel, post.type) }}</text>
+					</view>
+					<text class="time">{{ post.time }}</text>
+				</view>
+				<view v-if="post.status === 'pending' || post.status === 'private' || post.status === 'draft'" class="status-banner">
+					<text class="status-banner-txt">{{ ownerStatusHint }}</text>
+				</view>
+				<rich-text v-if="titleRich.length > 0" class="title" :nodes="titleRich"></rich-text>
+				<text v-else class="title">{{ post.title }}</text>
+				<view v-if="displayTags.length > 0" class="topic-row uni-row">
+					<view v-for="(tag, ti) in displayTags" :key="'dt-'+tag" class="topic-chip" :style="'background-color:' + getPostTagColor(tag)">
+						<text class="topic-chip-txt">#{{ tag }}</text>
+					</view>
+				</view>
+				<view v-if="coverIsTpl" class="cover-hero">
+					<note-text-cover :tpl="coverTplId" :title="post.title" :hl="coverTplHl" size="hero"></note-text-cover>
+				</view>
+				<view class="author uni-row">
+					<image v-if="post.authorAvatar.length > 0" :src="post.authorAvatar" class="avatar" mode="aspectFill"></image>
+					<view v-else class="avatar-ph"></view>
+					<text class="author-name">{{ post.authorName }}</text>
+				</view>
+
+				<view v-if="!contentIsHtml">
+					<image v-for="(img, i) in fileImages" :key="'pimg-'+i" :src="img" class="content-img" mode="widthFix"></image>
+					<text v-for="(para, pi) in post.paragraphs" :key="'para-'+pi" class="para">{{ para }}</text>
+				</view>
+				<view v-else>
+					<image v-for="(img, ei) in extraCoverImages" :key="'ec-'+ei" :src="img" class="content-img" mode="widthFix"></image>
+					<rich-text class="rich" :nodes="displayHtml"></rich-text>
+				</view>
+
+				<view v-for="(clip, vi) in playVideos" :key="'pv-'+vi" class="video-wrap">
+					<video class="play-video" :src="clip.url" :poster="clip.thumb" controls object-fit="contain"></video>
+				</view>
+
+				<view v-for="(lk, li) in pageLinks" :key="'pl-'+li" class="link-card" @click="openLink(lk.url)">
+					<text class="link-kicker">{{ lk.title }}</text>
+					<text class="link-url">{{ lk.url }}</text>
+					<text class="link-action">复制链接，去微信打开</text>
+				</view>
+
+				<view v-if="post.projectId.length > 0" class="proj-card uni-row" @click="goProject">
+					<view class="proj-copy uni-column">
+						<text class="proj-kicker">关联研学项目</text>
+						<text class="proj-name">{{ post.projectTitle }}</text>
+					</view>
+					<text class="proj-go">查看 ›</text>
+				</view>
+
+				<view class="cmt-head uni-row">
+					<text class="cmt-title">交流 {{ post.comments.length }}</text>
+				</view>
+				<view v-for="c in post.comments" :key="c.id" class="cmt">
+					<text class="cmt-name">{{ c.authorName }}</text>
+					<text class="cmt-body">{{ c.content }}</text>
+					<text class="cmt-time">{{ c.time }}</text>
+				</view>
+				<view v-if="post.comments.length === 0" class="cmt-empty">
+					<text class="cmt-empty-txt">还没有评论，来聊聊这次研学</text>
+				</view>
+				<view class="safe"></view>
+			</view>
+		</scroll-view>
+
+		<view v-if="post != null" class="bar uni-row" style="background-color:#FFFFFF;border-width:0;border-top-width:1px;border-top-style:solid;border-top-color:#E5E7EB;">
+			<view v-if="post.isOwner" class="more-btn" @click="openOwnerMenu">
+				<text class="more-txt">···</text>
+			</view>
+			<input class="cmt-input" style="background-color:#E8EEF8;border-width:1px;border-style:solid;border-color:#C5D0E0;color:#1A1A1A;" type="text" placeholder="说两句研学感受…" placeholder-style="color:#9CA3AF;" v-model="commentText" confirm-type="send" @confirm="sendComment" />
+			<view class="like-btn" @click="toggleLike">
+				<text class="like-txt">{{ post.liked ? '♥' : '♡' }} {{ post.likeCount }}</text>
+			</view>
+		</view>
+
+		<view v-if="ownerMenuOpen" class="sheet-mask" @click="closeOwnerMenu">
+			<view class="sheet" @click.stop="keepSheet">
+				<view v-for="(name, ni) in ownerMenuItems" :key="'om-'+name" class="sheet-row" @click="onOwnerMenuPick(name)">
+					<text :class="name === '删除' ? 'sheet-row-txt sheet-row-danger' : 'sheet-row-txt'">{{ name }}</text>
+				</view>
+				<view class="sheet-gap"></view>
+				<view class="sheet-row" @click="closeOwnerMenu">
+					<text class="sheet-row-txt">取消</text>
+				</view>
+			</view>
+		</view>
+		<view v-if="confirmKind.length > 0" class="sheet-mask" @click="closeConfirm">
+			<view class="sheet" @click.stop="keepSheet">
+				<text class="sheet-title">{{ confirmTitle }}</text>
+				<text class="sheet-desc">{{ confirmDesc }}</text>
+				<view class="sheet-row" @click="runConfirm">
+					<text class="sheet-row-txt sheet-row-danger">{{ confirmOk }}</text>
+				</view>
+				<view class="sheet-gap"></view>
+				<view class="sheet-row" @click="closeConfirm">
+					<text class="sheet-row-txt">取消</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { getAuthToken } from '../../utils/api-client.uts'
+	import { promptLoginThenGoMine } from '../../utils/app-nav.uts'
+	import { addCommunityComment, coverTplHlOf, coverTplIdOf, deleteCommunityPost, fetchCommunityPostDetail, getChannelLabel, getChannelTagColor, getPostTagColor, isHttpCoverUrl, likeCommunityPost, privateCommunityPost, submitCommunityPost, type CommunityPostDetail } from '../../utils/community.uts'
+	import { extractImgSrcs, guessLinkTitle, isHtmlContent, isVideoFileUrl, parseBodyLinks, parseBodyVideos, parseTitleHtml, stripBodyExtras, type BodyLink, type BodyVideo } from '../../utils/html-content.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const post = ref<CommunityPostDetail | null>(null)
+	const commentText = ref('')
+	const postId = ref('')
+	const ownerMenuOpen = ref(false)
+	const confirmKind = ref('')
+	const confirmTitle = ref('')
+	const confirmDesc = ref('')
+	const confirmOk = ref('确定')
+
+	const tagColor = computed((): string => {
+		const p = post.value
+		if (p == null) return '#1A1A1A'
+		return getChannelTagColor(p.channel)
+	})
+
+	const coverIsTpl = computed((): boolean => {
+		const p = post.value
+		if (p == null) return false
+		if (isHttpCoverUrl(p.coverUrl)) return false
+		return true
+	})
+
+	const coverTplId = computed((): string => {
+		const p = post.value
+		if (p == null) return 'sticky'
+		return coverTplIdOf(p.coverUrl)
+	})
+
+	const coverTplHl = computed((): string => {
+		const p = post.value
+		if (p == null) return ''
+		return coverTplHlOf(p.coverUrl)
+	})
+
+	const ownerStatusHint = computed((): string => {
+		const p = post.value
+		if (p == null) return ''
+		if (p.status === 'pending') return '审核中，通过后会出现在资讯页'
+		if (p.status === 'private') return '仅自己可见'
+		if (p.status === 'draft') return '草稿未发布'
+		return ''
+	})
+
+	const displayTags = computed((): string[] => {
+		const p = post.value
+		if (p == null) return []
+		if (p.tags.length > 0) return p.tags
+		const label = getChannelLabel(p.channel, p.type)
+		if (label.length === 0) return []
+		const one: string[] = []
+		one.push(label)
+		return one
+	})
+
+	const titleRich = computed((): string => {
+		const p = post.value
+		if (p == null) return ''
+		const marked = parseTitleHtml(p.content)
+		if (marked.length > 0) return marked
+		if (p.title.indexOf('<') >= 0 && isHtmlContent(p.title)) return p.title
+		return ''
+	})
+
+	const contentIsHtml = computed((): boolean => {
+		const p = post.value
+		if (p == null) return false
+		return isHtmlContent(stripBodyExtras(p.content))
+	})
+
+	const displayHtml = computed((): string => {
+		const p = post.value
+		if (p == null) return ''
+		return stripBodyExtras(p.content)
+	})
+
+	const fileImages = computed((): string[] => {
+		const p = post.value
+		if (p == null) return []
+		const out: string[] = []
+		for (let i = 0; i < p.images.length; i++) {
+			if (!isVideoFileUrl(p.images[i])) out.push(p.images[i])
+		}
+		return out
+	})
+
+	const extraCoverImages = computed((): string[] => {
+		const p = post.value
+		if (p == null) return []
+		if (!isHtmlContent(stripBodyExtras(p.content))) return []
+		const inline = extractImgSrcs(stripBodyExtras(p.content))
+		const out: string[] = []
+		const imgs = fileImages.value
+		for (let i = 0; i < imgs.length; i++) {
+			const url = imgs[i]
+			let dup = false
+			for (let j = 0; j < inline.length; j++) {
+				if (inline[j] === url) {
+					dup = true
+					break
+				}
+			}
+			if (!dup) out.push(url)
+		}
+		return out
+	})
+
+	const playVideos = computed((): BodyVideo[] => {
+		const p = post.value
+		if (p == null) return []
+		const out: BodyVideo[] = []
+		const seen: string[] = []
+		const add = (url: string, thumb: string) => {
+			if (url.length === 0) return
+			for (let i = 0; i < seen.length; i++) {
+				if (seen[i] === url) return
+			}
+			seen.push(url)
+			const item: BodyVideo = { url: url, thumb: thumb }
+			out.push(item)
+		}
+		for (let i = 0; i < p.images.length; i++) {
+			if (isVideoFileUrl(p.images[i])) add(p.images[i], isHttpCoverUrl(p.coverUrl) ? p.coverUrl : '')
+		}
+		const marked = parseBodyVideos(p.content)
+		for (let i = 0; i < marked.length; i++) add(marked[i].url, marked[i].thumb)
+		if (isVideoFileUrl(p.videoUrl)) add(p.videoUrl, isHttpCoverUrl(p.coverUrl) ? p.coverUrl : '')
+		return out
+	})
+
+	const pageLinks = computed((): BodyLink[] => {
+		const p = post.value
+		if (p == null) return []
+		const out: BodyLink[] = []
+		const seen: string[] = []
+		const add = (url: string, title: string) => {
+			if (url.length === 0 || isVideoFileUrl(url)) return
+			for (let i = 0; i < seen.length; i++) {
+				if (seen[i] === url) return
+			}
+			seen.push(url)
+			const item: BodyLink = { url: url, title: title.length > 0 ? title : guessLinkTitle(url) }
+			out.push(item)
+		}
+		const marked = parseBodyLinks(p.content)
+		for (let i = 0; i < marked.length; i++) add(marked[i].url, marked[i].title)
+		add(p.videoUrl, guessLinkTitle(p.videoUrl))
+		return out
+	})
+
+	const load = (id: string) => {
+		fetchCommunityPostDetail(id).then((d) => {
+			post.value = d
+		}).catch((_e) => {
+			post.value = null
+			uni.showToast({ title: '内容加载失败', icon: 'none' })
+		})
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const goProject = () => {
+		const p = post.value
+		if (p == null || p.projectId.length === 0) return
+		uni.navigateTo({ url: '/pages/appointment/project-detail?id=' + p.projectId })
+	}
+
+	const openLink = (url: string) => {
+		if (url.length === 0) return
+		uni.setClipboardData({
+			data: url,
+			success: () => {
+				uni.showToast({ title: '链接已复制，去微信打开', icon: 'none' })
+			}
+		})
+	}
+
+	const ensureLogin = (): boolean => {
+		if (getAuthToken().length > 0) return true
+		promptLoginThenGoMine()
+		return false
+	}
+
+	const toggleLike = () => {
+		if (!ensureLogin()) return
+		const id = postId.value
+		likeCommunityPost(id).then((r) => {
+			const p = post.value
+			if (p == null) return
+			p.liked = r.liked
+			p.likeCount = r.likeCount
+			post.value = p
+		}).catch((_e) => {
+			uni.showToast({ title: '操作失败', icon: 'none' })
+		})
+	}
+
+	const ownerMenuItems = computed((): string[] => {
+		const p = post.value
+		const items: string[] = []
+		if (p == null || !p.isOwner) return items
+		items.push('修改')
+		if (p.status === 'private') items.push('提交审核')
+		else items.push('设为私密')
+		items.push('删除')
+		return items
+	})
+
+	const keepSheet = () => {}
+
+	const closeOwnerMenu = () => {
+		ownerMenuOpen.value = false
+	}
+
+	const closeConfirm = () => {
+		confirmKind.value = ''
+	}
+
+	const openOwnerMenu = () => {
+		const p = post.value
+		if (p == null || !p.isOwner) return
+		ownerMenuOpen.value = true
+	}
+
+	const onOwnerMenuPick = (name: string) => {
+		closeOwnerMenu()
+		if (name === '修改') {
+			uni.navigateTo({ url: '/pages/index/post-compose?id=' + encodeURIComponent(postId.value) })
+			return
+		}
+		if (name === '提交审核') {
+			submitCommunityPost(postId.value).then((_d) => {
+				uni.showToast({ title: '已提交审核', icon: 'success' })
+				load(postId.value)
+			}).catch((_e) => {
+				uni.showToast({ title: '提交失败', icon: 'none' })
+			})
+			return
+		}
+		if (name === '设为私密') {
+			confirmKind.value = 'private'
+			confirmTitle.value = '设为私密'
+			confirmDesc.value = '资讯页其他人将看不到这篇文章'
+			confirmOk.value = '设为私密'
+			return
+		}
+		if (name === '删除') {
+			confirmKind.value = 'delete'
+			confirmTitle.value = '删除文章'
+			confirmDesc.value = '删除后无法恢复'
+			confirmOk.value = '删除'
+		}
+	}
+
+	const runConfirm = () => {
+		const kind = confirmKind.value
+		closeConfirm()
+		if (kind === 'private') {
+			privateCommunityPost(postId.value).then((_d) => {
+				uni.showToast({ title: '已设为私密', icon: 'success' })
+				load(postId.value)
+			}).catch((_e) => {
+				uni.showToast({ title: '操作失败', icon: 'none' })
+			})
+			return
+		}
+		if (kind === 'delete') {
+			deleteCommunityPost(postId.value).then(() => {
+				uni.showToast({ title: '已删除', icon: 'success' })
+				setTimeout(() => {
+					uni.navigateBack()
+				}, 400)
+			}).catch((_e) => {
+				uni.showToast({ title: '删除失败', icon: 'none' })
+			})
+		}
+	}
+
+	const sendComment = () => {
+		if (!ensureLogin()) return
+		const text = commentText.value.trim()
+		if (text.length === 0) return
+		addCommunityComment(postId.value, text).then((list) => {
+			const p = post.value
+			if (p == null) return
+			p.comments = list
+			p.commentCount = list.length
+			post.value = p
+			commentText.value = ''
+		}).catch((err) => {
+			const msg = err != null && err.message != null ? err.message.toString() : '评论失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const idParam = options['id']
+		const id = idParam != null ? idParam.toString() : ''
+		postId.value = id
+		if (id.length > 0) load(id)
+	})
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #FFFFFF; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav { background-color: #FFFFFF; border-width: 0; border-color: #FFFFFF; height: 44px; align-items: center; padding: 0 12px; }
+	.nav-back { align-items: center; width: 72px; }
+	.nav-back-icon { width: 18px; height: 18px; }
+	.nav-back-text { font-size: 15px; color: #1A1A1A; margin-left: 2px; }
+	.nav-title { flex: 1; text-align: center; font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.nav-space { width: 72px; }
+	.body { flex: 1; width: 100%; }
+	.inner { padding: 12px 16px 20px 16px; }
+	.meta { align-items: center; justify-content: space-between; margin-bottom: 10px; }
+	.tag { padding: 2px 8px; border-radius: 6px; }
+	.tag-txt { font-size: 11px; font-weight: 800; color: #FFFFFF; }
+	.time { font-size: 12px; color: #9CA3AF; }
+	.status-banner {
+		padding: 8px 10px;
+		border-radius: 10px;
+		background-color: #F5F7FB;
+		margin-bottom: 10px;
+	}
+	.status-banner-txt { font-size: 12px; font-weight: 700; color: #1A73E8; }
+	.title { font-size: 22px; font-weight: 800; color: #1A1A1A; line-height: 30px; margin-bottom: 8px; }
+	.topic-row { flex-wrap: wrap; margin-bottom: 12px; }
+	.topic-chip { padding: 2px 8px; border-radius: 6px; margin-right: 6px; margin-bottom: 6px; }
+	.topic-chip-txt { font-size: 11px; font-weight: 800; color: #FFFFFF; }
+	.cover-hero {
+		margin-bottom: 16px;
+		border-radius: 16px;
+		overflow: hidden;
+	}
+	.author { align-items: center; margin-bottom: 14px; }
+	.avatar, .avatar-ph { width: 28px; height: 28px; border-radius: 14px; margin-right: 8px; }
+	.avatar-ph { background-color: #E5E7EB; }
+	.author-name { font-size: 13px; font-weight: 700; color: #374151; }
+	.content-img { width: 100%; border-radius: 12px; margin-bottom: 10px;
+		min-height: 1px;
+	}
+	.rich { width: 100%; margin-bottom: 12px; }
+	.para { font-size: 15px; color: #374151; line-height: 24px; margin-bottom: 10px; }
+	.video-wrap {
+		width: 100%;
+		margin-bottom: 12px;
+		border-radius: 12px;
+		overflow: hidden;
+		background-color: #1A73E8;
+	}
+	.play-video { width: 100%; height: 200px; }
+	.link-card {
+		padding: 12px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+		margin: 8px 0 14px 0;
+	}
+	.link-kicker { font-size: 11px; font-weight: 800; color: #1A73E8; margin-bottom: 4px; }
+	.link-url { font-size: 12px; color: #374151; lines: 2; overflow: hidden; margin-bottom: 6px; }
+	.link-action { font-size: 13px; font-weight: 700; color: #1A1A1A; }
+	.proj-card {
+		padding: 12px;
+		border-radius: 12px;
+		background-color: #1A73E8;
+		align-items: center;
+		margin-bottom: 18px;
+	}
+	.proj-copy { flex: 1; }
+	.proj-kicker { font-size: 11px; color: #1A73E8; margin-bottom: 4px; }
+	.proj-name { font-size: 14px; font-weight: 800; color: #FFFFFF; }
+	.proj-go { font-size: 13px; color: #1A73E8; font-weight: 700; }
+	.cmt-head { margin-bottom: 8px; }
+	.cmt-title { font-size: 15px; font-weight: 800; color: #1A1A1A; }
+	.cmt { padding: 10px 0; border-bottom-width: 0.5px; border-bottom-color: #E5E7EB; }
+	.cmt-name { font-size: 12px; font-weight: 700; color: #1A1A1A; margin-bottom: 4px; }
+	.cmt-body { font-size: 14px; color: #374151; line-height: 20px; }
+	.cmt-time { font-size: 11px; color: #9CA3AF; margin-top: 4px; }
+	.cmt-empty { padding: 12px 0; }
+	.cmt-empty-txt { font-size: 13px; color: #9CA3AF; }
+	.safe { height: 80px; }
+	.bar {
+		width: 100%;
+		padding: 8px 12px 16px 12px;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+	}
+	.bar view,
+	.bar input,
+	.bar text {
+		border-width: 0;
+	}
+	.more-btn {
+		width: 36px;
+		height: 36px;
+		border-radius: 18px;
+		background-color: #FFFFFF;
+		border-width: 0;
+		align-items: center;
+		justify-content: center;
+		margin-right: 8px;
+	}
+	.more-txt {
+		font-size: 18px;
+		font-weight: 800;
+		color: #1A1A1A;
+		letter-spacing: 1px;
+	}
+	.sheet-mask {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(32, 33, 36, 0.35);
+		flex-direction: column;
+		justify-content: flex-end;
+		z-index: 40;
+	}
+	.sheet {
+		background-color: #FFFFFF;
+		padding: 10px 12px 18px 12px;
+		border-top-left-radius: 18px;
+		border-top-right-radius: 18px;
+	}
+	.sheet-title {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+		text-align: center;
+		margin: 8px 0 6px 0;
+	}
+	.sheet-desc {
+		font-size: 13px;
+		color: #374151;
+		text-align: center;
+		margin-bottom: 12px;
+		padding: 0 12px;
+	}
+	.sheet-row {
+		height: 48px;
+		align-items: center;
+		justify-content: center;
+		background-color: #F5F7FB;
+		border-radius: 12px;
+		margin-bottom: 8px;
+	}
+	.sheet-row-txt {
+		font-size: 16px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.sheet-row-danger { color: #DC2626; }
+	.sheet-gap { height: 6px; }
+	.cmt-input {
+		flex: 1;
+		height: 36px;
+		border-radius: 18px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		padding: 0 14px;
+		font-size: 14px;
+		color: #1A1A1A;
+		margin-right: 8px;
+	
+}
+	.like-btn { padding: 0 8px; }
+	.like-txt { font-size: 14px; font-weight: 800; color: #1A73E8; }
+</style>

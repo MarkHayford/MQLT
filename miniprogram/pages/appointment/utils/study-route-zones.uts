@@ -1,0 +1,322 @@
+/** 研学路线点位（项目路径目录） */
+
+export type StudyRouteSection = {
+	key: string
+	title: string
+	html: string
+}
+
+export type StudyRouteZoneSpot = {
+	id: string
+	title: string
+	desc: string
+	latitude: number
+	longitude: number
+	sortOrder: number
+	zoneKey: string
+	zoneLabel: string
+	durationMin: number
+	durationText: string
+	intro: string
+	guideLines: string[]
+	gameLines: string[]
+	gifts: string[]
+	audience: string
+	sections: StudyRouteSection[]
+	photoCaption: string
+	coverIcon: string
+	coverStyle: string
+}
+
+export type StudyRouteZoneFilter = {
+	key: string
+	label: string
+}
+
+export const STUDY_ROUTE_ZONE_FILTERS: StudyRouteZoneFilter[] = [
+	{ key: 'all', label: '全部' }
+]
+
+export function studyRouteZoneLabelOf(key: string): string {
+	if (key === 'all') return '全部'
+	if (key === 'test') return '测试分类'
+	return key
+}
+
+function textOf(v: any, fallback: string): string {
+	if (v == null) return fallback
+	const s = v.toString().trim()
+	return s.length > 0 ? s : fallback
+}
+
+function numOf(v: any, fallback: number): number {
+	const n = Number(v)
+	if (n != n) return fallback
+	return n
+}
+
+function linesOf(v: any): string[] {
+	const out: string[] = []
+	if (v == null) return out
+	if (Array.isArray(v)) {
+		for (let i = 0; i < v.length; i++) {
+			const s = v[i] != null ? v[i].toString().trim() : ''
+			if (s.length > 0) out.push(s)
+		}
+		return out
+	}
+	const parts = v.toString().split('\n')
+	for (let i = 0; i < parts.length; i++) {
+		const s = parts[i].trim()
+		if (s.length > 0) out.push(s)
+	}
+	return out
+}
+
+export function parseStudyRouteSpot(raw: any): StudyRouteZoneSpot | null {
+	if (raw == null) return null
+	const id = textOf(raw['id'], '')
+	if (id.length === 0) return null
+	const durationMin = numOf(raw['durationMin'], 20)
+	let durationText = textOf(raw['durationText'], '')
+	if (durationText.length === 0) durationText = '约 ' + durationMin.toString() + ' 分钟'
+	const coverUrl = textOf(raw['coverUrl'], '')
+	let coverStyle = textOf(raw['coverStyle'], '')
+	if (coverStyle.length === 0) {
+		if (coverUrl.length > 0) coverStyle = 'background-image:url(' + coverUrl + ');background-size:cover;background-position:center;'
+		else coverStyle = 'background-image: linear-gradient(145deg, #1A1A1A 0%, #1A73E8 100%);'
+	}
+	const intro = textOf(raw['intro'], textOf(raw['desc'] != null ? raw['desc'] : raw['description'], ''))
+	const guideLines = linesOf(raw['guideLines'])
+	const gameLines = linesOf(raw['gameLines'])
+	const gifts = linesOf(raw['gifts'])
+	const audience = textOf(raw['audience'], '')
+	const spot: StudyRouteZoneSpot = {
+		id: id,
+		title: textOf(raw['title'], '研学点位'),
+		desc: textOf(raw['desc'] != null ? raw['desc'] : raw['description'], ''),
+		latitude: numOf(raw['latitude'], 40.509204),
+		longitude: numOf(raw['longitude'], 111.826493),
+		sortOrder: numOf(raw['sortOrder'], 0),
+		zoneKey: textOf(raw['zoneKey'], 'test'),
+		zoneLabel: textOf(raw['zoneLabel'], '测试分类'),
+		durationMin: durationMin,
+		durationText: durationText,
+		intro: intro,
+		guideLines: guideLines,
+		gameLines: gameLines,
+		gifts: gifts,
+		audience: audience,
+		sections: parseRouteSections(raw['sections'], intro, guideLines, gameLines, gifts, audience),
+		photoCaption: textOf(raw['photoCaption'], textOf(raw['title'], '')),
+		coverIcon: textOf(raw['coverIcon'], '/static/icon-building.svg'),
+		coverStyle: coverStyle
+	}
+	return spot
+}
+
+function wrapPlainHtml(s: string): string {
+	const t = s.trim()
+	if (t.length === 0) return ''
+	if (t.indexOf('<') >= 0 && (t.indexOf('<p') >= 0 || t.indexOf('<ul') >= 0 || t.indexOf('<div') >= 0 || t.indexOf('<img') >= 0)) return t
+	return '<p>' + t + '</p>'
+}
+
+function wrapLinesHtml(lines: string[]): string {
+	if (lines.length === 0) return ''
+	let html = '<ul>'
+	for (let i = 0; i < lines.length; i++) html = html + '<li>' + lines[i] + '</li>'
+	return html + '</ul>'
+}
+
+function headingStart(html: string, title: string): number {
+	const needle = '>' + title + '<'
+	const i = html.indexOf(needle)
+	if (i < 0) return -1
+	let start = i
+	while (start > 0 && html.charAt(start) != '<') start--
+	if (start > 0) {
+		let p = start - 1
+		while (p > 0 && html.charAt(p) != '<') p--
+		if (html.substring(p, p + 2).toLowerCase() == '<p') start = p
+	}
+	return start
+}
+
+function headingEnd(html: string, start: number, title: string): number {
+	const i = html.indexOf(title, start)
+	if (i < 0) return start
+	const from = i + title.length
+	const strongEnd = html.indexOf('</strong>', from)
+	const bEnd = html.indexOf('</b>', from)
+	let inner = from
+	if (strongEnd >= 0 && (bEnd < 0 || strongEnd <= bEnd)) inner = strongEnd + 9
+	else if (bEnd >= 0) inner = bEnd + 4
+	const pEnd = html.indexOf('</p>', inner)
+	if (pEnd >= 0 && pEnd - inner <= 10) return pEnd + 4
+	return inner
+}
+
+function splitMergedRouteHtml(html: string): StudyRouteSection[] {
+	const titles: string[] = ['区域介绍', '讲解内容', '互动游戏', '研学礼品', '适合人群']
+	const keys: string[] = ['intro', 'guide', 'game', 'gift', 'audience']
+	const foundKey: string[] = []
+	const foundTitle: string[] = []
+	const foundStart: number[] = []
+	const foundEnd: number[] = []
+	for (let i = 0; i < titles.length; i++) {
+		const s = headingStart(html, titles[i])
+		if (s < 0) continue
+		foundKey.push(keys[i])
+		foundTitle.push(titles[i])
+		foundStart.push(s)
+		foundEnd.push(headingEnd(html, s, titles[i]))
+	}
+	if (foundStart.length == 0) return []
+	for (let a = 0; a < foundStart.length; a++) {
+		for (let b = a + 1; b < foundStart.length; b++) {
+			if (foundStart[b] < foundStart[a]) {
+				const ks = foundKey[a]; foundKey[a] = foundKey[b]; foundKey[b] = ks
+				const ts = foundTitle[a]; foundTitle[a] = foundTitle[b]; foundTitle[b] = ts
+				const ss = foundStart[a]; foundStart[a] = foundStart[b]; foundStart[b] = ss
+				const es = foundEnd[a]; foundEnd[a] = foundEnd[b]; foundEnd[b] = es
+			}
+		}
+	}
+	const out: StudyRouteSection[] = []
+	if (foundStart[0] > 0) {
+		const before = html.substring(0, foundStart[0]).trim()
+		if (before.length > 0 && foundKey[0] != 'intro') {
+			out.push({ key: 'intro', title: '区域介绍', html: before })
+		}
+	}
+	for (let i = 0; i < foundKey.length; i++) {
+		const bodyEnd = i + 1 < foundStart.length ? foundStart[i + 1] : html.length
+		let body = html.substring(foundEnd[i], bodyEnd).trim()
+		if (body.length == 0) body = '<p></p>'
+		out.push({ key: foundKey[i], title: foundTitle[i], html: body })
+	}
+	return out
+}
+
+function padRouteSections(list: StudyRouteSection[], intro: string, guideLines: string[], gameLines: string[], gifts: string[], audience: string): StudyRouteSection[] {
+	const defsKey: string[] = ['intro', 'guide', 'game', 'gift', 'audience']
+	const defsTitle: string[] = ['区域介绍', '讲解内容', '互动游戏', '研学礼品', '适合人群']
+	const fallback: string[] = [
+		list.length > 0 ? '' : wrapPlainHtml(intro),
+		wrapLinesHtml(guideLines),
+		wrapLinesHtml(gameLines),
+		wrapLinesHtml(gifts),
+		wrapPlainHtml(audience)
+	]
+	const mapped: StudyRouteSection[] = []
+	const extras: StudyRouteSection[] = []
+	for (let i = 0; i < list.length; i++) {
+		let isDef = false
+		for (let d = 0; d < defsKey.length; d++) {
+			if (list[i].key == defsKey[d]) {
+				isDef = true
+				break
+			}
+		}
+		if (isDef) mapped.push(list[i])
+		else extras.push(list[i])
+	}
+	const out: StudyRouteSection[] = []
+	for (let d = 0; d < defsKey.length; d++) {
+		let hit: StudyRouteSection | null = null
+		for (let i = 0; i < mapped.length; i++) {
+			if (mapped[i].key == defsKey[d]) {
+				hit = mapped[i]
+				break
+			}
+		}
+		if (hit != null) out.push(hit)
+		else out.push({ key: defsKey[d], title: defsTitle[d], html: fallback[d] })
+	}
+	for (let i = 0; i < extras.length; i++) out.push(extras[i])
+	return out
+}
+
+export function parseRouteSections(raw: any, intro: string, guideLines: string[], gameLines: string[], gifts: string[], audience: string): StudyRouteSection[] {
+	const out: StudyRouteSection[] = []
+	if (Array.isArray(raw) && raw.length > 0) {
+		for (let i = 0; i < raw.length; i++) {
+			const row = raw[i]
+			if (row == null) continue
+			out.push({
+				key: textOf(row['key'], 'sec' + i.toString()),
+				title: textOf(row['title'], '段落'),
+				html: textOf(row['html'] != null ? row['html'] : row['body'], '')
+			})
+		}
+	}
+	if (out.length <= 1) {
+		const html = out.length == 1 ? out[0].html : wrapPlainHtml(intro)
+		const split = splitMergedRouteHtml(html)
+		if (split.length > 0) {
+			return padRouteSections(split, intro, guideLines, gameLines, gifts, audience)
+		}
+	}
+	if (out.length > 0) return padRouteSections(out, intro, guideLines, gameLines, gifts, audience)
+	return padRouteSections([], intro, guideLines, gameLines, gifts, audience)
+}
+
+export function routeSectionHasBody(html: string): boolean {
+	const t = html.trim()
+	if (t.length === 0) return false
+	if (t.indexOf('<img') >= 0) return true
+	let plain = ''
+	let inTag = false
+	for (let i = 0; i < t.length; i++) {
+		const ch = t.charAt(i)
+		if (ch == '<') { inTag = true; continue }
+		if (ch == '>') { inTag = false; continue }
+		if (!inTag) plain += ch
+	}
+	plain = plain.split('&nbsp;').join(' ').split('\n').join(' ').trim()
+	return plain.length > 0
+}
+
+export function parseStudyRouteSpots(raw: any): StudyRouteZoneSpot[] {
+	const out: StudyRouteZoneSpot[] = []
+	let list: any[] = []
+	if (Array.isArray(raw)) list = raw as any[]
+	else if (raw != null && Array.isArray(raw['items'])) list = raw['items'] as any[]
+	else if (raw != null && Array.isArray(raw['routePoints'])) list = raw['routePoints'] as any[]
+	for (let i = 0; i < list.length; i++) {
+		const spot = parseStudyRouteSpot(list[i])
+		if (spot != null) out.push(spot)
+	}
+	return out
+}
+
+export function parseRouteZoneFilters(raw: any): StudyRouteZoneFilter[] {
+	const out: StudyRouteZoneFilter[] = []
+	if (!Array.isArray(raw)) return out
+	for (let i = 0; i < raw.length; i++) {
+		const row = raw[i]
+		if (row == null) continue
+		const key = textOf(row['key'], '')
+		if (key.length === 0 || key === 'all') continue
+		out.push({ key: key, label: textOf(row['label'], key) })
+	}
+	return out
+}
+
+export function buildRouteZoneFilters(spots: StudyRouteZoneSpot[], extra: StudyRouteZoneFilter[]): StudyRouteZoneFilter[] {
+	const out: StudyRouteZoneFilter[] = []
+	out.push({ key: 'all', label: '全部' })
+	const seen: string[] = ['all']
+	const push = (key: string, label: string) => {
+		if (key.length === 0) return
+		for (let i = 0; i < seen.length; i++) {
+			if (seen[i] === key) return
+		}
+		seen.push(key)
+		out.push({ key: key, label: label.length > 0 ? label : key })
+	}
+	for (let i = 0; i < extra.length; i++) push(extra[i].key, extra[i].label)
+	for (let i = 0; i < spots.length; i++) push(spots[i].zoneKey, spots[i].zoneLabel)
+	return out
+}

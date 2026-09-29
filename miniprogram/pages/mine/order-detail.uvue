@@ -1,0 +1,1088 @@
+<template>
+	<view class="page-wrapper uni-column">
+		<view class="header-section uni-column">
+			<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">订单详情</text>
+			</view>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false">
+			<view class="content">
+				<view v-if="order != null" class="status-card uni-column">
+					<view class="status-card-top uni-row">
+						<view class="status-main uni-column">
+							<text class="status-title">{{ statusLabel(order.status) }}</text>
+							<text class="status-desc">{{ statusDescription(order.status) }}</text>
+						</view>
+						<view :class="['status-mark', statusMarkClass(order.status)]">
+							<text :class="['status-mark-text', statusMarkTextClass(order.status)]">{{ statusShortText(order.status) }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="order != null" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">订单进度</text>
+						<text class="section-subtitle">{{ formatTime(order.createdAt) }}</text>
+					</view>
+					<view class="progress-wrap">
+						<view class="progress-track"></view>
+						<view class="progress-row uni-row">
+							<view v-for="step in orderSteps" :key="step.key" class="progress-item uni-column">
+								<view :class="['progress-dot', step.active ? 'progress-dot-active' : '']"></view>
+								<text :class="['progress-text', step.active ? 'progress-text-active' : '']">{{ step.label }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="order != null && hasShipping(order)" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">物流信息</text>
+						<text class="section-subtitle" v-if="order.shippedAt.length > 0">{{ formatTime(order.shippedAt) }}</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">物流公司</text>
+						<text class="info-value">{{ displayText(order.shippingCompany) }}</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">物流单号</text>
+						<text class="info-value strong-value">{{ displayText(order.trackingNo) }}</text>
+					</view>
+				</view>
+
+				<view v-if="order != null" class="section uni-column" @click="chooseAddressForOrder">
+					<view class="section-head uni-row">
+						<text class="section-title">收货地址</text>
+						<text v-if="canChooseAddress(order)" class="section-action">选择地址 ›</text>
+					</view>
+					<view v-if="selectedAddress != null" class="selected-address uni-column">
+						<text class="address-name">{{ selectedAddress.receiver }} {{ maskPhone(selectedAddress.phone) }}</text>
+						<text class="address-detail">{{ selectedAddress.province }}{{ selectedAddress.city }}{{ selectedAddress.district }}{{ selectedAddress.detail }}</text>
+					</view>
+					<view v-else class="selected-address uni-column">
+						<text class="address-name">{{ order.address.receiver }} {{ maskPhone(order.address.phone) }}</text>
+						<text :class="['address-detail', hasOrderAddress(order) ? '' : 'address-empty']">{{ addressText(order) }}</text>
+					</view>
+				</view>
+
+				<view v-if="order != null" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">商品明细</text>
+						<text class="section-subtitle">共 {{ order.items.length }} 件</text>
+					</view>
+					<view v-for="(item, itemIndex) in order.items" :key="item.id" :class="['product-row', itemIndex === 0 ? 'product-row-first' : '', 'uni-row']">
+						<image :src="resolveMallProductImageUrl(item.product.imageUrl)" class="product-cover" mode="aspectFill"></image>
+						<view class="product-main uni-column">
+							<text class="product-name">{{ item.product.name }}</text>
+							<text class="product-meta">SKU {{ item.product.sku }} ×{{ item.quantity }}</text>
+						</view>
+						<view class="product-side uni-column">
+							<text class="product-price">¥{{ item.price }}</text>
+							<text v-if="order.status === 'completed' && item.product.id.length > 0" class="product-review" @click.stop="goReview(item.product.id)">评价</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="order != null" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">金额明细</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">商品金额</text>
+						<text class="info-value amount-num">¥{{ order.goodsAmount }}</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">运费</text>
+						<text class="info-value amount-num">¥0.00</text>
+					</view>
+					<view class="info-row uni-row" v-if="order.couponDiscount.length > 0 && order.couponDiscount !== '0' && order.couponDiscount !== '0.00'">
+						<text class="info-label info-label-flex">{{ order.couponTitle.length > 0 ? order.couponTitle : '卡券抵扣' }}</text>
+						<text class="discount-value amount-num">-¥{{ order.couponDiscount }}</text>
+					</view>
+					<view class="amount-line"></view>
+					<view class="info-row uni-row">
+						<text class="total-label">实付金额</text>
+						<text class="total-value amount-num">¥{{ order.amount }}</text>
+					</view>
+				</view>
+
+				<view v-if="order != null" class="section uni-column">
+					<view class="section-head uni-row">
+						<text class="section-title">订单信息</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">订单编号</text>
+						<text class="info-value">{{ order.orderNo }}</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">下单时间</text>
+						<text class="info-value">{{ formatTime(order.createdAt) }}</text>
+					</view>
+					<view class="info-row uni-row" v-if="order.paidAt.length > 0">
+						<text class="info-label">支付时间</text>
+						<text class="info-value">{{ formatTime(order.paidAt) }}</text>
+					</view>
+					<view class="info-row uni-row" v-if="order.completedAt.length > 0">
+						<text class="info-label">完成时间</text>
+						<text class="info-value">{{ formatTime(order.completedAt) }}</text>
+					</view>
+					<view class="info-row uni-row" v-if="order.cancelledAt.length > 0">
+						<text class="info-label">取消时间</text>
+						<text class="info-value">{{ formatTime(order.cancelledAt) }}</text>
+					</view>
+					<view class="remark-box" v-if="order.remark.length > 0">
+						<text class="remark-label">订单备注</text>
+						<text class="remark-text">{{ order.remark }}</text>
+					</view>
+				</view>
+
+				<view v-if="order == null && !isLoading" class="empty-state uni-column">
+					<image src="/static/icon-clipboard.svg" class="empty-icon" mode="aspectFit"></image>
+					<text class="empty-title">订单不存在</text>
+					<text class="empty-desc">订单可能已删除，请返回订单列表查看</text>
+				</view>
+
+				<view class="bottom-safe"></view>
+			</view>
+		</scroll-view>
+
+		<view v-if="order != null" class="bottom-actions uni-row">
+			<view v-if="canInvoiceOrder(order)" class="action-btn secondary-btn" @click="goInvoiceOrder">
+				<text class="secondary-btn-text">开发票</text>
+			</view>
+			<view class="action-btn secondary-btn" @click="goCustomerService">
+				<text class="secondary-btn-text">联系客服</text>
+			</view>
+			<view v-if="order.status === 'unpaid' && !isPrizeOrder(order)" class="action-btn secondary-btn" @click="handleCancelOrder">
+				<text class="danger-btn-text">取消订单</text>
+			</view>
+			<view v-if="order.status === 'unpaid'" class="action-btn primary-btn" @click="handlePayOrder">
+				<text class="primary-btn-text">{{ order.amount === '0' || order.amount === '0.00' ? '确认订单' : '去付款' }}</text>
+			</view>
+			<view v-if="order.status === 'unreceived'" class="action-btn primary-btn" @click="handleCompleteOrder">
+				<text class="primary-btn-text">确认收货</text>
+			</view>
+			<view v-if="order.status === 'completed' && firstProductId.length > 0" class="action-btn primary-btn" @click="goReview(firstProductId)">
+				<text class="primary-btn-text">评价</text>
+			</view>
+			<view v-if="canDeleteOrder(order)" class="action-btn secondary-btn" @click="handleDeleteOrder">
+				<text class="danger-btn-text">删除订单</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { resolveMallProductImageUrl } from './utils/mall-product-image.uts'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { cancelMallOrder, completeMallOrder, deleteMallOrder, fetchAddresses, fetchMallOrderDetail, payMallOrder } from '../../utils/user-services.uts'
+
+	type MallOrderAddress = {
+		id: string
+		receiver: string
+		phone: string
+		province: string
+		city: string
+		district: string
+		detail: string
+	}
+
+	type MallOrderProduct = {
+		id: string
+		name: string
+		sku: string
+		imageUrl: string
+	}
+
+	type MallOrderItem = {
+		id: string
+		quantity: number
+		price: string
+		product: MallOrderProduct
+	}
+
+	type MallOrderDetail = {
+		id: string
+		orderNo: string
+		status: string
+		goodsAmount: string
+		amount: string
+		couponTitle: string
+		couponDiscount: string
+		address: MallOrderAddress
+		remark: string
+		shippingCompany: string
+		trackingNo: string
+		shippedAt: string
+		paidAt: string
+		completedAt: string
+		cancelledAt: string
+		createdAt: string
+		updatedAt: string
+		items: MallOrderItem[]
+	}
+
+	type ProgressStep = {
+		key: string
+		label: string
+		active: boolean
+	}
+
+	type Address = {
+		id: string
+		receiver: string
+		phone: string
+		province: string
+		city: string
+		district: string
+		detail: string
+		isDefault: boolean
+	}
+
+	const statusBarHeight = getStatusBarHeight()
+	const orderId = ref('')
+	const order = ref<MallOrderDetail | null>(null)
+	const addresses = ref<Address[]>([])
+	const selectedAddress = ref<Address | null>(null)
+	const isLoading = ref(false)
+	let isSubmitting = false
+
+	const normalizeText = (value: any): string => {
+		if (value == null) return ''
+		return value.toString()
+	}
+
+	const normalizeOrder = (raw: any): MallOrderDetail => {
+		const addressRaw = raw['address'] as any
+		const rawItems = raw['items'] as any[]
+		const items: MallOrderItem[] = []
+		if (rawItems != null) {
+			for (let i = 0; i < rawItems.length; i++) {
+				const entry = rawItems[i]
+				const product = entry['product'] as any
+				items.push({
+					id: normalizeText(entry['id']),
+					quantity: Number(entry['quantity'] ?? 0),
+					price: normalizeText(entry['price']),
+					product: {
+						id: product != null ? normalizeText(product['id']) : '',
+						name: product != null ? normalizeText(product['name']) : '商城商品',
+						sku: product != null ? normalizeText(product['sku']) : '',
+						imageUrl: product != null ? normalizeText(product['imageUrl']) : ''
+					}
+				})
+			}
+		}
+		const couponRaw = raw['coupon'] as any
+		const couponTitleRaw = raw['couponTitle'] != null ? raw['couponTitle'] : (couponRaw != null ? couponRaw['title'] : '')
+		const couponDiscountRaw = raw['couponDiscount'] != null ? raw['couponDiscount'] : raw['couponAmount']
+		return {
+			id: normalizeText(raw['id']),
+			orderNo: normalizeText(raw['orderNo']),
+			status: normalizeText(raw['status']),
+			goodsAmount: normalizeText(raw['goodsAmount']),
+			amount: normalizeText(raw['amount']),
+			couponTitle: normalizeText(couponTitleRaw),
+			couponDiscount: normalizeText(couponDiscountRaw),
+			address: {
+				id: addressRaw != null ? normalizeText(addressRaw['id']) : '',
+				receiver: addressRaw != null ? normalizeText(addressRaw['receiver']) : '',
+				phone: addressRaw != null ? normalizeText(addressRaw['phone']) : '',
+				province: addressRaw != null ? normalizeText(addressRaw['province']) : '',
+				city: addressRaw != null ? normalizeText(addressRaw['city']) : '',
+				district: addressRaw != null ? normalizeText(addressRaw['district']) : '',
+				detail: addressRaw != null ? normalizeText(addressRaw['detail']) : ''
+			},
+			remark: normalizeText(raw['remark']),
+			shippingCompany: normalizeText(raw['shippingCompany']),
+			trackingNo: normalizeText(raw['trackingNo']),
+			shippedAt: normalizeText(raw['shippedAt']),
+			paidAt: normalizeText(raw['paidAt']),
+			completedAt: normalizeText(raw['completedAt']),
+			cancelledAt: normalizeText(raw['cancelledAt']),
+			createdAt: normalizeText(raw['createdAt']),
+			updatedAt: normalizeText(raw['updatedAt']),
+			items
+		}
+	}
+
+	const orderSteps = computed((): ProgressStep[] => {
+		const target = order.value
+		if (target == null) return []
+		const status = target.status
+		const paid = status === 'paid' || status === 'unreceived' || status === 'completed'
+		const shipped = target.shippingCompany.length > 0 || target.trackingNo.length > 0 || status === 'unreceived' || status === 'completed'
+		const completed = status === 'completed'
+		return [
+			{ key: 'created', label: '下单', active: true },
+			{ key: 'paid', label: '付款', active: paid },
+			{ key: 'shipped', label: '发货', active: shipped },
+			{ key: 'completed', label: '完成', active: completed }
+		]
+	})
+
+	const loadOrder = () => {
+		if (orderId.value.length === 0) {
+			order.value = null
+			return
+		}
+		isLoading.value = true
+		fetchMallOrderDetail<any>(orderId.value).then((detail) => {
+			isLoading.value = false
+			order.value = normalizeOrder(detail)
+			if (order.value != null && hasOrderAddress(order.value)) selectedAddress.value = null
+			selectDefaultAddressIfNeeded()
+		}).catch((err) => {
+			isLoading.value = false
+			order.value = null
+			const msg = err != null && err.message != null ? err.message.toString() : '订单加载失败'
+			uni.showToast({ title: msg.length > 0 ? msg : '订单加载失败', icon: 'none' })
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const idParam = options['id']
+		orderId.value = idParam != null ? idParam.toString() : ''
+		loadOrder()
+	})
+
+	onShow(() => {
+		loadOrder()
+		loadAddresses()
+	})
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+
+	const canInvoiceOrder = (target: any | null): boolean => {
+		if (target == null) return false
+		const st = target.status
+		if (st === 'unpaid' || st === 'cancelled' || st === 'canceled') return false
+		return st === 'paid' || st === 'unreceived' || st === 'completed' || st === 'unused'
+	}
+
+	const goInvoiceOrder = () => {
+		const o = order.value
+		if (o == null) return
+		uni.navigateTo({ url: '/pages/mine/invoice-apply?preselect=' + encodeURIComponent('MALL_ORDER:' + o.id) })
+	}
+
+	const goCustomerService = () => {
+		uni.navigateTo({ url: '/pages/mine/customer-service' })
+	}
+
+	const firstProductId = computed((): string => {
+		const target = order.value
+		if (target == null || target.items.length === 0) return ''
+		return target.items[0].product.id
+	})
+
+	const goReview = (productId: string) => {
+		if (productId.length === 0) return
+		uni.navigateTo({ url: '/pages/products/product-detail?id=' + encodeURIComponent(productId) + '&review=1' })
+	}
+
+	const formatTime = (value: string): string => {
+		if (value.length === 0) return ''
+		const text = value.replace('T', ' ')
+		if (text.length >= 16) return text.substring(0, 16)
+		return text
+	}
+
+	const displayText = (value: string): string => {
+		return value.length > 0 ? value : '暂无'
+	}
+
+	const maskPhone = (phone: string): string => {
+		if (phone.length === 11) return phone.substring(0, 3) + '****' + phone.substring(7)
+		return phone
+	}
+
+	const addressText = (target: MallOrderDetail): string => {
+		const address = target.address
+		const text = address.province + address.city + address.district + address.detail
+		return text.length > 0 ? text : '暂无收货地址'
+	}
+
+	const hasOrderAddress = (target: MallOrderDetail): boolean => {
+		const address = target.address
+		return address.id.length > 0 && address.receiver.length > 0 && address.phone.length > 0 && address.detail.length > 0
+	}
+
+	const canChooseAddress = (target: MallOrderDetail): boolean => {
+		return target.status === 'unpaid'
+	}
+
+	const loadAddresses = () => {
+		fetchAddresses<Address>().then((list) => {
+			addresses.value = list
+			selectDefaultAddressIfNeeded()
+		}).catch((_err) => {
+			addresses.value = []
+		})
+	}
+
+	const selectDefaultAddressIfNeeded = () => {
+		const target = order.value
+		if (target == null || target.status !== 'unpaid' || hasOrderAddress(target) || selectedAddress.value != null) return
+		const list = addresses.value
+		if (list.length === 0) return
+		let defaultAddress = list[0]
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].isDefault) {
+				defaultAddress = list[i]
+				break
+			}
+		}
+		selectedAddress.value = defaultAddress
+	}
+
+	const chooseAddressForOrder = () => {
+		const target = order.value
+		if (target == null || !canChooseAddress(target)) return
+		if (addresses.value.length === 0) {
+			uni.showModal({
+				title: '暂无收货地址',
+				content: '请先新增一个收货地址。',
+				confirmText: '去新增',
+				success: (res) => {
+					if (res.confirm) uni.navigateTo({ url: '/pages/mine/address-edit' })
+				}
+			})
+			return
+		}
+		const items: string[] = []
+		for (let i = 0; i < addresses.value.length; i++) {
+			const addr = addresses.value[i]
+			items.push(addr.receiver + ' · ' + addr.province + addr.city + addr.district)
+		}
+		uni.showActionSheet({
+			itemList: items,
+			success: (res) => {
+				selectedAddress.value = addresses.value[res.tapIndex]
+			}
+		})
+	}
+
+	const hasShipping = (target: MallOrderDetail): boolean => {
+		return target.shippingCompany.length > 0 || target.trackingNo.length > 0
+	}
+
+	const canDeleteOrder = (target: MallOrderDetail): boolean => {
+		return target.status === 'completed' || target.status === 'cancelled'
+	}
+
+	const isPrizeOrder = (target: MallOrderDetail): boolean => {
+		return target.remark.indexOf('研学奖品发放：') === 0
+	}
+
+	const statusLabel = (status: string): string => {
+		if (status === 'unpaid') return '待付款'
+		if (status === 'paid') return '待发货'
+		if (status === 'unreceived') return '待收货'
+		if (status === 'completed') return '已完成'
+		if (status === 'cancelled') return '已取消'
+		if (status === 'unused') return '待使用'
+		return '订单状态'
+	}
+
+	const statusShortText = (status: string): string => {
+		if (status === 'cancelled') return '取消'
+		if (status === 'completed') return '完成'
+		if (status === 'paid') return '待发'
+		if (status === 'unpaid') return '待付'
+		return '进行中'
+	}
+
+	const statusDescription = (status: string): string => {
+		if (status === 'unpaid') return '订单待付款，请确认收货地址后完成订单'
+		if (status === 'paid') return '订单已支付，等待商家发货'
+		if (status === 'unreceived') return '商家已发货，请关注物流进度'
+		if (status === 'completed') return '订单已完成，感谢你的购买'
+		if (status === 'cancelled') return '订单已取消'
+		return '可在本页查看订单明细'
+	}
+
+	const statusMarkClass = (status: string): string => {
+		if (status === 'cancelled') return 'status-mark-red'
+		if (status === 'completed') return 'status-mark-green'
+		if (status === 'unpaid') return 'status-mark-orange'
+		return 'status-mark-blue'
+	}
+
+	const statusMarkTextClass = (status: string): string => {
+		if (status === 'cancelled') return 'status-text-red'
+		if (status === 'completed') return 'status-text-green'
+		if (status === 'unpaid') return 'status-text-orange'
+		return 'status-text-blue'
+	}
+
+	const handlePayOrder = () => {
+		const target = order.value
+		if (target == null || target.status !== 'unpaid' || isSubmitting) return
+		let addressId = ''
+		if (selectedAddress.value != null) {
+			addressId = selectedAddress.value.id
+		} else if (hasOrderAddress(target)) {
+			addressId = target.address.id
+		}
+		if (addressId.length === 0) {
+			chooseAddressForOrder()
+			uni.showToast({ title: '请选择收货地址', icon: 'none' })
+			return
+		}
+		uni.showModal({
+			title: target.amount === '0' || target.amount === '0.00' ? '确认订单' : '确认支付',
+			content: target.amount === '0' || target.amount === '0.00' ? '确认后订单将进入待发货，后台发货后才会进入待收货。' : '当前为模拟支付流程，确认后订单将进入待发货，后台发货后才会进入待收货。',
+			confirmText: target.amount === '0' || target.amount === '0.00' ? '确认订单' : '确认支付',
+			success: (res) => {
+				if (!res.confirm) return
+				isSubmitting = true
+				payMallOrder<any>(target.id, { addressId }).then((detail) => {
+					isSubmitting = false
+					order.value = normalizeOrder(detail)
+					selectedAddress.value = null
+					uni.showToast({ title: target.amount === '0' || target.amount === '0.00' ? '订单已确认' : '支付成功', icon: 'success' })
+				}).catch((err) => {
+					isSubmitting = false
+					const msg = err != null && err.message != null ? err.message.toString() : '支付失败'
+					uni.showToast({ title: msg.length > 0 ? msg : '支付失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const handleCompleteOrder = () => {
+		const target = order.value
+		if (target == null || target.status !== 'unreceived' || isSubmitting) return
+		uni.showModal({
+			title: '确认收货',
+			content: '确认已收到该订单商品吗？',
+			confirmText: '确认收货',
+			success: (res) => {
+				if (!res.confirm) return
+				isSubmitting = true
+				completeMallOrder<any>(target.id).then((detail) => {
+					isSubmitting = false
+					order.value = normalizeOrder(detail)
+					uni.showToast({ title: '已确认收货', icon: 'success' })
+				}).catch((err) => {
+					isSubmitting = false
+					const msg = err != null && err.message != null ? err.message.toString() : '确认收货失败'
+					uni.showToast({ title: msg.length > 0 ? msg : '确认收货失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const handleCancelOrder = () => {
+		const target = order.value
+		if (target == null || target.status !== 'unpaid' || isSubmitting) return
+		if (isPrizeOrder(target)) return
+		uni.showModal({
+			title: '取消订单',
+			content: '取消后卡券将退回账户（如已使用），是否继续？',
+			confirmText: '取消订单',
+			confirmColor: '#EF4444',
+			success: (res) => {
+				if (!res.confirm) return
+				isSubmitting = true
+				cancelMallOrder<any>(target.id).then((detail) => {
+					isSubmitting = false
+					order.value = normalizeOrder(detail)
+					uni.showToast({ title: '订单已取消', icon: 'success' })
+				}).catch((err) => {
+					isSubmitting = false
+					const msg = err != null && err.message != null ? err.message.toString() : '取消订单失败'
+					uni.showToast({ title: msg.length > 0 ? msg : '取消订单失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const handleDeleteOrder = () => {
+		const target = order.value
+		if (target == null || !canDeleteOrder(target) || isSubmitting) return
+		uni.showModal({
+			title: '删除订单',
+			content: '删除后该订单将不再显示，是否继续？',
+			confirmText: '删除',
+			confirmColor: '#EF4444',
+			success: (res) => {
+				if (!res.confirm) return
+				isSubmitting = true
+				deleteMallOrder(target.id).then((_ret) => {
+					isSubmitting = false
+					uni.showToast({ title: '已从列表移除', icon: 'success' })
+					uni.redirectTo({ url: '/pages/mine/my-orders?status=all' })
+				}).catch((err) => {
+					isSubmitting = false
+					const msg = err != null && err.message != null ? err.message.toString() : '订单删除失败'
+					uni.showToast({ title: msg.length > 0 ? msg : '订单删除失败', icon: 'none' })
+				})
+			}
+		})
+	}
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.header-section {
+		border-width: 0;
+		border-color: #FFFFFF;
+		background-color: #FFFFFF;
+		border-bottom-width: 0.5px;
+		border-bottom-color: rgba(60, 60, 67, 0.12);
+	}
+	.status-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.main-scroll {
+		flex: 1;
+		width: 100%;
+	}
+	.content {
+		padding: 16px;
+	}
+	.status-card,
+	.section {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(15, 23, 42, 0.06);
+	}
+	.status-card {
+		background-color: #1A73E8;
+		border-width: 0;
+		padding: 18px 16px;
+	}
+	.status-card-top,
+	.section-head,
+	.progress-row,
+	.info-row,
+	.product-row,
+	.bottom-actions {
+		flex-direction: row;
+	}
+	.status-card-top,
+	.section-head,
+	.info-row,
+	.bottom-actions {
+		align-items: center;
+	}
+	.status-main {
+		flex: 1;
+		min-width: 0;
+		margin-right: 12px;
+	}
+	.status-title {
+		font-size: 22px;
+		font-weight: 800;
+		color: #FFFFFF;
+		margin-bottom: 6px;
+		lines: 1;
+	}
+	.status-desc {
+		font-size: 13px;
+		color: rgba(255, 255, 255, 0.78);
+		line-height: 19px;
+		lines: 2;
+	}
+	.status-mark {
+		border-radius: 18px;
+		padding: 7px 12px;
+		flex-shrink: 0;
+	}
+	.status-mark-blue {
+		background-color: #E0F2FE;
+	}
+	.status-mark-orange {
+		background-color: #FFEDD5;
+	}
+	.status-mark-green {
+		background-color: #DCFCE7;
+	}
+	.status-mark-red {
+		background-color: #FEE2E2;
+	}
+	.status-mark-text {
+		font-size: 12px;
+		font-weight: 800;
+	}
+	.status-text-blue {
+		color: #0369A1;
+	}
+	.status-text-orange {
+		color: #C2410C;
+	}
+	.status-text-green {
+		color: #15803D;
+	}
+	.status-text-red {
+		color: #DC2626;
+	}
+	.section-head {
+		justify-content: space-between;
+		margin-bottom: 12px;
+	}
+	.section-title {
+		font-size: 16px;
+		font-weight: 800;
+		color: #0F172A;
+		flex-shrink: 0;
+		margin-right: 10px;
+	}
+	.section-subtitle {
+		flex: 1;
+		min-width: 0;
+		font-size: 12px;
+		color: #9CA3AF;
+		text-align: right;
+		lines: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.section-action {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A73E8;
+		flex-shrink: 0;
+	}
+	.progress-wrap {
+		position: relative;
+		padding-top: 2px;
+	}
+	.progress-track {
+		position: absolute;
+		left: 12%;
+		right: 12%;
+		top: 7px;
+		height: 2px;
+		background-color: #E5E7EB;
+	}
+	.progress-row {
+		justify-content: space-between;
+		position: relative;
+	}
+	.progress-item {
+		align-items: center;
+		flex: 1;
+	}
+	.progress-dot {
+		width: 12px;
+		height: 12px;
+		border-radius: 12px;
+		background-color: #E2E8F0;
+		margin-bottom: 7px;
+		border-width: 2px;
+		border-style: solid;
+		border-color: #FFFFFF;
+	}
+	.progress-dot-active {
+		background-color: #1A73E8;
+		border-color: #FFFFFF;
+	}
+	.progress-text {
+		font-size: 12px;
+		color: #9CA3AF;
+		font-weight: 600;
+	}
+	.progress-text-active {
+		color: #1A1A1A;
+	}
+	.info-row {
+		justify-content: space-between;
+		padding: 8px 0;
+		align-items: flex-start;
+	}
+	.info-label {
+		font-size: 13px;
+		color: #4B5563;
+		flex-shrink: 0;
+		line-height: 20px;
+		padding-top: 1px;
+	}
+	.info-label-flex {
+		flex: 1;
+		min-width: 0;
+		margin-right: 12px;
+		lines: 1;
+	}
+	.info-value {
+		flex: 1;
+		min-width: 0;
+		text-align: right;
+		font-size: 13px;
+		color: #0F172A;
+		margin-left: 16px;
+		line-height: 20px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.amount-num {
+		lines: 1;
+	}
+	.strong-value {
+		font-weight: 700;
+	}
+	.selected-address {
+		padding-top: 2px;
+	}
+	.address-name {
+		font-size: 15px;
+		font-weight: 800;
+		color: #0F172A;
+		margin-bottom: 8px;
+		lines: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.address-detail {
+		font-size: 13px;
+		color: #475569;
+		line-height: 20px;
+		lines: 3;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.address-empty {
+		color: #DC2626;
+		font-weight: 700;
+	}
+	.product-row {
+		padding: 12px 0;
+		border-top-width: 0.5px;
+		border-top-color: rgba(255,255,255,0.96);
+		align-items: flex-start;
+	}
+	.product-row-first {
+		border-top-width: 0;
+		padding-top: 0;
+	}
+	.product-cover {
+		width: 70px;
+		height: 70px;
+		border-radius: 14px;
+		flex-shrink: 0;
+		background-color: rgba(255,255,255,0.96);
+	}
+	.product-main {
+		flex: 1;
+		min-width: 0;
+		margin-left: 12px;
+		margin-right: 10px;
+	}
+	.product-name {
+		font-size: 15px;
+		font-weight: 800;
+		color: #0F172A;
+		line-height: 21px;
+		margin-bottom: 6px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.product-meta {
+		font-size: 12px;
+		color: #9CA3AF;
+		lines: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.product-side {
+		align-items: flex-end;
+		flex-shrink: 0;
+		padding-top: 2px;
+	}
+	.product-price {
+		font-size: 14px;
+		font-weight: 800;
+		color: #B45309;
+		lines: 1;
+	}
+	.product-review {
+		margin-top: 8px;
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A73E8;
+		padding: 4px 0;
+	}
+	.discount-value {
+		flex-shrink: 0;
+		text-align: right;
+		font-size: 13px;
+		color: #EF4444;
+		margin-left: 12px;
+		line-height: 20px;
+	}
+	.amount-line {
+		height: 0.5px;
+		background-color: rgba(255,255,255,0.96);
+		margin: 6px 0 4px 0;
+	}
+	.total-label {
+		font-size: 15px;
+		font-weight: 800;
+		color: #0F172A;
+		flex-shrink: 0;
+		line-height: 28px;
+	}
+	.total-value {
+		flex: 1;
+		min-width: 0;
+		text-align: right;
+		font-size: 20px;
+		font-weight: 900;
+		color: #B45309;
+		margin-left: 16px;
+		line-height: 28px;
+	}
+	.remark-box {
+		background-color: #F5F7FB;
+		border-radius: 12px;
+		padding: 12px;
+		margin-top: 8px;
+	}
+	.remark-label {
+		font-size: 12px;
+		font-weight: 700;
+		color: #4B5563;
+		margin-bottom: 6px;
+	}
+	.remark-text {
+		font-size: 13px;
+		color: #0F172A;
+		line-height: 20px;
+	}
+	.empty-state {
+		padding-top: 120px;
+		align-items: center;
+	}
+	.empty-icon {
+		width: 52px;
+		height: 52px;
+		margin-bottom: 16px;
+		opacity: 0.55;
+	}
+	.empty-title {
+		font-size: 19px;
+		font-weight: 800;
+		color: #0F172A;
+		margin-bottom: 8px;
+	}
+	.empty-desc {
+		font-size: 14px;
+		color: #9CA3AF;
+		text-align: center;
+		padding: 0 24px;
+		lines: 2;
+	}
+	.bottom-safe {
+		height: 120px;
+	}
+	.bottom-actions {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #FFFFFF;
+		border-top-width: 0.5px;
+		border-top-color: rgba(15, 23, 42, 0.08);
+		padding: 12px 16px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+		justify-content: flex-end;
+		flex-wrap: wrap;
+		z-index: 120;
+	}
+	.action-btn {
+		border-radius: 22px;
+		padding: 0 16px;
+		height: 40px;
+		margin-left: 8px;
+		margin-top: 4px;
+		margin-bottom: 4px;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.primary-btn {
+		background-color: #1A73E8;
+	}
+	.secondary-btn {
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.primary-btn-text,
+	.secondary-btn-text,
+	.danger-btn-text {
+		font-size: 13px;
+		font-weight: 800;
+	}
+	.primary-btn-text {
+		color: #FFFFFF;
+	}
+	.secondary-btn-text {
+		color: #1A1A1A;
+	}
+	.danger-btn-text {
+		color: #EF4444;
+	}
+</style>

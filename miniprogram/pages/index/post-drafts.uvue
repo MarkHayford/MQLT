@@ -1,0 +1,230 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav uni-row">
+			<view class="nav-back uni-row" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">草稿箱</text>
+			<view class="nav-space"></view>
+		</view>
+		<scroll-view class="body" scroll-y="true" :show-scrollbar="false">
+			<view class="feed-pad uni-row">
+				<view class="feed-col uni-column">
+					<view v-for="item in leftPosts" :key="item.id" class="note-card" @click="editPost(item.id)">
+						<view class="note-cover">
+							<image v-if="isHttpCoverUrl(item.coverUrl)" :src="item.coverUrl" class="note-cover-img" mode="aspectFill"></image>
+							<note-text-cover v-else :tpl="coverTplIdOf(item.coverUrl)" :title="item.title" :hl="coverTplHlOf(item.coverUrl)" size="feed"></note-text-cover>
+							<view v-if="isHttpCoverUrl(item.coverUrl) && showPlayBadge(item)" class="play-badge">
+								<text class="play-badge-text">▶</text>
+							</view>
+						</view>
+						<view class="st-badge" :style="'background-color:' + postStatusColor(item.status)">
+							<text class="st-badge-txt">{{ postStatusLabel(item.status) }}</text>
+						</view>
+						<view class="note-tag-row uni-row">
+							<view v-for="(tag, ti) in postDisplayTags(item)" :key="'lt-'+item.id+'-'+tag" class="note-tag" :style="'background-color:' + getPostTagColor(tag)">
+								<text class="note-tag-txt">{{ tag }}</text>
+							</view>
+						</view>
+						<text class="note-title">{{ item.title }}</text>
+						<view class="note-meta uni-row">
+							<text class="note-author">{{ item.time }}</text>
+						</view>
+						<view class="ops uni-row">
+							<text class="op" @click.stop="editPost(item.id)">继续编辑</text>
+							<text class="op op-del" @click.stop="askDelete(item.id)">删除</text>
+						</view>
+					</view>
+				</view>
+				<view class="feed-col uni-column">
+					<view v-for="item in rightPosts" :key="item.id" class="note-card" @click="editPost(item.id)">
+						<view class="note-cover">
+							<image v-if="isHttpCoverUrl(item.coverUrl)" :src="item.coverUrl" class="note-cover-img" mode="aspectFill"></image>
+							<note-text-cover v-else :tpl="coverTplIdOf(item.coverUrl)" :title="item.title" :hl="coverTplHlOf(item.coverUrl)" size="feed"></note-text-cover>
+							<view v-if="isHttpCoverUrl(item.coverUrl) && showPlayBadge(item)" class="play-badge">
+								<text class="play-badge-text">▶</text>
+							</view>
+						</view>
+						<view class="st-badge" :style="'background-color:' + postStatusColor(item.status)">
+							<text class="st-badge-txt">{{ postStatusLabel(item.status) }}</text>
+						</view>
+						<view class="note-tag-row uni-row">
+							<view v-for="(tag, ti) in postDisplayTags(item)" :key="'rt-'+item.id+'-'+tag" class="note-tag" :style="'background-color:' + getPostTagColor(tag)">
+								<text class="note-tag-txt">{{ tag }}</text>
+							</view>
+						</view>
+						<text class="note-title">{{ item.title }}</text>
+						<view class="note-meta uni-row">
+							<text class="note-author">{{ item.time }}</text>
+						</view>
+						<view class="ops uni-row">
+							<text class="op" @click.stop="editPost(item.id)">继续编辑</text>
+							<text class="op op-del" @click.stop="askDelete(item.id)">删除</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			<view v-if="posts.length === 0" class="empty uni-column">
+				<text class="empty-title">还没有草稿</text>
+				<text class="empty-desc">发文章时点「暂存」，会保存在这里</text>
+			</view>
+			<view class="safe"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { coverTplHlOf, coverTplIdOf, deleteCommunityPost, fetchMyCommunityPosts, getPostTagColor, isHttpCoverUrl, postDisplayTags, postStatusColor, postStatusLabel, type CommunityPost } from '../../utils/community.uts'
+	import { postHasVideoFile } from '../../utils/html-content.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const posts = ref<CommunityPost[]>([])
+
+	const leftPosts = computed((): CommunityPost[] => {
+		const list = posts.value
+		const out: CommunityPost[] = []
+		for (let i = 0; i < list.length; i += 2) out.push(list[i])
+		return out
+	})
+
+	const rightPosts = computed((): CommunityPost[] => {
+		const list = posts.value
+		const out: CommunityPost[] = []
+		for (let i = 1; i < list.length; i += 2) out.push(list[i])
+		return out
+	})
+
+	const showPlayBadge = (item: CommunityPost): boolean => {
+		if (item.channel === 'video') return true
+		if (item.videoUrl.length > 0) return true
+		return postHasVideoFile(item.images, item.coverUrl, item.content)
+	}
+
+	const reload = () => {
+		fetchMyCommunityPosts('draft').then((list) => {
+			posts.value = list
+		}).catch((_e) => {
+			posts.value = []
+		})
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const editPost = (id: string) => {
+		uni.navigateTo({ url: '/pages/index/post-compose?id=' + encodeURIComponent(id) })
+	}
+
+	const askDelete = (id: string) => {
+		uni.showModal({
+			title: '删除草稿',
+			content: '删除后无法恢复',
+			confirmText: '删除',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm != true) return
+				deleteCommunityPost(id).then(() => {
+					uni.showToast({ title: '已删除', icon: 'success' })
+					reload()
+				}).catch((_e) => {
+					uni.showToast({ title: '删除失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	onShow(() => {
+		reload()
+	})
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav { border-width: 0; border-color: #FFFFFF; height: 44px; align-items: center; padding: 0 12px; background-color: #FFFFFF; }
+	.nav-back { align-items: center; width: 88px; }
+	.nav-back-icon { width: 18px; height: 18px; }
+	.nav-back-text { font-size: 15px; color: #1A1A1A; margin-left: 2px; }
+	.nav-title { flex: 1; text-align: center; font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.nav-space { width: 88px; }
+	.body { flex: 1; width: 100%; }
+	.feed-pad { padding: 12px 10px 0 10px; align-items: flex-start; }
+	.feed-col { width: 50%; padding: 0 4px; }
+	.note-card {
+		position: relative;
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		overflow: hidden;
+		margin-bottom: 10px;
+	}
+	.note-cover {
+		width: 100%;
+		position: relative;
+		background-color: #F2C45A;
+		overflow: hidden;
+	}
+	.note-cover-img { width: 100%; height: 180px; }
+	.st-badge {
+		position: absolute;
+		left: 8px;
+		top: 8px;
+		padding: 2px 8px;
+		border-radius: 6px;
+		z-index: 30;
+	}
+	.st-badge-txt { font-size: 10px; font-weight: 800; color: #FFFFFF; }
+	.play-badge {
+		position: absolute;
+		right: 8px;
+		bottom: 8px;
+		width: 22px;
+		height: 22px;
+		border-radius: 11px;
+		background-color: rgba(0,0,0,0.45);
+		align-items: center;
+		justify-content: center;
+	}
+	.play-badge-text { font-size: 10px; color: #FFFFFF; font-weight: 700; }
+	.note-tag-row {
+		padding: 8px 10px 0 10px;
+		flex-wrap: wrap;
+	}
+	.note-tag {
+		padding: 2px 8px;
+		border-radius: 6px;
+		align-self: flex-start;
+		margin-right: 4px;
+		margin-bottom: 4px;
+	}
+	.note-tag-txt { font-size: 10px; font-weight: 800; color: #FFFFFF; }
+	.note-title {
+		font-size: 14px;
+		font-weight: 700;
+		color: #1A1A1A;
+		padding: 6px 10px 4px 10px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.note-meta {
+		padding: 0 10px 6px 10px;
+		align-items: center;
+	}
+	.note-author { font-size: 11px; color: #374151; }
+	.ops {
+		padding: 0 10px 10px 10px;
+		justify-content: flex-end;
+	}
+	.op { font-size: 12px; font-weight: 700; color: #1A1A1A; margin-left: 12px; }
+	.op-del { color: #DC2626; }
+	.empty { padding: 48px 16px; align-items: center; }
+	.empty-title { font-size: 16px; font-weight: 800; color: #1A1A1A; margin-bottom: 8px; }
+	.empty-desc { font-size: 13px; color: #374151; }
+	.safe { height: 24px; }
+</style>

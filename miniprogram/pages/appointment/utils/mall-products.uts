@@ -1,0 +1,46 @@
+import { ApiEndpoints, endpointWithId } from '../../../utils/api-endpoints.uts'
+import { getApi } from '../../../utils/api-client.uts'
+
+export type MallProduct = {
+	id: string
+	sku: string
+	name: string
+	intro: string
+	description: string
+	gallery: string[]
+	specs: { label: string, value: string }[]
+	services: string[]
+	price: string
+	icon: string
+	imageUrl: string
+	category: string
+	imgStyle: string
+	status: string
+	stock: number
+	sales: number
+	createdAt: string
+	updatedAt: string
+	projectId: string
+}
+
+export function fetchMallProducts(projectId: string = ''): Promise<MallProduct[]> {
+	let url = ApiEndpoints.mallProducts
+	if (projectId.length > 0) url = url + '?projectId=' + encodeURIComponent(projectId)
+	return getApi<MallProduct[]>(url, false)
+}
+
+export function fetchMallProductDetail(id: string): Promise<MallProduct | null> {
+	return getApi<MallProduct>(endpointWithId(ApiEndpoints.mallProductDetail, id), false)
+}
+
+export function mallShopUrl(projectId: string = ''): string {
+	const pid = projectId.trim()
+	if (pid.length === 0) return '/pages/products/products'
+	return '/pages/products/products?projectId=' + encodeURIComponent(pid)
+}
+
+export function mallProductDetailUrl(id: string, projectId: string = ''): string {
+	let url = '/pages/products/product-detail?id=' + encodeURIComponent(id)
+	if (projectId.length > 0) url = url + '&projectId=' + encodeURIComponent(projectId)
+	return url
+}

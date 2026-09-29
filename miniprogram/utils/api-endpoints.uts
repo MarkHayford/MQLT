@@ -1,0 +1,168 @@
+const API_PREFIX = '/api/v1'
+
+export const ApiEndpoints = {
+	authLoginCode: API_PREFIX + '/auth/login-code',
+	authWechatLogin: API_PREFIX + '/auth/wechat-login',
+	authWechatBind: API_PREFIX + '/auth/wechat-bind',
+	authLogout: API_PREFIX + '/auth/logout',
+	userProfile: API_PREFIX + '/user/profile',
+	userRealName: API_PREFIX + '/user/realname',
+	userAvatar: API_PREFIX + '/user/avatar',
+	userAvatarComplete: API_PREFIX + '/user/avatar/complete',
+	uploadsPresign: API_PREFIX + '/uploads/presign',
+	userCoupons: API_PREFIX + '/study/coupons',
+	userTravelers: API_PREFIX + '/user/travelers',
+	userTravelerDelete: API_PREFIX + '/user/travelers/{id}/delete',
+	userAddresses: API_PREFIX + '/user/addresses',
+	userAddressDelete: API_PREFIX + '/user/addresses/{id}/delete',
+	userInvoiceTitles: API_PREFIX + '/user/invoice-titles',
+	userInvoices: API_PREFIX + '/user/invoices',
+	userInvoicesEligible: API_PREFIX + '/user/invoices/eligible',
+	studyProjects: API_PREFIX + '/study/projects',
+	studyProjectDetail: API_PREFIX + '/study/projects/{id}',
+	studyProjectRoutePoints: API_PREFIX + '/study/projects/{id}/route-points',
+	studyProjectDocumentDetail: API_PREFIX + '/study/projects/{id}/documents/{docIndex}',
+	studyProjectAdminAccess: API_PREFIX + '/study/projects/{id}/admin-access',
+	studyBookings: API_PREFIX + '/study/bookings',
+	studyBookingDetail: API_PREFIX + '/study/bookings/{id}',
+	studyBookingVerify: API_PREFIX + '/study/bookings/{id}/verify',
+	studyBookingCheckInTicket: API_PREFIX + '/study/bookings/{id}/check-in-ticket',
+	studyBookingRedeemCheckIn: API_PREFIX + '/study/bookings/redeem-check-in',
+	studyBookingConfirm: API_PREFIX + '/study/bookings/{id}/confirm',
+	studyBookingParticipants: API_PREFIX + '/study/bookings/{id}/participants',
+	studyBookingParticipantDelete: API_PREFIX + '/study/bookings/{id}/participants/{participantBookingId}/delete',
+	studyBookingPay: API_PREFIX + '/study/bookings/{id}/pay',
+	studyBookingCancel: API_PREFIX + '/study/bookings/{id}/cancel',
+	studyBookingDelete: API_PREFIX + '/study/bookings/{id}/delete',
+	studyFloatingNotices: API_PREFIX + '/study/floating-notices',
+	studyNotices: API_PREFIX + '/study/notices',
+	studyNoticeDetail: API_PREFIX + '/study/notices/{id}',
+	studyPlatform: API_PREFIX + '/study/platform',
+	/** 租车可约司机（按上车点+企业范围；过滤已租/请假，后续接真实司机库） */
+	studyRentalDrivers: API_PREFIX + '/study/rental/drivers',
+	/** 租车：学员发单 / 我的租车单 / 详情 */
+	studyRentalOrders: API_PREFIX + '/study/rental/orders',
+	studyRentalOrderDetail: API_PREFIX + '/study/rental/orders/{id}',
+	studyRentalOrderCancel: API_PREFIX + '/study/rental/orders/{id}/cancel',
+	studyRentalOrderPool: API_PREFIX + '/study/rental/orders/pool',
+	studyRentalOrderClaim: API_PREFIX + '/study/rental/orders/{id}/claim',
+	studyRentalOrderRelease: API_PREFIX + '/study/rental/orders/{id}/release',
+	studyRentalOrderMessages: API_PREFIX + '/study/rental/orders/{id}/messages',
+	studyRentalOrderOffer: API_PREFIX + '/study/rental/orders/{id}/offer',
+	studyRentalOrderAcceptPrice: API_PREFIX + '/study/rental/orders/{id}/accept-price',
+	studyRentalOrderRejectPrice: API_PREFIX + '/study/rental/orders/{id}/reject-price',
+	studyRentalOrderPay: API_PREFIX + '/study/rental/orders/{id}/pay',
+	studyRentalOrderStatus: API_PREFIX + '/study/rental/orders/{id}/status',
+	commerceDriverRentalClaim: API_PREFIX + '/commerce/driver/rental/{id}/claim',
+	commerceDriverRentalRelease: API_PREFIX + '/commerce/driver/rental/{id}/release',
+	commerceDriverRentalOffer: API_PREFIX + '/commerce/driver/rental/{id}/offer',
+	commerceDriverRentalStatus: API_PREFIX + '/commerce/driver/rental/{id}/status',
+	/** AI 行程规划（服务端代理 DeepSeek / deepseek-flash） */
+	studyAiPlan: API_PREFIX + '/study/ai/plan',
+	studyExploreSession: API_PREFIX + '/study/projects/{id}/explore-session',
+	studyRoutePointCheckIn: API_PREFIX + '/study/projects/{id}/route-points/{routePointId}/check-in',
+	studyRoutePointKnowledgeTask: API_PREFIX + '/study/projects/{id}/route-points/{routePointId}/knowledge-task',
+	studyRoutePointKnowledgeComplete: API_PREFIX + '/study/projects/{id}/route-points/{routePointId}/knowledge-task/complete',
+	studyRoutePointStationStepComplete: API_PREFIX + '/study/projects/{id}/route-points/{routePointId}/station-steps/{stepId}/complete',
+	studyRoutePointStationStepGamePlay: API_PREFIX + '/study/projects/{id}/route-points/{routePointId}/station-steps/{stepId}/game-play',
+	studyRoutePointCheckInCode: API_PREFIX + '/study/projects/{id}/route-points/{routePointId}/check-in-code',
+	studyBookingEarlyExit: API_PREFIX + '/study/bookings/{id}/tour/early-exit',
+	studyBookingTourPause: API_PREFIX + '/study/bookings/{id}/tour/pause',
+	studyBookingTourResume: API_PREFIX + '/study/bookings/{id}/tour/resume',
+	/** 导览积分商城（结业前可进，结业后可兑；预约日24h） */
+	studyTourMall: API_PREFIX + '/study/projects/{id}/tour-mall',
+	studyTourMallRedeem: API_PREFIX + '/study/projects/{id}/tour-mall/redeem',
+	/** 司机入口（企业 / 平台管理走网页控制台） */
+	commerceAccess: API_PREFIX + '/commerce/access',
+	commerceDriverHome: API_PREFIX + '/commerce/driver/home',
+	commerceDriverOnline: API_PREFIX + '/commerce/driver/online',
+	commerceDriverCity: API_PREFIX + '/commerce/driver/city',
+	commerceDriverJobAccept: API_PREFIX + '/commerce/driver/jobs/{jobId}/accept',
+	commerceDriverJobStatus: API_PREFIX + '/commerce/driver/jobs/{jobId}/status',
+	commerceDriverWallet: API_PREFIX + '/commerce/driver/wallet',
+	commerceDriverWithdraw: API_PREFIX + '/commerce/driver/withdraw',
+	commerceDriverWithdrawals: API_PREFIX + '/commerce/driver/withdrawals',
+	puzzleProjects: API_PREFIX + '/puzzles/projects',
+	puzzleProjectBackpack: API_PREFIX + '/puzzles/projects/{projectId}/backpack',
+	puzzlePieceDetail: API_PREFIX + '/puzzles/projects/{projectId}/pieces/{pieceId}',
+	puzzleAchievements: API_PREFIX + '/puzzles/achievements',
+	mallProducts: API_PREFIX + '/mall/products',
+	mallProductDetail: API_PREFIX + '/mall/products/{id}',
+	mallProductComments: API_PREFIX + '/mall/products/{id}/comments',
+	mallProductReviewAccess: API_PREFIX + '/mall/products/{id}/review-access',
+	mallCart: API_PREFIX + '/mall/cart',
+	mallFavorites: API_PREFIX + '/mall/favorites',
+	mallOrders: API_PREFIX + '/mall/orders',
+	feedback: API_PREFIX + '/feedback',
+	feedbackList: API_PREFIX + '/feedback/my',
+	communityPosts: API_PREFIX + '/community/posts',
+	communityPostsMine: API_PREFIX + '/community/posts/mine',
+	communityPostDetail: API_PREFIX + '/community/posts/{id}',
+	communityPostUpdate: API_PREFIX + '/community/posts/{id}/update',
+	communityPostDelete: API_PREFIX + '/community/posts/{id}/delete',
+	communityPostPrivate: API_PREFIX + '/community/posts/{id}/private',
+	communityPostSubmit: API_PREFIX + '/community/posts/{id}/submit',
+	communityPostLike: API_PREFIX + '/community/posts/{id}/like',
+	communityPostComments: API_PREFIX + '/community/posts/{id}/comments'
+}
+
+export function endpointWithId(endpoint: string, id: string): string {
+	return endpoint.replace('{id}', id)
+}
+
+export function studyProjectDocumentEndpoint(projectId: string, docIndex: string): string {
+	return ApiEndpoints.studyProjectDocumentDetail.replace('{id}', projectId).replace('{docIndex}', docIndex)
+}
+
+export function puzzlePieceEndpoint(projectId: string, pieceId: string): string {
+	return ApiEndpoints.puzzlePieceDetail.replace('{projectId}', projectId).replace('{pieceId}', pieceId)
+}
+
+export function puzzleProjectBackpackEndpoint(projectId: string): string {
+	return ApiEndpoints.puzzleProjectBackpack.replace('{projectId}', projectId)
+}
+
+export function studyExploreSessionEndpoint(projectId: string): string {
+	return endpointWithId(ApiEndpoints.studyExploreSession, projectId)
+}
+
+export function studyRoutePointCheckInEndpoint(projectId: string, routePointId: string): string {
+	return endpointWithId(ApiEndpoints.studyRoutePointCheckIn, projectId).replace('{routePointId}', routePointId)
+}
+
+export function studyRoutePointKnowledgeTaskEndpoint(projectId: string, routePointId: string): string {
+	return endpointWithId(ApiEndpoints.studyRoutePointKnowledgeTask, projectId).replace('{routePointId}', routePointId)
+}
+
+export function studyRoutePointKnowledgeCompleteEndpoint(projectId: string, routePointId: string): string {
+	return endpointWithId(ApiEndpoints.studyRoutePointKnowledgeComplete, projectId).replace('{routePointId}', routePointId)
+}
+
+export function studyRoutePointStationStepCompleteEndpoint(projectId: string, routePointId: string, stepId: string): string {
+	return endpointWithId(ApiEndpoints.studyRoutePointStationStepComplete, projectId).replace('{routePointId}', routePointId).replace('{stepId}', stepId)
+}
+
+export function studyRoutePointStationStepGamePlayEndpoint(projectId: string, routePointId: string, stepId: string): string {
+	return endpointWithId(ApiEndpoints.studyRoutePointStationStepGamePlay, projectId).replace('{routePointId}', routePointId).replace('{stepId}', stepId)
+}
+
+export function studyBookingEarlyExitEndpoint(bookingId: string): string {
+	return endpointWithId(ApiEndpoints.studyBookingEarlyExit, bookingId)
+}
+
+export function studyBookingTourPauseEndpoint(bookingId: string): string {
+	return endpointWithId(ApiEndpoints.studyBookingTourPause, bookingId)
+}
+
+export function studyBookingTourResumeEndpoint(bookingId: string): string {
+	return endpointWithId(ApiEndpoints.studyBookingTourResume, bookingId)
+}
+
+export function studyTourMallEndpoint(projectId: string): string {
+	return endpointWithId(ApiEndpoints.studyTourMall, projectId)
+}
+
+export function studyTourMallRedeemEndpoint(projectId: string): string {
+	return endpointWithId(ApiEndpoints.studyTourMallRedeem, projectId)
+}
+

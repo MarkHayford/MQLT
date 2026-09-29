@@ -1,0 +1,675 @@
+<template>
+	<view class="page-wrapper" :style="pageStyle">
+		<view class="fixed-header">
+			<view class="status-bar" :style="statusBarStyle"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">申请开发票</text>
+			</view>
+
+			<view class="order-type-tabs uni-row">
+				<view :class="['tab-item', orderType === 'all' ? 'tab-active' : '']" @click="switchOrderType('all')">
+					<text :class="['tab-text', orderType === 'all' ? 'tab-text-active' : '']">全部</text>
+				</view>
+				<view :class="['tab-item', orderType === 'mall' ? 'tab-active' : '']" @click="switchOrderType('mall')">
+					<text :class="['tab-text', orderType === 'mall' ? 'tab-text-active' : '']">文创</text>
+				</view>
+				<view :class="['tab-item', orderType === 'study' ? 'tab-active' : '']" @click="switchOrderType('study')">
+					<text :class="['tab-text', orderType === 'study' ? 'tab-text-active' : '']">研学</text>
+				</view>
+				<view :class="['tab-item', orderType === 'rental' ? 'tab-active' : '']" @click="switchOrderType('rental')">
+					<text :class="['tab-text', orderType === 'rental' ? 'tab-text-active' : '']">租车</text>
+				</view>
+			</view>
+		</view>
+
+		<scroll-view class="main-scroll" :style="mainScrollStyle" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="tip-banner">
+				<image src="/static/icon-lightbulb.svg" class="tip-icon" mode="aspectFit"></image>
+				<text class="tip-text">请选择同一开票方的订单（平台租车 / 企业文创研学不可混选）</text>
+			</view>
+
+			<view class="order-list">
+				<view
+					v-for="(order, index) in currentOrderList"
+					:key="order.sourceType + ':' + order.id"
+					:class="['order-card', isOrderSelected(order) ? 'order-selected' : '']"
+					@click="toggleOrderSelect(order)"
+				>
+					<view class="checkbox-wrap">
+						<view :class="['checkbox', isOrderSelected(order) ? 'checkbox-checked' : '']">
+							<image v-if="isOrderSelected(order)" src="/static/icon-check.svg" class="checkbox-icon" mode="aspectFit"></image>
+						</view>
+					</view>
+
+					<view class="order-content">
+						<view class="order-header uni-row">
+							<text class="order-title">{{ order.title }}</text>
+							<view :class="['order-status-tag', getOrderStatusClass(order.status)]">
+								<text class="order-status-text">{{ order.status }}</text>
+							</view>
+						</view>
+
+						<view class="order-info-row uni-row">
+							<text class="order-label">类型</text>
+							<text class="order-value">{{ sourceTypeLabel(order.sourceType) }}</text>
+						</view>
+
+						<view class="order-info-row uni-row">
+							<text class="order-label">开票方</text>
+							<view class="issuer-chip">
+								<text class="issuer-chip-text">{{ order.issuerLabel }}</text>
+							</view>
+						</view>
+
+						<view class="order-info-row uni-row">
+							<text class="order-label">订单编号</text>
+							<text class="order-value">{{ order.orderNo }}</text>
+						</view>
+
+						<view class="order-info-row uni-row">
+							<text class="order-label">时间</text>
+							<text class="order-value">{{ order.orderTime }}</text>
+						</view>
+
+						<view class="order-info-row uni-row">
+							<text class="order-label">订单金额</text>
+							<text class="order-amount">¥{{ order.amount }}</text>
+						</view>
+
+						<view v-if="order.invoiceStatus" class="invoice-status-row">
+							<text class="invoice-status-text">{{ order.invoiceStatus }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="currentOrderList.length === 0" class="empty-state">
+					<image src="/static/shop-nav-orders.svg" class="empty-icon" mode="aspectFit"></image>
+					<text class="empty-text">暂无可开票订单</text>
+					<text class="empty-hint">已支付的文创、研学与租车订单可申请开票</text>
+				</view>
+			</view>
+
+			<view class="bottom-spacer"></view>
+		</scroll-view>
+
+		<view class="bottom-action-bar">
+			<view class="selected-info uni-row">
+				<text class="selected-text">已选 {{ selectedKeys.length }} 个订单</text>
+				<text class="total-amount">合计：¥{{ totalAmount }}</text>
+			</view>
+			<view :class="['submit-btn', selectedKeys.length === 0 ? 'submit-btn-disabled' : '']" @click="submitInvoiceApply">
+				<text class="submit-btn-text">下一步</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { fetchEligibleInvoiceOrders } from '../../utils/user-services.uts'
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const windowHeight = layout.windowHeight
+	const screenHeight = layout.screenHeight
+	const navBarHeight = 44
+	const tabsHeight = 50
+	const headerTotalHeight = statusBarHeight + navBarHeight + tabsHeight
+
+	const pageStyle = 'height: ' + screenHeight + 'px;'
+	const statusBarStyle = 'height: ' + statusBarHeight + 'px;'
+	const mainScrollStyle = 'top: ' + headerTotalHeight + 'px; height: ' + (windowHeight - headerTotalHeight) + 'px;'
+
+	type Order = {
+		id: string
+		sourceType: string
+		title: string
+		orderNo: string
+		orderTime: string
+		amount: string
+		status: string
+		invoiceStatus: string
+		issuerType: string
+		enterpriseId: string
+		issuerLabel: string
+	}
+
+	const orderType = ref('all')
+	const selectedKeys = ref<string[]>([])
+	const preselectKey = ref('')
+	const allOrders = ref<Order[]>([])
+
+	const currentOrderList = computed((): Order[] => {
+		if (orderType.value === 'mall') {
+			return allOrders.value.filter((o) => o.sourceType === 'MALL_ORDER')
+		}
+		if (orderType.value === 'study') {
+			return allOrders.value.filter((o) => o.sourceType === 'STUDY_BOOKING')
+		}
+		if (orderType.value === 'rental') {
+			return allOrders.value.filter((o) => o.sourceType === 'RENTAL_ORDER')
+		}
+		return allOrders.value
+	})
+
+	const sourceTypeLabel = (sourceType: string): string => {
+		if (sourceType === 'STUDY_BOOKING') return '研学预约'
+		if (sourceType === 'RENTAL_ORDER') return '租车'
+		return '文创商城'
+	}
+
+	const orderIssuerKey = (order: Order): string => {
+		if (order.issuerType === 'PLATFORM') return 'PLATFORM'
+		return 'ENTERPRISE:' + order.enterpriseId
+	}
+
+	const totalAmount = computed((): string => {
+		let total = 0
+		for (let i = 0; i < selectedKeys.value.length; i++) {
+			const key = selectedKeys.value[i]
+			const order = allOrders.value.find((o) => (o.sourceType + ':' + o.id) === key)
+			if (order != null) {
+				total += parseFloat(order.amount)
+			}
+		}
+		return total.toFixed(2)
+	})
+
+	const switchOrderType = (type: string) => {
+		orderType.value = type
+	}
+
+	const isOrderSelected = (order: Order): boolean => {
+		return selectedKeys.value.includes(order.sourceType + ':' + order.id)
+	}
+
+	const toggleOrderSelect = (order: Order) => {
+		if (order.invoiceStatus.length > 0) {
+			uni.showToast({ title: '该订单' + order.invoiceStatus, icon: 'none' })
+			return
+		}
+		const key = order.sourceType + ':' + order.id
+		const index = selectedKeys.value.indexOf(key)
+		if (index > -1) {
+			selectedKeys.value.splice(index, 1)
+			return
+		}
+		if (selectedKeys.value.length > 0) {
+			const firstKey = selectedKeys.value[0]
+			const first = allOrders.value.find((o) => (o.sourceType + ':' + o.id) === firstKey)
+			if (first != null && orderIssuerKey(first) !== orderIssuerKey(order)) {
+				uni.showToast({ title: '不可混选不同开票方', icon: 'none' })
+				return
+			}
+		}
+		selectedKeys.value.push(key)
+	}
+
+	const getOrderStatusClass = (status: string): string => {
+		if (status === '已完成' || status === 'COMPLETED') return 'status-completed'
+		if (status === '待使用' || status === 'UNUSED' || status === 'BOOKED') return 'status-pending'
+		return 'status-default'
+	}
+
+	const formatTime = (value: any): string => {
+		if (value == null) return ''
+		const text = value.toString().replace('T', ' ')
+		if (text.length >= 16) return text.substring(0, 16)
+		return text
+	}
+
+	const statusLabel = (sourceType: string, status: string): string => {
+		const s = status != null ? status.toString() : ''
+		if (sourceType === 'STUDY_BOOKING') {
+			if (s === 'BOOKED') return '已预约'
+			if (s === 'COMPLETED') return '已完成'
+			return s
+		}
+		if (sourceType === 'RENTAL_ORDER') {
+			if (s === 'PAID') return '已支付'
+			if (s === 'EN_ROUTE') return '前往中'
+			if (s === 'ARRIVED') return '已到达'
+			if (s === 'IN_TRIP') return '行程中'
+			if (s === 'COMPLETED') return '已完成'
+			return s
+		}
+		if (s === 'COMPLETED') return '已完成'
+		if (s === 'PAID') return '待发货'
+		if (s === 'UNRECEIVED') return '待收货'
+		if (s === 'UNUSED') return '待使用'
+		return s
+	}
+
+	const loadOrders = () => {
+		fetchEligibleInvoiceOrders<any>().then((list) => {
+			const mapped: Order[] = []
+			for (let i = 0; i < list.length; i++) {
+				const raw = list[i]
+				const sourceType = raw['sourceType'] != null ? (raw['sourceType'] as string) : 'MALL_ORDER'
+				const inv = raw['invoiceStatus'] != null ? (raw['invoiceStatus'] as string) : ''
+				mapped.push({
+					id: raw['id'] as string,
+					sourceType,
+					title: raw['title'] != null ? (raw['title'] as string) : '订单',
+					orderNo: raw['orderNo'] != null ? (raw['orderNo'] as string) : (raw['id'] as string),
+					orderTime: formatTime(raw['time']),
+					amount: raw['amount'] != null ? raw['amount'].toString() : '0',
+					status: statusLabel(sourceType, raw['status'] != null ? raw['status'].toString() : ''),
+					invoiceStatus: inv,
+					issuerType: raw['issuerType'] != null ? (raw['issuerType'] as string) : 'ENTERPRISE',
+					enterpriseId: raw['enterpriseId'] != null ? (raw['enterpriseId'] as string) : '',
+					issuerLabel: raw['issuerLabel'] != null ? (raw['issuerLabel'] as string) : '企业'
+				})
+			}
+			allOrders.value = mapped
+			if (preselectKey.value.length > 0) {
+				const pref = mapped.find((o) => (o.sourceType + ':' + o.id) === preselectKey.value)
+				if (pref != null && pref.invoiceStatus.length === 0 && selectedKeys.value.indexOf(preselectKey.value) < 0) {
+					selectedKeys.value = [preselectKey.value]
+					if (pref.sourceType === 'MALL_ORDER') orderType.value = 'mall'
+					else if (pref.sourceType === 'STUDY_BOOKING') orderType.value = 'study'
+					else if (pref.sourceType === 'RENTAL_ORDER') orderType.value = 'rental'
+				}
+			}
+			const valid: string[] = []
+			for (let i = 0; i < selectedKeys.value.length; i++) {
+				const key = selectedKeys.value[i]
+				const hit = mapped.find((o) => (o.sourceType + ':' + o.id) === key)
+				if (hit != null && hit.invoiceStatus.length === 0) valid.push(key)
+			}
+			selectedKeys.value = valid
+		}).catch((_err) => {
+			allOrders.value = []
+			uni.showToast({ title: '订单加载失败', icon: 'none' })
+		})
+	}
+
+	const submitInvoiceApply = () => {
+		if (selectedKeys.value.length === 0) {
+			uni.showToast({ title: '请选择订单', icon: 'none' })
+			return
+		}
+		const items: string[] = []
+		for (let i = 0; i < selectedKeys.value.length; i++) {
+			items.push(selectedKeys.value[i])
+		}
+		uni.navigateTo({
+			url: '/pages/mine/invoice-form?items=' + encodeURIComponent(items.join(',')) + '&amount=' + totalAmount.value
+		})
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	onLoad((query: any) => {
+		const raw = query != null && query['preselect'] != null ? String(query['preselect']) : ''
+		preselectKey.value = raw.length > 0 ? decodeURIComponent(raw) : ''
+		loadOrders()
+	})
+
+	onShow(() => {
+		loadOrders()
+	})
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+		position: relative;
+	}
+
+	.fixed-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1000;
+		background-color: #F5F7FB;
+	}
+
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.order-type-tabs {
+		height: 50px;
+		padding: 0 16px;
+		align-items: center;
+	}
+
+	.tab-item {
+		flex: 1;
+		height: 36px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 18px;
+		margin: 0 4px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+
+	.tab-active {
+		background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+
+	.tab-text {
+		font-size: 14px;
+		color: #1A1A1A;
+		font-weight: 700;
+	}
+
+	.tab-text-active {
+		color: #FFFFFF;
+		font-weight: 800;
+	}
+
+	.main-scroll {
+		position: absolute;
+		left: 0;
+		right: 0;
+	}
+
+	.tip-banner {
+		margin: 16px 16px 12px 16px;
+		padding: 12px 16px;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		flex-direction: row;
+		align-items: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.tip-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 8px;
+	}
+
+	.tip-text {
+		font-size: 13px;
+		color: #374151;
+		font-weight: 500;
+		flex: 1;
+	}
+
+	.order-list {
+		padding: 0 16px;
+	}
+
+	.order-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 12px;
+		flex-direction: row;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.order-selected {
+		border-color: #1A1A1A;
+		background-color: #FFFFFF;
+	}
+
+	.checkbox-wrap {
+		margin-right: 12px;
+		padding-top: 2px;
+	}
+
+	.checkbox {
+		width: 22px;
+		height: 22px;
+		border-radius: 11px;
+		border-width: 1.5px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		background-color: #FFFFFF;
+	}
+
+	.checkbox-checked {
+		background-color: #1A73E8;
+		border-color: #1A1A1A;
+	}
+
+	.checkbox-icon {
+		width: 14px;
+		height: 14px;
+	}
+
+	.order-content {
+		flex: 1;
+	}
+
+	.order-header {
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 12px;
+	}
+
+	.order-title {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 600;
+		flex: 1;
+		margin-right: 8px;
+	}
+
+	.order-status-tag {
+		padding: 4px 10px;
+		border-radius: 8px;
+		flex-shrink: 0;
+	}
+
+	.status-completed {
+		background-color: #1A73E8;
+	}
+
+	.status-pending {
+		background-color: #1A73E8;
+	}
+
+	.status-default {
+		background-color: #FFFFFF;
+	}
+
+	.order-status-text {
+		font-size: 12px;
+		font-weight: 700;
+	}
+
+	.status-completed .order-status-text {
+		color: #1A73E8;
+	}
+
+	.status-pending .order-status-text {
+		color: #1A1A1A;
+	}
+
+	.status-default .order-status-text {
+		color: #1A1A1A;
+	}
+
+	.order-info-row {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 6px;
+	}
+
+	.order-label {
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.order-value {
+		font-size: 13px;
+		color: #1A1A1A;
+	}
+
+	.order-amount {
+		font-size: 17px;
+		color: #1A1A1A;
+		font-weight: 800;
+	}
+
+	.issuer-chip {
+		padding: 2rpx 12rpx;
+		border-radius: 999rpx;
+		background-color: #F3E7D3;
+	}
+	.issuer-chip-text {
+		font-size: 22rpx;
+		color: #374151;
+	}
+	.invoice-status-row {
+		margin-top: 8px;
+		padding-top: 8px;
+		border-top-width: 0.5px;
+		border-top-color: rgba(0, 0, 0, 0.1);
+	}
+
+	.invoice-status-text {
+		font-size: 13px;
+		color: #1A73E8;
+		font-weight: 700;
+	}
+
+	.empty-state {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 48px 24px;
+		align-items: center;
+		margin-top: 24px;
+	}
+
+	.empty-icon {
+		width: 48px;
+		height: 48px;
+		margin-bottom: 12px;
+	}
+
+	.empty-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 600;
+		margin-bottom: 6px;
+	}
+
+	.empty-hint {
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.bottom-spacer {
+		height: 140px;
+	}
+
+	.bottom-action-bar {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 12px 16px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+		background-color: #F5F7FB;
+		z-index: 999;
+	}
+
+	.selected-info {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+
+	.selected-text {
+		font-size: 14px;
+		color: #374151;
+	}
+
+	.total-amount {
+		font-size: 18px;
+		color: #1A1A1A;
+		font-weight: 800;
+	}
+
+	.submit-btn {
+		height: 48px;
+		background-color: #1A73E8;
+		border-radius: 24px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.submit-btn-disabled {
+		background-color: #E5E7EB;
+	}
+
+	.submit-btn-text{
+		font-size: 16px;
+		color: #FFFFFF;
+		font-weight: 800;
+	}
+</style>

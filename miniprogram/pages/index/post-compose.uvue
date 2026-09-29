@@ -1,0 +1,2463 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav uni-row">
+			<view class="nav-side" @click="goBack">
+				<text class="nav-cancel">取消</text>
+			</view>
+			<view class="nav-mid uni-column">
+				<text class="nav-kicker">ARTICLE</text>
+				<text class="nav-title">{{ composeNavTitle }}</text>
+			</view>
+			<view class="nav-side nav-side-right"></view>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false">
+		<view class="sheet uni-column">
+			<view class="gold-edge"></view>
+			<view class="title-host" @click="focusTitleField">
+				<rich-text v-if="titleHtml.length > 0 && !titleEditing" class="title-rich" :nodes="titleHtml"></rich-text>
+				<input v-else class="title-input" type="text" maxlength="40" placeholder="拟一个让人想点开的标题" placeholder-style="color:#9CA3AF;" v-model="title" :focus="titleWantFocus" @input="onTitleInput" @focus="onTitleFocus" @blur="onTitleBlur" />
+			</view>
+			<view class="title-rule"></view>
+			<view v-if="title.length > 0 && coverMode === 'tpl'" class="hl-pick uni-column">
+				<view class="hl-pick-head uni-row">
+					<text class="hl-pick-hint">{{ hlPickHint }}</text>
+					<text v-if="coverHlText.length > 0" class="hl-pick-clear" @click="clearCoverHl">清除</text>
+				</view>
+				<view
+					class="hl-pick-row uni-row"
+					@touchstart="onHlRowTouchStart"
+					@touchmove.stop.prevent="onHlRowTouchMove"
+					@touchend="onHlRowTouchEnd"
+					@touchcancel="onHlRowTouchEnd"
+				>
+					<view
+						v-for="(g, gi) in titleGlyphs"
+						:key="'hg-'+gi"
+						:class="g.on ? 'hl-glyph hl-glyph-on' : 'hl-glyph'"
+						@longpress.stop="onGlyphLongPress(gi)"
+						@click="onGlyphClick(gi)"
+					>
+						<text :class="g.on ? 'hl-glyph-txt hl-glyph-txt-on' : 'hl-glyph-txt'">{{ g.ch }}</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="tag-block uni-column">
+				<view class="tag-head uni-row">
+					<text class="tag-kicker"># 话题</text>
+					<text class="tag-head-title">文章标签</text>
+					<view class="card-grow"></view>
+					<text class="tag-count">{{ articleTags.length }}/4</text>
+				</view>
+				<view v-if="articleTags.length > 0" class="tag-picked uni-row">
+					<view v-for="(tag, ti) in articleTags" :key="'sel-'+tag" class="tag-chip tag-chip-on uni-row" @click="removeArticleTag(ti)">
+						<text class="tag-chip-txt-on">#{{ tag }}</text>
+						<text class="tag-chip-x">×</text>
+					</view>
+				</view>
+				<view v-if="articleTags.length < 4" class="tag-add uni-row">
+					<text class="tag-add-hash">#</text>
+					<input
+						class="tag-add-input"
+						type="text"
+						maxlength="8"
+						placeholder="自己加标签，如 感受、宣传"
+						placeholder-style="color:#9CA3AF;"
+						v-model="tagDraft"
+						confirm-type="done"
+						@confirm="addTagFromDraft"
+					/>
+					<view class="tag-add-btn" @click="addTagFromDraft">
+						<text class="tag-add-btn-txt">添加</text>
+					</view>
+				</view>
+				<view v-else class="tag-limit">
+					<text class="tag-limit-txt">最多 4 个标签</text>
+				</view>
+				<scroll-view class="tag-suggest-scroll" scroll-x="true" :show-scrollbar="false">
+					<view class="tag-suggest uni-row">
+						<view
+							v-for="(sug, si) in visibleSuggestTags"
+							:key="'sug-'+sug"
+							class="tag-chip uni-row"
+							@click="addArticleTag(sug)"
+						>
+							<text class="tag-chip-txt">#{{ sug }}</text>
+						</view>
+					</view>
+				</scroll-view>
+			</view>
+
+			<scroll-view class="tool-scroll" scroll-x="true" :show-scrollbar="false">
+				<view class="tool-row uni-row">
+					<view :class="['tool', fmtBold ? 'tool-on' : '']" @click="toggleFormat('bold', '')">
+						<text :class="['tool-b', fmtBold ? 'tool-mark-on' : '']">B</text>
+					</view>
+					<view :class="['tool', fmtItalic ? 'tool-on' : '']" @click="toggleFormat('italic', '')">
+						<text :class="['tool-i', fmtItalic ? 'tool-mark-on' : '']">I</text>
+					</view>
+					<view :class="['tool', fmtUnderline ? 'tool-on' : '']" @click="toggleFormat('underline', '')">
+						<text :class="['tool-u', fmtUnderline ? 'tool-mark-on' : '']">U</text>
+					</view>
+					<view class="tool-split"></view>
+					<view :class="['tool tool-wide', fmtAlign === 'left' ? 'tool-on' : '']" @click="toggleFormat('align', 'left')">
+						<text :class="['tool-mark', fmtAlign === 'left' ? 'tool-mark-on' : '']">左对齐</text>
+					</view>
+					<view :class="['tool tool-wide', fmtAlign === 'center' ? 'tool-on' : '']" @click="toggleFormat('align', 'center')">
+						<text :class="['tool-mark', fmtAlign === 'center' ? 'tool-mark-on' : '']">居中</text>
+					</view>
+					<view :class="['tool tool-wide', fmtAlign === 'right' ? 'tool-on' : '']" @click="toggleFormat('align', 'right')">
+						<text :class="['tool-mark', fmtAlign === 'right' ? 'tool-mark-on' : '']">右对齐</text>
+					</view>
+					<view :class="['tool tool-wide', fmtList === 'bullet' ? 'tool-on' : '']" @click="toggleFormat('list', 'bullet')">
+						<text :class="['tool-mark', fmtList === 'bullet' ? 'tool-mark-on' : '']">列表</text>
+					</view>
+					<view class="tool-split"></view>
+					<view :class="['tool tool-wide', panel === 'size' ? 'tool-on' : '']" @click="togglePanel('size')">
+						<text :class="['tool-mark', panel === 'size' ? 'tool-mark-on' : '']">字号</text>
+					</view>
+					<view :class="['tool', panel === 'color' ? 'tool-on' : '']" @click="togglePanel('color')">
+						<view class="tool-tint tool-tint-ink"></view>
+					</view>
+					<view :class="['tool', panel === 'bg' ? 'tool-on' : '']" @click="togglePanel('bg')">
+						<view class="tool-tint tool-tint-paper"></view>
+					</view>
+					<view class="tool tool-wide" @click="insertDivider">
+						<text class="tool-mark">分隔线</text>
+					</view>
+					<view class="tool tool-wide" @click="pickBodyMedia">
+						<text class="tool-mark">插图</text>
+					</view>
+					<view :class="['tool tool-wide', panel === 'link' ? 'tool-on' : '']" @click="togglePanel('link')">
+						<text :class="['tool-mark', panel === 'link' ? 'tool-mark-on' : '']">链接</text>
+					</view>
+				</view>
+			</scroll-view>
+
+			<view v-if="panel === 'size'" class="panel uni-row">
+				<view v-for="(sz, si) in sizeOpts" :key="'sz-'+sz.value" :class="['size-chip', fmtSize === sz.value ? 'size-chip-on' : '']" @click="applySize(sz.value)">
+					<text :class="['size-chip-txt', fmtSize === sz.value ? 'size-chip-txt-on' : '']" :style="'font-size:' + sz.value">{{ sz.label }}</text>
+				</view>
+			</view>
+			<view v-if="panel === 'color'" class="panel uni-row">
+				<view v-for="(c, ci) in colorOpts" :key="'c-'+c.value" class="swatch" @click="applyColor(c.value)">
+					<view class="swatch-fill" :style="'background-color:' + c.value"></view>
+				</view>
+			</view>
+			<view v-if="panel === 'bg'" class="panel uni-row">
+				<view v-for="(c, bi) in bgOpts" :key="'b-'+c.value" class="swatch" @click="applyBg(c.value)">
+					<view class="swatch-fill" :style="'background-color:' + c.value"></view>
+				</view>
+			</view>
+			<view v-if="panel === 'link'" class="link-add uni-row">
+				<input class="link-input" type="text" placeholder="粘贴公众号、视频号或网页链接" placeholder-style="color:#9CA3AF;" v-model="linkDraft" confirm-type="done" @confirm="addLink" />
+				<view class="link-add-btn" @click="addLink">
+					<text class="link-add-txt">添加</text>
+				</view>
+			</view>
+
+			<view class="exp-editor-host">
+				<editor
+					id="exp-editor"
+					class="exp-editor"
+					placeholder="写下文章正文，可穿插图片、视频和链接。"
+					show-img-size
+					show-img-toolbar
+					show-img-resize
+					@ready="onEditorReady"
+					@statuschange="onStatusChange"
+					@input="onEditorInput"
+					@focus="onBodyEditorFocus"
+					@blur="onBodyEditorBlur"
+				></editor>
+				<textarea
+					v-if="bodyEditorFallback"
+					class="exp-editor-fallback"
+					:focus="bodyFallbackFocus"
+					:value="textContent"
+					placeholder="写下文章正文，可穿插图片、视频和链接。"
+					placeholder-style="color:#9CA3AF;"
+					@input="onFallbackInput"
+					@focus="onFallbackFocus"
+				></textarea>
+				<view v-if="!bodyEditorArmed" class="exp-editor-hit" @click="armBodyEditor">
+					<text v-if="textContent.length === 0" class="exp-editor-ph">写下文章正文，可穿插图片、视频和链接。</text>
+				</view>
+			</view>
+			<rich-text v-if="bodyEditorFallback && bodyHasMarks" class="exp-fallback-preview" :nodes="htmlContent"></rich-text>
+
+			<view v-if="bodyVideos.length > 0" class="sheet-block uni-column">
+				<view class="card-head uni-row">
+					<text class="card-kicker">VIDEO</text>
+					<text class="card-title">正文视频</text>
+					<view class="card-grow"></view>
+					<text class="card-count">{{ bodyVideos.length }}</text>
+				</view>
+				<view class="img-grid uni-row">
+					<view v-for="(item, vi) in bodyVideos" :key="'bv-'+vi" class="img-item">
+						<image v-if="item.thumb.length > 0" :src="item.thumb" class="img-thumb" mode="aspectFill"></image>
+						<view v-else class="img-ph">
+							<text class="img-ph-txt">视频</text>
+						</view>
+						<view class="img-flag">
+							<text class="img-flag-txt">视频</text>
+						</view>
+						<view class="img-del" @click="removeBodyVideo(vi)">
+							<text class="img-del-txt">×</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<view v-if="links.length > 0" class="sheet-block uni-column">
+				<view class="card-head uni-row">
+					<text class="card-kicker">LINK</text>
+					<text class="card-title">超链接</text>
+					<view class="card-grow"></view>
+					<text class="card-count">{{ links.length }}</text>
+				</view>
+				<view v-for="(lk, li) in links" :key="'lk-'+li" class="link-row uni-row">
+					<view class="link-copy uni-column">
+						<text class="link-title">{{ lk.title }}</text>
+						<text class="link-url">{{ lk.url }}</text>
+					</view>
+					<view class="link-del" @click="removeLink(li)">
+						<text class="link-del-txt">删除</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="sheet-block uni-column">
+				<view class="card-head uni-row">
+					<text class="card-kicker">COVER</text>
+					<text class="card-title">封面</text>
+					<view class="card-grow"></view>
+					<text class="card-count">{{ coverMode === 'image' ? (covers.length.toString() + '/9') : (coverMode === 'tpl' ? '文字模版' : '未设置') }}</text>
+				</view>
+				<view class="cover-mode uni-row">
+					<view :class="['cover-mode-btn', coverMode === 'none' ? 'cover-mode-on' : '']" @click="setCoverMode('none')">
+						<text :class="['cover-mode-txt', coverMode === 'none' ? 'cover-mode-txt-on' : '']">无封面</text>
+					</view>
+					<view :class="['cover-mode-btn', coverMode === 'image' ? 'cover-mode-on' : '']" @click="setCoverMode('image')">
+						<text :class="['cover-mode-txt', coverMode === 'image' ? 'cover-mode-txt-on' : '']">图片</text>
+					</view>
+					<view :class="['cover-mode-btn', coverMode === 'tpl' ? 'cover-mode-on' : '']" @click="setCoverMode('tpl')">
+						<text :class="['cover-mode-txt', coverMode === 'tpl' ? 'cover-mode-txt-on' : '']">文字模版</text>
+					</view>
+				</view>
+				<view v-if="coverMode === 'image'" class="img-grid uni-row">
+					<view v-for="(item, i) in covers" :key="'cv-'+i" class="img-item">
+						<image v-if="coverThumb(item).length > 0" :src="coverThumb(item)" class="img-thumb" mode="aspectFill"></image>
+						<view v-else class="img-ph">
+							<text class="img-ph-txt">视频</text>
+						</view>
+						<view v-if="i === 0" class="img-flag">
+							<text class="img-flag-txt">封面</text>
+						</view>
+						<view v-if="item.kind === 'video'" class="img-play">
+							<text class="img-play-txt">视频</text>
+						</view>
+						<view class="img-del" @click="removeCover(i)">
+							<text class="img-del-txt">×</text>
+						</view>
+					</view>
+					<view v-if="covers.length < 9" class="img-add" @click="pickCoverMedia">
+						<text class="img-add-plus">+</text>
+						<text class="img-add-cap">图片/视频</text>
+					</view>
+				</view>
+				<view v-else-if="coverMode === 'tpl'" class="tpl-stage uni-column">
+					<view class="tpl-swiper-wrap" @touchmove.stop>
+					<swiper
+						class="tpl-swiper"
+						:current="coverTplIndex"
+						:circular="true"
+						:indicator-dots="false"
+						:duration="280"
+						previous-margin="32px"
+						next-margin="32px"
+						@change="onCoverTplChange"
+					>
+						<swiper-item v-for="(tpl, ti) in coverTemplates" :key="'tpl-'+tpl.id">
+							<view :class="['tpl-slide', coverTplId === tpl.id ? 'tpl-slide-on' : '']">
+								<note-text-cover :tpl="tpl.id" :title="previewTitle" :hl="coverHlText" :auto-hl="false" size="hero"></note-text-cover>
+							</view>
+						</swiper-item>
+					</swiper>
+					</view>
+					<view class="tpl-caption uni-row">
+						<text class="tpl-caption-name">{{ coverTplName }}</text>
+						<text class="tpl-caption-hint">左右滑动切换</text>
+					</view>
+					<view class="tpl-dots uni-row">
+						<view
+							v-for="(tpl, di) in coverTemplates"
+							:key="'dot-'+tpl.id"
+							:class="['tpl-dot', coverTplIndex === di ? 'tpl-dot-on' : '']"
+							@click="jumpCoverTpl(di)"
+						></view>
+					</view>
+					<text class="hl-cover-hint">封面荧光：填完标题后，在上方长按并滑动选择文字</text>
+				</view>
+			</view>
+
+			<view class="sheet-block uni-column">
+				<view class="card-head uni-row">
+					<text class="card-kicker">ROUTE</text>
+					<text class="card-title">关联项目</text>
+					<view class="card-grow"></view>
+					<text class="card-count">{{ projectId.length > 0 ? '已选' : '可选' }}</text>
+				</view>
+				<view class="proj-search uni-row">
+					<image src="/static/func-search.svg" class="proj-search-icon" mode="aspectFit"></image>
+					<input class="proj-search-input" type="text" placeholder="搜索参加过的研学" placeholder-style="color:#9CA3AF;" v-model="projectKeyword" />
+				</view>
+				<scroll-view v-if="visibleProjects.length > 0" class="proj-scroll" scroll-x="true" :show-scrollbar="false">
+					<view class="proj-row uni-row">
+						<view v-for="(p, pi) in visibleProjects" :key="'pj-'+p.id" :class="['proj-chip', projectId === p.id ? 'proj-chip-on' : '']" @click="selectProject(p.id)">
+							<text :class="['proj-chip-txt', projectId === p.id ? 'proj-chip-txt-on' : '']">{{ p.title }}</text>
+						</view>
+					</view>
+				</scroll-view>
+				<text v-if="projects.length === 0" class="proj-empty">还没有参加过的研学项目</text>
+				<text v-else-if="visibleProjects.length === 0" class="proj-empty">没有匹配的项目</text>
+			</view>
+			<view class="sheet-safe"></view>
+		</view>
+		</scroll-view>
+
+		<view class="foot uni-row">
+			<view class="foot-btn foot-preview" @click="openPreview">
+				<text class="foot-preview-txt">预览</text>
+			</view>
+			<view class="foot-btn foot-draft" @click="submitDraft">
+				<text class="foot-draft-txt">暂存</text>
+			</view>
+			<view class="foot-btn foot-publish" @click="submit">
+				<text class="foot-publish-txt">{{ publishBtnText }}</text>
+			</view>
+		</view>
+
+		<view v-if="previewOpen" class="preview-mask uni-column">
+			<view class="preview-status" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="preview-nav uni-row">
+				<view class="preview-close" @click="closePreview">
+					<text class="preview-close-txt">关闭</text>
+				</view>
+				<text class="preview-nav-title">发布预览</text>
+				<view class="preview-nav-space"></view>
+			</view>
+			<scroll-view class="preview-body" scroll-y="true" :show-scrollbar="false">
+				<view class="preview-inner">
+					<view class="preview-meta uni-row">
+						<view class="preview-tag">
+							<text class="preview-tag-txt">文章</text>
+						</view>
+						<text class="preview-time">发布后可见</text>
+					</view>
+					<rich-text v-if="titleHtml.length > 0" class="preview-title" :nodes="titleHtml"></rich-text>
+					<text v-else class="preview-title">{{ previewTitle }}</text>
+					<view v-if="articleTags.length > 0" class="preview-tags uni-row">
+						<view v-for="(tag, pti) in articleTags" :key="'pt-'+tag" class="preview-topic">
+							<text class="preview-topic-txt">#{{ tag }}</text>
+						</view>
+					</view>
+					<view v-if="coverMode === 'tpl'" class="preview-cover">
+						<note-text-cover :tpl="coverTplId" :title="previewTitle" :hl="coverHlText" :auto-hl="false" size="hero"></note-text-cover>
+					</view>
+					<view v-if="coverMode === 'image'" class="preview-imgs uni-column">
+						<image v-for="(img, pi) in previewImages" :key="'pvimg-'+pi" :src="img" class="preview-img" mode="widthFix"></image>
+					</view>
+					<rich-text v-if="previewHtml.length > 0" class="preview-rich" :nodes="previewHtml"></rich-text>
+					<view v-for="(clip, cvi) in previewVideos" :key="'pvv-'+cvi" class="preview-video-wrap">
+						<video class="preview-video" :src="clip.url" :poster="clip.thumb" controls object-fit="contain"></video>
+					</view>
+					<view v-for="(lk, pli) in links" :key="'pvl-'+pli" class="preview-link">
+						<text class="preview-link-kicker">{{ lk.title }}</text>
+						<text class="preview-link-url">{{ lk.url }}</text>
+					</view>
+					<view v-if="previewProject.length > 0" class="preview-proj uni-row">
+						<view class="preview-proj-copy uni-column">
+							<text class="preview-proj-kicker">关联研学项目</text>
+							<text class="preview-proj-name">{{ previewProject }}</text>
+						</view>
+					</view>
+					<view class="preview-safe"></view>
+				</view>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { ARTICLE_TAG_LIMIT, coverTplHlOf, coverTplIdOf, coverTplUrl, createCommunityPost, fetchCommunityPostDetail, isHttpCoverUrl, listCoverTemplates, listSuggestedArticleTags, normalizeArticleTag, updateCommunityPost, type CoverTplOption } from '../../utils/community.uts'
+	import { uploadFileDirect } from '../../utils/upload.uts'
+	import { appendBodyExtras, extractImgSrcs, guessLinkTitle, normalizeHttpUrl, parseBodyLinks, parseBodyTags, parseBodyVideos, parseTitleHtml, stripBodyExtras, stripHtml, type BodyLink, type BodyVideo } from '../../utils/html-content.uts'
+	import { isStudyBookingActiveStatus } from '../../utils/study-booking.uts'
+	import { fetchStudyBookings, type StudyProjectMeta } from '../../utils/study-projects.uts'
+
+	type FormatOpt = {
+		value: string
+		label: string
+	}
+
+	type MediaItem = {
+		kind: string
+		url: string
+		thumb: string
+	}
+
+	type TitleGlyph = {
+		ch: string
+		on: boolean
+	}
+
+	type GlyphBox = {
+		left: number
+		top: number
+		right: number
+		bottom: number
+	}
+
+	const statusBarHeight = getStatusBarHeight()
+	const title = ref('')
+	const titleHtml = ref('')
+	const titleEditing = ref(false)
+	const titleWantFocus = ref(false)
+	const titleMarkBold = ref(false)
+	const titleMarkItalic = ref(false)
+	const titleMarkUnderline = ref(false)
+	const titleMarkColor = ref('')
+	const formatTarget = ref('body')
+	const bodyEditorArmed = ref(false)
+	const bodyEditorFocused = ref(false)
+	const bodyEditorFallback = ref(false)
+	const bodyFallbackFocus = ref(false)
+	const bodyMarkColor = ref('')
+	const bodyMarkBg = ref('')
+	const articleTags = ref<string[]>([])
+	const tagDraft = ref('')
+	const suggestTags: string[] = listSuggestedArticleTags()
+	const htmlContent = ref('')
+	const textContent = ref('')
+	const covers = ref<MediaItem[]>([])
+	const coverMode = ref('none')
+	const coverTplId = ref('sticky')
+	const coverTplIndex = ref(0)
+	const coverHlText = ref('')
+	let hlDragging = false
+	let hlDidDrag = false
+	let hlAnchor = -1
+	let glyphBoxes: GlyphBox[] = []
+	const coverTemplates: CoverTplOption[] = listCoverTemplates()
+	const editingId = ref('')
+	const editingStatus = ref('')
+	let pendingEditorHtml = ''
+	let loadingExisting = false
+	const bodyVideos = ref<MediaItem[]>([])
+	const links = ref<BodyLink[]>([])
+	const linkDraft = ref('')
+	const uploading = ref(false)
+	const projects = ref<StudyProjectMeta[]>([])
+	const projectId = ref('')
+	const projectKeyword = ref('')
+	const panel = ref('')
+	const fmtBold = ref(false)
+	const fmtItalic = ref(false)
+	const fmtUnderline = ref(false)
+	const fmtAlign = ref('')
+	const fmtList = ref('')
+	const fmtSize = ref('')
+	let editorCtx: any = null
+	let submitting = false
+	const previewOpen = ref(false)
+	const previewHtml = ref('')
+
+	const composeNavTitle = computed((): string => {
+		if (editingId.value.length === 0) return '发文章'
+		if (editingStatus.value === 'draft') return '编辑草稿'
+		return '修改文章'
+	})
+
+	const publishBtnText = computed((): string => {
+		if (editingStatus.value === 'published' || editingStatus.value === 'pending') return '提交审核'
+		return '发布'
+	})
+
+	const previewTitle = computed((): string => {
+		const t = title.value.trim()
+		if (t.length > 0) return t
+		return '未填写标题'
+	})
+
+	const visibleSuggestTags = computed((): string[] => {
+		const picked = articleTags.value
+		const out: string[] = []
+		for (let i = 0; i < suggestTags.length; i++) {
+			const s = suggestTags[i]
+			let used = false
+			for (let j = 0; j < picked.length; j++) {
+				if (picked[j] === s) {
+					used = true
+					break
+				}
+			}
+			if (!used) out.push(s)
+		}
+		return out
+	})
+
+	const addArticleTag = (raw: string) => {
+		const t = normalizeArticleTag(raw)
+		if (t.length === 0) {
+			uni.showToast({ title: '请输入标签', icon: 'none' })
+			return
+		}
+		const cur = articleTags.value
+		if (cur.length >= ARTICLE_TAG_LIMIT) {
+			uni.showToast({ title: '最多添加4个标签', icon: 'none' })
+			return
+		}
+		for (let i = 0; i < cur.length; i++) {
+			if (cur[i] === t) {
+				uni.showToast({ title: '已经加过这个标签', icon: 'none' })
+				return
+			}
+		}
+		const next: string[] = []
+		for (let i = 0; i < cur.length; i++) next.push(cur[i])
+		next.push(t)
+		articleTags.value = next
+		tagDraft.value = ''
+	}
+
+	const addTagFromDraft = () => {
+		addArticleTag(tagDraft.value)
+	}
+
+	const removeArticleTag = (index: number) => {
+		const next: string[] = []
+		const cur = articleTags.value
+		for (let i = 0; i < cur.length; i++) {
+			if (i !== index) next.push(cur[i])
+		}
+		articleTags.value = next
+	}
+
+	const coverTplName = computed((): string => {
+		const id = coverTplId.value
+		const list = coverTemplates
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].id === id) return list[i].name
+		}
+		return '便签'
+	})
+
+	const titleGlyphs = computed((): TitleGlyph[] => {
+		const t = title.value
+		const hl = coverHlText.value
+		const out: TitleGlyph[] = []
+		let markFrom = -1
+		if (hl.length > 0) markFrom = t.indexOf(hl)
+		for (let i = 0; i < t.length; i++) {
+			const g: TitleGlyph = {
+				ch: t.charAt(i),
+				on: markFrom >= 0 && i >= markFrom && i < markFrom + hl.length
+			}
+			out.push(g)
+		}
+		return out
+	})
+
+	const hlPickHint = computed((): string => {
+		const hl = coverHlText.value
+		if (hl.length > 0) return '已标注「' + hl + '」· 长按可重选'
+		return '长按标题文字并滑动，选择荧光标注'
+	})
+
+	const applyHlRange = (a: number, b: number) => {
+		const t = title.value
+		if (t.length === 0) {
+			coverHlText.value = ''
+			return
+		}
+		let from = a
+		let to = b
+		if (from > to) {
+			const tmp = from
+			from = to
+			to = tmp
+		}
+		if (from < 0) from = 0
+		if (to >= t.length) to = t.length - 1
+		if (from > to) {
+			coverHlText.value = ''
+			return
+		}
+		coverHlText.value = t.substring(from, to + 1)
+	}
+
+	const onTitleInput = (e: UniInputEvent) => {
+		const d = e.detail
+		const raw = d != null && d.value != null ? d.value.toString() : title.value
+		const hl = coverHlText.value
+		if (hl.length > 0 && raw.indexOf(hl) < 0) coverHlText.value = ''
+		rebuildTitleHtml()
+	}
+
+	const clearCoverHl = () => {
+		coverHlText.value = ''
+		hlDragging = false
+		hlAnchor = -1
+	}
+
+	const measureHlGlyphs = () => {
+		uni.createSelectorQuery().selectAll('.hl-glyph').boundingClientRect().exec((res) => {
+			const list: GlyphBox[] = []
+			let rows: any = null
+			if (res != null && res.length > 0) rows = res[0]
+			if (rows != null && Array.isArray(rows)) {
+				for (let i = 0; i < rows.length; i++) {
+					const r = rows[i]
+					if (r == null) continue
+					const box: GlyphBox = {
+						left: Number(r.left),
+						top: Number(r.top),
+						right: Number(r.right),
+						bottom: Number(r.bottom)
+					}
+					list.push(box)
+				}
+			}
+			glyphBoxes = list
+		})
+	}
+
+	const hitGlyphIndex = (x: number, y: number): number => {
+		const list = glyphBoxes
+		for (let i = 0; i < list.length; i++) {
+			const b = list[i]
+			if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return i
+		}
+		let best = -1
+		let bestDist = 1000000
+		for (let i = 0; i < list.length; i++) {
+			const b = list[i]
+			if (y < b.top - 8 || y > b.bottom + 8) continue
+			const mid = (b.left + b.right) / 2
+			const d = x > mid ? x - mid : mid - x
+			if (d < bestDist) {
+				bestDist = d
+				best = i
+			}
+		}
+		return best
+	}
+
+	const touchPoint = (e: UniTouchEvent): number[] => {
+		const touches = e.touches.length > 0 ? e.touches : e.changedTouches
+		if (touches.length === 0) {
+			const empty: number[] = []
+			empty.push(-1)
+			empty.push(-1)
+			return empty
+		}
+		const pt: number[] = []
+		pt.push(touches[0].clientX)
+		pt.push(touches[0].clientY)
+		return pt
+	}
+
+	const onHlRowTouchStart = (_e: UniTouchEvent) => {
+		measureHlGlyphs()
+	}
+
+	const onGlyphLongPress = (index: number) => {
+		hlDragging = true
+		hlDidDrag = false
+		hlAnchor = index
+		applyHlRange(index, index)
+		measureHlGlyphs()
+	}
+
+	const onGlyphClick = (index: number) => {
+		if (hlAnchor < 0) return
+		if (index === hlAnchor && !hlDidDrag) return
+		applyHlRange(hlAnchor, index)
+		hlAnchor = -1
+		hlDragging = false
+	}
+
+	const onHlRowTouchMove = (e: UniTouchEvent) => {
+		if (!hlDragging) return
+		const pt = touchPoint(e)
+		if (pt[0] < 0) return
+		const i = hitGlyphIndex(pt[0], pt[1])
+		if (i >= 0 && hlAnchor >= 0) {
+			if (i !== hlAnchor) hlDidDrag = true
+			applyHlRange(hlAnchor, i)
+		}
+	}
+
+	const onHlRowTouchEnd = (_e: UniTouchEvent) => {
+		hlDragging = false
+		if (hlDidDrag) hlAnchor = -1
+	}
+
+	const previewImages = computed((): string[] => {
+		const out: string[] = []
+		const list = covers.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].kind !== 'video') out.push(list[i].url)
+		}
+		return out
+	})
+
+	const previewVideos = computed((): MediaItem[] => {
+		const out: MediaItem[] = []
+		const list = covers.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].kind === 'video') out.push(list[i])
+		}
+		const vids = bodyVideos.value
+		for (let i = 0; i < vids.length; i++) out.push(vids[i])
+		return out
+	})
+
+	const previewProject = computed((): string => {
+		const id = projectId.value
+		if (id.length === 0) return ''
+		const list = projects.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].id === id) return list[i].title
+		}
+		return ''
+	})
+
+	const visibleProjects = computed((): StudyProjectMeta[] => {
+		const kw = projectKeyword.value.trim().toLowerCase()
+		const list = projects.value
+		if (kw.length === 0) return list
+		const out: StudyProjectMeta[] = []
+		for (let i = 0; i < list.length; i++) {
+			const title = list[i].title.toLowerCase()
+			if (title.indexOf(kw) >= 0) out.push(list[i])
+		}
+		return out
+	})
+
+	const sizeOpts: FormatOpt[] = [
+		{ value: '14px', label: '小' },
+		{ value: '16px', label: '标准' },
+		{ value: '18px', label: '中' },
+		{ value: '24px', label: '大' },
+		{ value: '32px', label: '特大' }
+	]
+	const colorOpts: FormatOpt[] = [
+		{ value: '#1A1A1A', label: '深灰' },
+		{ value: '#1A73E8', label: '蓝' },
+		{ value: '#1A73E8', label: '深蓝' },
+		{ value: '#1A73E8', label: '亮蓝' },
+		{ value: '#374151', label: '灰' },
+		{ value: '#111111', label: '黑' },
+		{ value: '#1A73E8', label: '主蓝' },
+		{ value: '#B42318', label: '红' }
+	]
+	const bgOpts: FormatOpt[] = [
+		{ value: '#FFFFFF', label: '象牙' },
+		{ value: '#FFFFFF', label: '牛皮' },
+		{ value: '#1A73E8', label: '蓝底' },
+		{ value: '#DCFCE7', label: '浅绿' },
+		{ value: '#FEE2E2', label: '浅红' },
+		{ value: '#FFFFFF', label: '白' }
+	]
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const applyEditorHtml = (html: string) => {
+		htmlContent.value = html
+		if (editorCtx != null) {
+			editorCtx.setContents({ html: html })
+			pendingEditorHtml = ''
+			return
+		}
+		pendingEditorHtml = html
+	}
+
+	const onEditorReady = () => {
+		uni.createEditorContextAsync({
+			id: 'exp-editor',
+			success: (ctx: EditorContext) => {
+				editorCtx = ctx
+				if (pendingEditorHtml.length > 0) {
+					editorCtx.setContents({ html: pendingEditorHtml })
+					pendingEditorHtml = ''
+				}
+			},
+			fail: (_err) => {
+				uni.createSelectorQuery().select('#exp-editor').context((res) => {
+					if (res != null) editorCtx = res.context
+					if (editorCtx != null && pendingEditorHtml.length > 0) {
+						editorCtx.setContents({ html: pendingEditorHtml })
+						pendingEditorHtml = ''
+					}
+				}).exec()
+			}
+		})
+	}
+
+	const onEditorInput = (e: UniEditorInputEvent) => {
+		const d = e.detail
+		if (d == null) return
+		htmlContent.value = d.html != null ? d.html.toString() : ''
+		textContent.value = d.text != null ? d.text.toString() : ''
+	}
+
+	const onStatusChange = (e: UniEditorStatusChangeEvent) => {
+		const d = e.detail
+		if (d == null) return
+		fmtBold.value = d.bold == true
+		fmtItalic.value = d.italic == true
+		fmtUnderline.value = d.underline == true
+		fmtAlign.value = d.align != null ? d.align.toString() : ''
+		fmtList.value = d.list != null ? d.list.toString() : ''
+		fmtSize.value = d.fontSize != null ? d.fontSize.toString() : ''
+	}
+
+	const togglePanel = (name: string) => {
+		panel.value = panel.value === name ? '' : name
+	}
+
+
+	const escapePlain = (s: string): string => {
+		return s.split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;')
+	}
+
+	const inferTitleMarks = (html: string) => {
+		titleMarkBold.value = html.indexOf('<strong') >= 0
+		titleMarkItalic.value = html.indexOf('<em') >= 0
+		titleMarkUnderline.value = html.indexOf('<u>') >= 0 || html.indexOf('text-decoration:underline') >= 0
+		let color = ''
+		const key = 'color:'
+		const i = html.indexOf(key)
+		if (i >= 0) {
+			let j = i + key.length
+			let got = ''
+			while (j < html.length) {
+				const ch = html.charAt(j)
+				if (ch == ';' || ch == '"' || ch == "'") break
+				got += ch
+				j++
+			}
+			color = got.trim()
+			if (color == '#1A1A1A' || color == '#1a1a1a') color = ''
+		}
+		titleMarkColor.value = color
+	}
+
+	const rebuildTitleHtml = () => {
+		const plain = title.value
+		const marked = titleMarkBold.value || titleMarkItalic.value || titleMarkUnderline.value || titleMarkColor.value.length > 0
+		if (plain.length === 0 || !marked) {
+			titleHtml.value = ''
+			return
+		}
+		let inner = escapePlain(plain)
+		if (titleMarkBold.value) inner = '<strong>' + inner + '</strong>'
+		if (titleMarkItalic.value) inner = '<em>' + inner + '</em>'
+		if (titleMarkUnderline.value) inner = '<u>' + inner + '</u>'
+		const color = titleMarkColor.value.length > 0 ? titleMarkColor.value : '#1A1A1A'
+		titleHtml.value = '<span style="font-size:22px;font-weight:800;line-height:30px;color:' + color + '">' + inner + '</span>'
+	}
+
+	const focusTitleField = () => {
+		formatTarget.value = 'title'
+		titleEditing.value = true
+		titleWantFocus.value = true
+	}
+
+	const onTitleFocus = () => {
+		formatTarget.value = 'title'
+		titleEditing.value = true
+	}
+
+	const onTitleBlur = () => {
+		titleEditing.value = false
+		titleWantFocus.value = false
+	}
+
+	const applyTitleFormat = (name: string, value: string) => {
+		if (title.value.trim().length === 0) {
+			uni.showToast({ title: '先写标题', icon: 'none' })
+			return
+		}
+		if (name === 'bold') titleMarkBold.value = !titleMarkBold.value
+		else if (name === 'italic') titleMarkItalic.value = !titleMarkItalic.value
+		else if (name === 'underline') titleMarkUnderline.value = !titleMarkUnderline.value
+		else if (name === 'color') titleMarkColor.value = value
+		else return
+		rebuildTitleHtml()
+		titleEditing.value = false
+	}
+
+	const bodyHasMarks = computed((): boolean => {
+		const html = htmlContent.value
+		if (html.indexOf('<strong') >= 0) return true
+		if (html.indexOf('<em') >= 0) return true
+		if (html.indexOf('<u>') >= 0) return true
+		if (html.indexOf('<img') >= 0) return true
+		if (html.indexOf('color:') >= 0) return true
+		if (html.indexOf('font-size:') >= 0) return true
+		if (html.indexOf('text-align:') >= 0) return true
+		if (html.indexOf('underline') >= 0) return true
+		if (html.indexOf('background-color:') >= 0) return true
+		return false
+	})
+
+	const rebuildBodyFallbackHtml = () => {
+		const plain = textContent.value
+		let inner = escapePlain(plain)
+		if (fmtBold.value) inner = '<strong>' + inner + '</strong>'
+		if (fmtItalic.value) inner = '<em>' + inner + '</em>'
+		if (fmtUnderline.value) inner = '<span style="text-decoration:underline">' + inner + '</span>'
+		if (fmtSize.value.length > 0) inner = '<span style="font-size:' + fmtSize.value + '">' + inner + '</span>'
+		if (bodyMarkColor.value.length > 0) inner = '<span style="color:' + bodyMarkColor.value + '">' + inner + '</span>'
+		if (bodyMarkBg.value.length > 0) inner = '<span style="background-color:' + bodyMarkBg.value + '">' + inner + '</span>'
+		let align = ''
+		if (fmtAlign.value.length > 0) align = 'text-align:' + fmtAlign.value + ';'
+		if (fmtList.value === 'bullet') inner = '<ul><li>' + inner + '</li></ul>'
+		htmlContent.value = '<p style="' + align + '">' + inner + '</p>'
+	}
+
+	const applyBodyFallbackFormat = (name: string, value: string) => {
+		bodyEditorFallback.value = true
+		bodyEditorArmed.value = true
+		if (name === 'bold') fmtBold.value = !fmtBold.value
+		else if (name === 'italic') fmtItalic.value = !fmtItalic.value
+		else if (name === 'underline') fmtUnderline.value = !fmtUnderline.value
+		else if (name === 'color') bodyMarkColor.value = value
+		else if (name === 'backgroundColor') bodyMarkBg.value = value
+		else if (name === 'fontSize') fmtSize.value = value
+		else if (name === 'align') fmtAlign.value = value
+		else if (name === 'list') fmtList.value = fmtList.value === value ? '' : value
+		rebuildBodyFallbackHtml()
+	}
+
+	const armBodyEditor = () => {
+		formatTarget.value = 'body'
+		bodyEditorArmed.value = true
+		if (editorCtx != null) {
+			editorCtx.insertText({ text: '' })
+		}
+		if (!bodyEditorFocused.value) {
+			bodyEditorFallback.value = true
+			bodyFallbackFocus.value = true
+		}
+	}
+
+	const onBodyEditorFocus = () => {
+		bodyEditorFocused.value = true
+		bodyEditorArmed.value = true
+		bodyEditorFallback.value = false
+		bodyFallbackFocus.value = false
+		formatTarget.value = 'body'
+	}
+
+	const onBodyEditorBlur = () => {
+		bodyEditorFocused.value = false
+	}
+
+	const onFallbackFocus = () => {
+		formatTarget.value = 'body'
+		bodyEditorArmed.value = true
+	}
+
+	const onFallbackInput = (e: any) => {
+		const d = e != null ? e.detail : null
+		const raw = d != null && d.value != null ? d.value.toString() : textContent.value
+		textContent.value = raw
+		rebuildBodyFallbackHtml()
+	}
+
+	const toggleFormat = (name: string, value: string) => {
+		if (formatTarget.value === 'title') {
+			applyTitleFormat(name, value)
+			panel.value = ''
+			return
+		}
+		if (editorCtx != null && !bodyEditorFallback.value) {
+			if (value.length === 0) {
+				editorCtx.format(name, null)
+			} else {
+				editorCtx.format(name, value)
+			}
+			panel.value = ''
+			return
+		}
+		applyBodyFallbackFormat(name, value)
+		panel.value = ''
+	}
+
+	const applySize = (value: string) => {
+		toggleFormat('fontSize', value)
+		fmtSize.value = value
+		panel.value = ''
+	}
+
+	const applyColor = (value: string) => {
+		toggleFormat('color', value)
+		panel.value = ''
+	}
+
+	const applyBg = (value: string) => {
+		toggleFormat('backgroundColor', value)
+		panel.value = ''
+	}
+
+	const insertDivider = () => {
+		if (editorCtx != null && !bodyEditorFallback.value) {
+			editorCtx.insertDivider({})
+			panel.value = ''
+			return
+		}
+		bodyEditorFallback.value = true
+		bodyEditorArmed.value = true
+		htmlContent.value = htmlContent.value + '<p><hr/></p>'
+		panel.value = ''
+	}
+
+	const selectProject = (id: string) => {
+		projectId.value = id
+	}
+
+	const setCoverMode = (mode: string) => {
+		coverMode.value = mode
+	}
+
+	const selectCoverTpl = (id: string) => {
+		coverTplId.value = id
+		coverMode.value = 'tpl'
+		const list = coverTemplates
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].id === id) {
+				coverTplIndex.value = i
+				return
+			}
+		}
+	}
+
+	const onCoverTplChange = (e: UniSwiperChangeEvent) => {
+		const idx = e.detail.current
+		coverTplIndex.value = idx
+		if (idx >= 0 && idx < coverTemplates.length) {
+			coverTplId.value = coverTemplates[idx].id
+		}
+		coverMode.value = 'tpl'
+	}
+
+	const jumpCoverTpl = (index: number) => {
+		if (index < 0 || index >= coverTemplates.length) return
+		coverTplIndex.value = index
+		coverTplId.value = coverTemplates[index].id
+		coverMode.value = 'tpl'
+	}
+
+	const coverThumb = (item: MediaItem): string => {
+		if (item.kind === 'video') return item.thumb
+		return item.url
+	}
+
+	const removeCover = (index: number) => {
+		const next: MediaItem[] = []
+		const list = covers.value
+		for (let i = 0; i < list.length; i++) {
+			if (i !== index) next.push(list[i])
+		}
+		covers.value = next
+	}
+
+	const removeBodyVideo = (index: number) => {
+		const next: MediaItem[] = []
+		const list = bodyVideos.value
+		for (let i = 0; i < list.length; i++) {
+			if (i !== index) next.push(list[i])
+		}
+		bodyVideos.value = next
+	}
+
+	const removeLink = (index: number) => {
+		const next: BodyLink[] = []
+		const list = links.value
+		for (let i = 0; i < list.length; i++) {
+			if (i !== index) next.push(list[i])
+		}
+		links.value = next
+	}
+
+	const addLink = () => {
+		const url = normalizeHttpUrl(linkDraft.value)
+		if (url.length < 8) {
+			uni.showToast({ title: '请粘贴完整链接', icon: 'none' })
+			return
+		}
+		const list = links.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].url === url) {
+				uni.showToast({ title: '链接已添加', icon: 'none' })
+				return
+			}
+		}
+		const item: BodyLink = { url: url, title: guessLinkTitle(url) }
+		const next: BodyLink[] = []
+		for (let i = 0; i < list.length; i++) next.push(list[i])
+		next.push(item)
+		links.value = next
+		linkDraft.value = ''
+		panel.value = ''
+	}
+
+	const uploadOne = (path: string, contentType: string, maxBytes: number): Promise<string> => {
+		return uploadFileDirect('community', path, contentType, maxBytes).then((r) => {
+			if (r.publicUrl.length > 0) return r.publicUrl
+			return ''
+		}).catch((_e) => {
+			return uploadFileDirect('media', path, contentType, maxBytes).then((r2) => {
+				if (r2.publicUrl.length > 0) return r2.publicUrl
+				return ''
+			})
+		})
+	}
+
+	const pushCover = (item: MediaItem) => {
+		if (item.url.length === 0) return
+		const list = covers.value
+		if (list.length >= 9) return
+		const next: MediaItem[] = []
+		for (let i = 0; i < list.length; i++) next.push(list[i])
+		next.push(item)
+		covers.value = next
+		coverMode.value = 'image'
+	}
+
+	const pushBodyVideo = (item: MediaItem) => {
+		if (item.url.length === 0) return
+		const list = bodyVideos.value
+		const next: MediaItem[] = []
+		for (let i = 0; i < list.length; i++) next.push(list[i])
+		next.push(item)
+		bodyVideos.value = next
+	}
+
+	const finishUpload = () => {
+		uni.hideLoading()
+		uploading.value = false
+	}
+
+	const failUpload = (err: any, fallback: string) => {
+		finishUpload()
+		const msg = err != null && err.message != null ? err.message.toString() : fallback
+		uni.showToast({ title: msg, icon: 'none' })
+	}
+
+	const uploadImagesToStorage = (paths: string[], asBody: boolean) => {
+		if (paths.length === 0) return
+		uploading.value = true
+		uni.showLoading({ title: '上传图片', mask: true })
+		const run = (idx: number) => {
+			if (idx >= paths.length) {
+				finishUpload()
+				return
+			}
+			uploadOne(paths[idx], '', 0).then((url) => {
+				if (url.length > 0) {
+					if (asBody) {
+						if (editorCtx != null && !bodyEditorFallback.value) {
+							editorCtx.insertImage({
+								src: url,
+								alt: '研学照片',
+								width: '100%'
+							})
+						} else {
+							bodyEditorFallback.value = true
+							bodyEditorArmed.value = true
+							htmlContent.value = htmlContent.value + '<p><img src="' + url + '"/></p>'
+						}
+					} else {
+						const item: MediaItem = { kind: 'image', url: url, thumb: url }
+						pushCover(item)
+					}
+				}
+				run(idx + 1)
+			}).catch((err) => {
+				failUpload(err, '图片上传失败')
+			})
+		}
+		run(0)
+	}
+
+	const uploadVideoToStorage = (filePath: string, thumbPath: string, asBody: boolean) => {
+		uploading.value = true
+		uni.showLoading({ title: '上传视频', mask: true })
+		uploadOne(filePath, 'video/mp4', 80 * 1024 * 1024).then((url) => {
+			if (url.length === 0) {
+				finishUpload()
+				uni.showToast({ title: '视频上传失败', icon: 'none' })
+				return
+			}
+			const afterThumb = (thumb: string) => {
+				const item: MediaItem = { kind: 'video', url: url, thumb: thumb }
+				if (asBody) pushBodyVideo(item)
+				else pushCover(item)
+				finishUpload()
+			}
+			if (thumbPath.length === 0) {
+				afterThumb('')
+				return
+			}
+			uploadOne(thumbPath, 'image/jpeg', 0).then((thumbUrl) => {
+				afterThumb(thumbUrl)
+			}).catch((_e) => {
+				afterThumb('')
+			})
+		}).catch((err) => {
+			failUpload(err, '视频上传失败')
+		})
+	}
+
+	const pickImages = (asBody: boolean, count: number) => {
+		if (count <= 0) count = 1
+		uni.chooseImage({
+			count: count,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera'],
+			success: (res) => {
+				const paths = res.tempFilePaths
+				if (paths == null || paths.length === 0) return
+				uploadImagesToStorage(paths, asBody)
+			}
+		})
+	}
+
+	const pickVideo = (asBody: boolean) => {
+		uni.chooseVideo({
+			sourceType: ['album', 'camera'],
+			compressed: true,
+			maxDuration: 60,
+			success: (res) => {
+				const path = res.tempFilePath != null ? res.tempFilePath.toString() : ''
+				if (path.length === 0) return
+				const thumb = res.thumbTempFilePath != null ? res.thumbTempFilePath.toString() : ''
+				uploadVideoToStorage(path, thumb, asBody)
+			}
+		})
+	}
+
+	const pickKind = (asBody: boolean) => {
+		uni.showActionSheet({
+			itemList: ['图片', '视频'],
+			success: (res) => {
+				if (res.tapIndex === 0) {
+					const left = asBody ? 9 : (9 - covers.value.length)
+					pickImages(asBody, left)
+					return
+				}
+				if (res.tapIndex === 1) pickVideo(asBody)
+			}
+		})
+	}
+
+	const pickCoverMedia = () => {
+		if (covers.value.length >= 9) return
+		coverMode.value = 'image'
+		pickKind(false)
+	}
+
+	const pickBodyMedia = () => {
+		panel.value = ''
+		pickKind(true)
+	}
+
+	const collectCoverUrls = (html: string): string[] => {
+		const out: string[] = []
+		const seen: string[] = []
+		const add = (url: string) => {
+			if (url.length === 0) return
+			for (let i = 0; i < seen.length; i++) {
+				if (seen[i] === url) return
+			}
+			seen.push(url)
+			out.push(url)
+		}
+		const list = covers.value
+		for (let i = 0; i < list.length; i++) add(list[i].url)
+		const inline = extractImgSrcs(html)
+		for (let i = 0; i < inline.length; i++) add(inline[i])
+		const vids = bodyVideos.value
+		for (let i = 0; i < vids.length; i++) add(vids[i].url)
+		return out
+	}
+
+	const coverDisplayUrl = (): string => {
+		const list = covers.value
+		if (list.length > 0) {
+			const first = list[0]
+			if (first.kind === 'video' && first.thumb.length > 0) return first.thumb
+			if (first.url.length > 0 && first.kind !== 'video') return first.url
+			if (first.thumb.length > 0) return first.thumb
+		}
+		const vids = bodyVideos.value
+		if (vids.length > 0 && vids[0].thumb.length > 0) return vids[0].thumb
+		return ''
+	}
+
+	const buildPayload = (html: string, text: string, asDraft: boolean): any | null => {
+		let t = title.value.trim()
+		const plain = stripHtml(stripBodyExtras(html)).length > 0 ? stripHtml(stripBodyExtras(html)) : text.trim()
+		const extras: BodyVideo[] = []
+		const vlist = bodyVideos.value
+		for (let i = 0; i < vlist.length; i++) {
+			const it: BodyVideo = { url: vlist[i].url, thumb: vlist[i].thumb }
+			extras.push(it)
+		}
+		if (asDraft) {
+			if (t.length === 0) t = '未命名草稿'
+		} else {
+			if (t.length < 2) {
+				uni.showToast({ title: '请填写标题', icon: 'none' })
+				return null
+			}
+			if (plain.length < 4 && covers.value.length === 0 && extras.length === 0 && links.value.length === 0) {
+				uni.showToast({ title: '再写一点正文吧', icon: 'none' })
+				return null
+			}
+		}
+		const packed = appendBodyExtras(html, extras, links.value, articleTags.value, titleHtml.value)
+		const imgs = collectCoverUrls(html)
+		let cover = ''
+		if (coverMode.value === 'tpl') {
+			cover = coverTplUrl(coverTplId.value, coverHlText.value)
+		} else if (coverMode.value === 'image') {
+			cover = coverDisplayUrl()
+			if (cover.length === 0 && imgs.length > 0) cover = imgs[0]
+		}
+		const body = packed.length > 0 ? packed : (plain.length > 0 ? plain : t)
+		const data: any = {
+			title: t,
+			content: body,
+			channel: 'experience',
+			category: '测试分类',
+			type: articleTags.value.length > 0 ? articleTags.value[0] : '文章',
+			tags: articleTags.value,
+			videoUrl: '',
+			images: imgs,
+			coverUrl: cover,
+			projectId: projectId.value,
+			asDraft: asDraft
+		}
+		return data
+	}
+
+	const savePost = (html: string, text: string, asDraft: boolean) => {
+		const data = buildPayload(html, text, asDraft)
+		if (data == null) {
+			submitting = false
+			return
+		}
+		const loadingTitle = asDraft ? '暂存中' : (editingStatus.value === 'published' ? '提交审核' : '发布中')
+		uni.showLoading({ title: loadingTitle, mask: true })
+		const req = editingId.value.length > 0 ? updateCommunityPost(editingId.value, data) : createCommunityPost(data)
+		req.then((p) => {
+			uni.hideLoading()
+			submitting = false
+			editingId.value = p.id
+			editingStatus.value = p.status
+			let ok = '已发布'
+			if (asDraft) ok = '已存入草稿箱'
+			else if (p.status === 'pending') ok = '已提交审核'
+			uni.showToast({ title: ok, icon: 'success' })
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 600)
+		}).catch((err) => {
+			uni.hideLoading()
+			submitting = false
+			const msg = err != null && err.message != null ? err.message.toString() : (asDraft ? '暂存失败' : '发布失败')
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	const publish = (html: string, text: string) => {
+		savePost(html, text, false)
+	}
+
+	const setWindowTone = (color: string) => {
+		uni.setBackgroundColor({
+			backgroundColor: color,
+			backgroundColorTop: color,
+			backgroundColorBottom: color
+		})
+	}
+
+	const closePreview = () => {
+		previewOpen.value = false
+		setWindowTone('#F5F7FB')
+	}
+
+	const showPreview = (html: string) => {
+		previewHtml.value = stripBodyExtras(html)
+		previewOpen.value = true
+		setWindowTone('#FFFFFF')
+	}
+
+	const openPreview = () => {
+		if (uploading.value) {
+			uni.showToast({ title: '图片还在上传', icon: 'none' })
+			return
+		}
+		if (editorCtx != null && !bodyEditorFallback.value) {
+			editorCtx.getContents({
+				success: (res) => {
+					const html = res.html != null ? res.html.toString() : htmlContent.value
+					htmlContent.value = html
+					showPreview(html)
+				},
+				fail: (_e) => {
+					showPreview(htmlContent.value)
+				}
+			})
+			return
+		}
+		showPreview(htmlContent.value)
+	}
+
+	const runEditorSave = (asDraft: boolean) => {
+		if (submitting) return
+		if (uploading.value) {
+			uni.showToast({ title: '图片还在上传', icon: 'none' })
+			return
+		}
+		submitting = true
+		if (editorCtx != null && !bodyEditorFallback.value) {
+			editorCtx.getContents({
+				success: (res) => {
+					const html = res.html != null ? res.html.toString() : htmlContent.value
+					const text = res.text != null ? res.text.toString() : textContent.value
+					savePost(html, text, asDraft)
+				},
+				fail: (_e) => {
+					savePost(htmlContent.value, textContent.value, asDraft)
+				}
+			})
+			return
+		}
+		savePost(htmlContent.value, textContent.value, asDraft)
+	}
+
+	const submit = () => {
+		runEditorSave(false)
+	}
+
+	const submitDraft = () => {
+		runEditorSave(true)
+	}
+
+	const fillFromPost = (p: any) => {
+		editingId.value = p.id
+		editingStatus.value = p.status
+		title.value = p.title
+		const packedTitle = p.content != null ? p.content.toString() : ''
+		const loadedTitleHtml = parseTitleHtml(packedTitle)
+		if (loadedTitleHtml.length > 0) {
+			titleHtml.value = loadedTitleHtml
+			inferTitleMarks(loadedTitleHtml)
+		} else if (p.title.indexOf('<') >= 0) {
+			titleHtml.value = p.title
+			title.value = stripHtml(p.title)
+			inferTitleMarks(p.title)
+		} else {
+			titleHtml.value = ''
+		}
+		coverHlText.value = coverTplHlOf(p.coverUrl)
+		const cu = p.coverUrl != null ? p.coverUrl.toString() : ''
+		if (isHttpCoverUrl(cu)) {
+			coverMode.value = 'image'
+			const next: MediaItem[] = []
+			const imgs = p.images
+			if (imgs != null) {
+				for (let i = 0; i < imgs.length; i++) {
+					const url = imgs[i].toString()
+					if (url.length === 0) continue
+					const it: MediaItem = { kind: 'image', url: url, thumb: url }
+					next.push(it)
+				}
+			}
+			if (next.length === 0 && p.coverUrl.length > 0) {
+				const one: MediaItem = { kind: 'image', url: p.coverUrl, thumb: p.coverUrl }
+				next.push(one)
+			}
+			covers.value = next
+		} else if (cu.indexOf('tpl:') === 0) {
+			coverMode.value = 'tpl'
+			coverTplId.value = coverTplIdOf(cu)
+			const list = coverTemplates
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].id === coverTplId.value) {
+					coverTplIndex.value = i
+					break
+				}
+			}
+		} else {
+			coverMode.value = 'none'
+		}
+		if (p.projectId != null && p.projectId.toString().length > 0) projectId.value = p.projectId.toString()
+		const packed = p.content != null ? p.content.toString() : ''
+		const tags = parseBodyTags(packed)
+		if (tags.length > 0) articleTags.value = tags
+		else if (p.tags != null) articleTags.value = p.tags
+		const vids = parseBodyVideos(packed)
+		const nextVids: MediaItem[] = []
+		for (let i = 0; i < vids.length; i++) {
+			const v: MediaItem = { kind: 'video', url: vids[i].url, thumb: vids[i].thumb }
+			nextVids.push(v)
+		}
+		bodyVideos.value = nextVids
+		links.value = parseBodyLinks(packed)
+		applyEditorHtml(stripBodyExtras(packed))
+		textContent.value = stripHtml(htmlContent.value)
+	}
+
+	const loadExisting = (id: string) => {
+		if (id.length === 0 || loadingExisting) return
+		loadingExisting = true
+		fetchCommunityPostDetail(id).then((p) => {
+			loadingExisting = false
+			fillFromPost(p)
+		}).catch((_e) => {
+			loadingExisting = false
+			uni.showToast({ title: '文章加载失败', icon: 'none' })
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const qid = options['id']
+		if (qid != null && qid.toString().length > 0) loadExisting(qid.toString())
+		fetchStudyBookings().then((list) => {
+			const seen: string[] = []
+			const out: StudyProjectMeta[] = []
+			for (let i = 0; i < list.length; i++) {
+				const booking = list[i]
+				if (!isStudyBookingActiveStatus(booking.status)) continue
+				const p = booking.project
+				if (p == null || p.id.length === 0) continue
+				let dup = false
+				for (let j = 0; j < seen.length; j++) {
+					if (seen[j] === p.id) {
+						dup = true
+						break
+					}
+				}
+				if (dup) continue
+				seen.push(p.id)
+				out.push(p)
+			}
+			projects.value = out
+			if (projectId.value.length === 0 && out.length > 0) projectId.value = out[0].id
+		}).catch((_e) => {
+			projects.value = []
+		})
+	})
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 52px;
+		align-items: center;
+		padding: 0 14px;
+		justify-content: space-between;
+	}
+	.nav-side {
+		width: 72px;
+		height: 36px;
+		justify-content: center;
+		align-items: flex-start;
+	}
+	.nav-side-right { align-items: flex-end; }
+	.nav-cancel {
+		font-size: 15px;
+		color: #374151;
+	}
+	.nav-mid { align-items: center; }
+	.nav-kicker {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1.6px;
+		margin-bottom: 1px;
+	}
+	.nav-title {
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.main-scroll {
+		flex: 1;
+		width: 100%;
+	}
+	.sheet {
+		margin: 4px 12px 12px 12px;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		overflow: visible;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.gold-edge {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 3px;
+		width: 100%;
+		background-image: linear-gradient(90deg, #1A73E8 0%, #1A73E8 48%, #1A73E8 100%);
+	}
+	.title-host {
+		margin: 12px 16px 0 16px;
+		min-height: 44px;
+		background-color: rgba(255,255,255,0.01);
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFFFF;
+	}
+	.title-input {
+		margin: 0;
+		width: 100%;
+		font-size: 22px;
+		font-weight: 800;
+		color: #1A1A1A;
+		height: 44px;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFFFF;
+		background-color: rgba(255,255,255,0.01);
+	}
+	.title-rich {
+		width: 100%;
+		min-height: 44px;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFFFF;
+	}
+	.title-rule {
+		height: 1px;
+		margin: 4px 16px 10px 16px;
+		background-color: #E5E7EB;
+	}
+	.hl-pick {
+		margin: 0 14px 10px 14px;
+		padding: 10px 12px 8px 12px;
+		border-radius: 12px;
+		background-color: #F5F7FB;
+	}
+	.hl-pick-head {
+		align-items: center;
+		margin-bottom: 8px;
+	}
+	.hl-pick-hint {
+		flex: 1;
+		font-size: 11px;
+		color: #374151;
+		lines: 2;
+	}
+	.hl-pick-clear {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1A73E8;
+		margin-left: 8px;
+	}
+	.hl-pick-row {
+		flex-wrap: wrap;
+	}
+	.hl-glyph {
+		padding: 2px 1px;
+		border-radius: 3px;
+		margin-bottom: 2px;
+	}
+	.hl-glyph-on {
+		background-color: #93C5FD;
+	}
+	.hl-glyph-txt {
+		font-size: 18px;
+		font-weight: 800;
+		color: #1A1A1A;
+		line-height: 26px;
+	}
+	.hl-glyph-txt-on {
+		color: #1A1A1A;
+	}
+	.tag-block {
+		padding: 0 14px 8px 14px;
+	}
+	.tag-head {
+		align-items: center;
+		margin-bottom: 8px;
+	}
+	.tag-kicker {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1.2px;
+		margin-right: 8px;
+	}
+	.tag-head-title {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.tag-count {
+		font-size: 11px;
+		color: #374151;
+	}
+	.tag-picked {
+		flex-wrap: wrap;
+	}
+	.tag-chip {
+		height: 28px;
+		padding: 0 10px;
+		border-radius: 14px;
+		margin-right: 8px;
+		margin-bottom: 8px;
+		background-color: #F5F7FB;
+		align-items: center;
+		flex-shrink: 0;
+	}
+	.tag-chip-on {
+		background-color: #1A73E8;
+	}
+	.tag-chip-txt {
+		font-size: 12px;
+		font-weight: 700;
+		color: #374151;
+	}
+	.tag-chip-txt-on{
+		font-size: 12px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+	.tag-chip-x {
+		font-size: 13px;
+		color: #1A73E8;
+		margin-left: 6px;
+		font-weight: 700;
+	}
+	.tag-add {
+		height: 36px;
+		border-radius: 18px;
+		background-color: #F5F7FB;
+		align-items: center;
+		padding: 0 6px 0 12px;
+		margin-bottom: 8px;
+	}
+	.tag-add-hash {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A73E8;
+		margin-right: 4px;
+	}
+	.tag-add-input {
+		flex: 1;
+		font-size: 13px;
+		color: #1A1A1A;
+	}
+	.tag-add-btn {
+		height: 26px;
+		padding: 0 12px;
+		border-radius: 13px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.tag-add-btn-txt {
+		font-size: 12px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.tag-limit {
+		margin-bottom: 8px;
+	}
+	.tag-limit-txt {
+		font-size: 12px;
+		color: #374151;
+	}
+	.tag-suggest-scroll {
+		width: 100%;
+		height: 36px;
+	}
+	.tag-suggest {
+		align-items: center;
+		height: 36px;
+		padding-right: 8px;
+	}
+	.tool-scroll {
+		width: 100%;
+		height: 48px;
+		flex-shrink: 0;
+	}
+	.tool-row {
+		padding: 8px 12px;
+		align-items: center;
+		height: 48px;
+	}
+	.tool {
+		width: 32px;
+		height: 32px;
+		border-radius: 10px;
+		margin-right: 6px;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		background-color: transparent;
+	}
+	.tool-wide {
+		width: auto;
+		padding: 0 8px;
+	}
+	.tool-on { background-color: #1A73E8; }
+	.tool-b {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.tool-i {
+		font-size: 16px;
+		font-weight: 600;
+		font-style: italic;
+		color: #1A1A1A;
+	}
+	.tool-u {
+		font-size: 16px;
+		font-weight: 700;
+		color: #1A1A1A;
+		text-decoration: underline;
+	}
+	.tool-mark {
+		font-size: 12px;
+		font-weight: 800;
+		color: #5C5346;
+	}
+	.tool-mark-on { color: #1A1A1A; }
+	.tool-tint {
+		width: 14px;
+		height: 14px;
+		border-radius: 7px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.tool-tint-ink { background-color: #1A73E8; }
+	.tool-tint-paper { background-color: #FFFFFF; }
+	.tool-split {
+		width: 1px;
+		height: 14px;
+		background-color: #E5E7EB;
+		margin: 0 6px 0 2px;
+		flex-shrink: 0;
+	}
+	.panel {
+		padding: 4px 14px 12px 14px;
+		flex-wrap: wrap;
+		align-items: center;
+		flex-shrink: 0;
+	}
+	.size-chip {
+		height: 30px;
+		padding: 0 12px;
+		border-radius: 8px;
+		margin-right: 8px;
+		margin-bottom: 4px;
+		background-color: #F5F7FB;
+		align-items: center;
+		justify-content: center;
+	}
+	.size-chip-on { background-color: #1A73E8; }
+	.size-chip-txt { font-weight: 700; color: #374151; }
+	.size-chip-txt-on { color: #FFFFFF; }
+	.swatch {
+		width: 28px;
+		height: 28px;
+		border-radius: 14px;
+		margin-right: 10px;
+		margin-bottom: 4px;
+		padding: 3px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		align-items: center;
+		justify-content: center;
+	}
+	.swatch-fill {
+		width: 20px;
+		height: 20px;
+		border-radius: 10px;
+	}
+	.link-add {
+		padding: 0 12px 12px 12px;
+		align-items: center;
+		flex-shrink: 0;
+	}
+	.link-input {
+		flex: 1;
+		height: 36px;
+		padding: 0 12px;
+		border-radius: 12px;
+		background-color: #F5F7FB;
+		font-size: 13px;
+		color: #1A1A1A;
+		margin-right: 8px;
+	}
+	.link-add-btn {
+		height: 36px;
+		padding: 0 14px;
+		border-radius: 12px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.link-add-txt {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A73E8;
+	}
+	.exp-editor-host {
+		width: 100%;
+		height: 248px;
+		position: relative;
+		background-color: #FFFDF8;
+		flex-shrink: 0;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFDF8;
+	}
+	.exp-editor {
+		width: 100%;
+		height: 248px;
+		min-height: 0;
+		padding: 8px 14px 14px 14px;
+		background-color: rgba(255,255,255,0.01);
+		flex-shrink: 0;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFDF8;
+	}
+	.exp-editor-hit {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(255,255,255,0.01);
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFDF8;
+	}
+	.exp-editor-ph {
+		font-size: 15px;
+		color: #9CA3AF;
+		padding: 8px 14px 14px 14px;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFDF8;
+	}
+	.exp-editor-fallback {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: 100%;
+		height: 248px;
+		padding: 8px 14px 14px 14px;
+		font-size: 15px;
+		color: #1A1A1A;
+		background-color: #FFFDF8;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFDF8;
+	}
+	.exp-fallback-preview {
+		width: 100%;
+		padding: 0 14px 10px 14px;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFFFF;
+	}
+	.sheet-block {
+		padding: 14px 14px 10px 14px;
+		border-top-width: 0.5px;
+		border-top-color: #E5E7EB;
+	}
+	.sheet-safe { height: 8px; }
+	.card-head {
+		align-items: center;
+		margin-bottom: 12px;
+	}
+	.card-kicker {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1.4px;
+		margin-right: 8px;
+	}
+	.card-title {
+		font-size: 14px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.card-grow { flex: 1; }
+	.card-count {
+		font-size: 11px;
+		color: #374151;
+	}
+	.cover-mode {
+		margin-bottom: 12px;
+		background-color: #F5F7FB;
+		border-radius: 14px;
+		padding: 3px;
+	}
+	.cover-mode-btn {
+		flex: 1;
+		height: 32px;
+		border-radius: 12px;
+		align-items: center;
+		justify-content: center;
+	}
+	.cover-mode-on {
+		background-color: #1A73E8;
+	}
+	.cover-mode-txt {
+		font-size: 13px;
+		font-weight: 700;
+		color: #374151;
+	}
+	.cover-mode-txt-on{
+		color: #FFFFFF;
+	}
+	.tpl-stage {
+		width: 100%;
+	}
+	.tpl-swiper-wrap {
+		width: 100%;
+	}
+	.tpl-swiper {
+		width: 100%;
+		height: 256px;
+	}
+	.tpl-slide {
+		height: 248px;
+		margin: 0 6px;
+		border-radius: 16px;
+		overflow: hidden;
+		border-width: 2px;
+		border-style: solid;
+		border-color: transparent;
+	}
+	.tpl-slide-on {
+		border-color: #1A1A1A;
+	}
+	.tpl-caption {
+		width: 100%;
+		align-items: baseline;
+		justify-content: space-between;
+		padding: 8px 6px 0 6px;
+	}
+	.tpl-caption-name {
+		font-size: 14px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.tpl-caption-hint {
+		font-size: 11px;
+		color: #374151;
+	}
+	.tpl-dots {
+		width: 100%;
+		justify-content: center;
+		align-items: center;
+		padding-top: 10px;
+	}
+	.tpl-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		margin: 0 3px;
+		background-color: #E5E7EB;
+	}
+	.tpl-dot-on {
+		width: 16px;
+		border-radius: 3px;
+		background-color: #1A73E8;
+	}
+	.hl-cover-hint {
+		width: 100%;
+		margin-top: 10px;
+		font-size: 11px;
+		color: #374151;
+		text-align: center;
+	}
+	.img-grid { flex-wrap: wrap; }
+	.img-item {
+		width: 78px;
+		height: 78px;
+		border-radius: 12px;
+		margin-right: 8px;
+		margin-bottom: 8px;
+		overflow: hidden;
+		position: relative;
+		background-color: #FFFFFF;
+	}
+	.img-thumb { width: 78px; height: 78px; }
+	.img-flag {
+		position: absolute;
+		left: 0;
+		bottom: 0;
+		padding: 2px 7px;
+		background-color: #1A73E8;
+		border-top-right-radius: 8px;
+	}
+	.img-flag-txt {
+		font-size: 9px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.img-del {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		width: 18px;
+		height: 18px;
+		border-radius: 9px;
+		background-color: rgba(32, 33, 36, 0.72);
+		align-items: center;
+		justify-content: center;
+	}
+	.img-del-txt {
+		font-size: 12px;
+		color: #FFFFFF;
+		font-weight: 700;
+		line-height: 18px;
+	}
+	.img-add {
+		width: 78px;
+		height: 78px;
+		border-radius: 12px;
+		margin-right: 8px;
+		margin-bottom: 8px;
+		background-color: #F5F7FB;
+		border-width: 1px;
+		border-style: dashed;
+		border-color: #E5E7EB;
+		align-items: center;
+		justify-content: center;
+	}
+	.img-add-plus {
+		font-size: 20px;
+		color: #1A73E8;
+		line-height: 22px;
+	}
+	.img-add-cap {
+		font-size: 10px;
+		color: #374151;
+		margin-top: 2px;
+	}
+	.img-ph {
+		width: 78px;
+		height: 78px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.img-ph-txt{
+		font-size: 11px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.img-play {
+		position: absolute;
+		right: 4px;
+		bottom: 4px;
+		padding: 2px 6px;
+		border-radius: 8px;
+		background-color: rgba(32, 33, 36, 0.72);
+	}
+	.img-play-txt {
+		font-size: 9px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.link-row {
+		align-items: center;
+		padding: 8px 0;
+		border-top-width: 0.5px;
+		border-top-color: #E5E7EB;
+	}
+	.link-copy { flex: 1; margin-right: 8px; }
+	.link-title {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 2px;
+	}
+	.link-url {
+		font-size: 11px;
+		color: #374151;
+		lines: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.link-del { padding: 4px 0 4px 8px; }
+	.link-del-txt {
+		font-size: 12px;
+		color: #DC2626;
+		font-weight: 700;
+	}
+	.proj-search {
+		height: 36px;
+		border-radius: 18px;
+		background-color: #F5F7FB;
+		align-items: center;
+		padding: 0 12px;
+		margin-bottom: 10px;
+	}
+	.proj-search-icon {
+		width: 14px;
+		height: 14px;
+		margin-right: 8px;
+	}
+	.proj-search-input {
+		flex: 1;
+		font-size: 13px;
+		color: #1A1A1A;
+	}
+	.proj-empty {
+		width: 100%;
+		font-size: 12px;
+		color: #374151;
+		margin-top: 2px;
+		text-align: center;
+	}
+	.proj-scroll { width: 100%; height: 38px; }
+	.proj-row { align-items: center; height: 38px; }
+	.proj-chip {
+		height: 30px;
+		padding: 0 12px;
+		border-radius: 15px;
+		margin-right: 8px;
+		background-color: #F5F7FB;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.proj-chip-on {
+		background-color: #FFFFFF;
+		border-color: #1A1A1A;
+	}
+	.proj-chip-txt {
+		font-size: 12px;
+		font-weight: 700;
+		color: #374151;
+	}
+	.proj-chip-txt-on { color: #1A1A1A; }
+	.foot {
+		padding: 10px 16px 18px 16px;
+		background-color: #F5F7FB;
+		align-items: center;
+		flex-shrink: 0;
+		border-top-width: 0.5px;
+		border-top-color: #E5E7EB;
+	}
+	.foot-btn {
+		flex: 1;
+		height: 44px;
+		border-radius: 22px;
+		align-items: center;
+		justify-content: center;
+	}
+	.foot-preview {
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		margin-right: 8px;
+		flex: 0.9;
+	}
+	.foot-draft {
+		background-color: #1A73E8;
+		margin-right: 8px;
+		border-width: 0;
+		border-style: solid;
+		border-color: #1A73E8;
+	}
+	.foot-draft-txt {
+		font-size: 15px;
+		font-weight: 800;
+		color: #FFFFFF;
+		border-width: 0;
+		border-style: solid;
+		border-color: #FFFFFF;
+	}
+	.foot-preview-txt {
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.foot-publish { background-color: #1A73E8; }
+	.foot-publish-txt {
+		font-size: 15px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.preview-mask {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #FFFFFF;
+		z-index: 40;
+	}
+	.preview-status {
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.preview-nav {
+		height: 44px;
+		align-items: center;
+		padding: 0 14px;
+	}
+	.preview-close { width: 72px; }
+	.preview-close-txt { font-size: 15px; color: #374151; }
+	.preview-nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.preview-nav-space { width: 72px; }
+	.preview-body { flex: 1; width: 100%; }
+	.preview-inner { padding: 12px 16px 20px 16px; }
+	.preview-meta {
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 10px;
+	}
+	.preview-tag {
+		padding: 2px 8px;
+		border-radius: 6px;
+		background-color: #1A73E8;
+	}
+	.preview-tag-txt {
+		font-size: 11px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.preview-time { font-size: 12px; color: #9CA3AF; }
+	.preview-title {
+		font-size: 22px;
+		font-weight: 800;
+		color: #1A1A1A;
+		line-height: 30px;
+		margin-bottom: 8px;
+	}
+	.preview-tags {
+		flex-wrap: wrap;
+		margin-bottom: 10px;
+	}
+	.preview-topic {
+		padding: 2px 8px;
+		border-radius: 6px;
+		background-color: #FFFFFF;
+		margin-right: 6px;
+		margin-bottom: 6px;
+	}
+	.preview-topic-txt {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.preview-cover {
+		width: 100%;
+		margin-bottom: 12px;
+		border-radius: 16px;
+		overflow: hidden;
+	}
+	.preview-img {
+		width: 100%;
+		border-radius: 12px;
+		margin-bottom: 10px;
+		min-height: 1px;
+	}
+	.preview-rich { width: 100%; margin-bottom: 12px; }
+	.preview-video-wrap {
+		width: 100%;
+		margin-bottom: 12px;
+		border-radius: 12px;
+		overflow: hidden;
+		background-color: #1A73E8;
+	}
+	.preview-video { width: 100%; height: 200px; }
+	.preview-link {
+		padding: 12px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+		margin-bottom: 10px;
+	}
+	.preview-link-kicker {
+		font-size: 11px;
+		font-weight: 800;
+		color: #1A73E8;
+		margin-bottom: 4px;
+	}
+	.preview-link-url { font-size: 12px; color: #374151; }
+	.preview-proj {
+		padding: 12px;
+		border-radius: 12px;
+		background-color: #1A73E8;
+		margin-top: 4px;
+	}
+	.preview-proj-copy { flex: 1; }
+	.preview-proj-kicker {
+		font-size: 11px;
+		color: #1A73E8;
+		margin-bottom: 4px;
+	}
+	.preview-proj-name {
+		font-size: 14px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.preview-safe { height: 24px; }
+</style>

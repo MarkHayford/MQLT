@@ -1,0 +1,17 @@
+export const MINE_TAB_URL = '/pages/tabs/mine'
+
+export function goMineTab(): void {
+	uni.switchTab({
+		url: MINE_TAB_URL,
+		fail: (_err) => {
+			uni.reLaunch({ url: MINE_TAB_URL })
+		}
+	})
+}
+
+export function promptLoginThenGoMine(title: string = '请先登录'): void {
+	uni.showToast({ title: title, icon: 'none' })
+	setTimeout(() => {
+		goMineTab()
+	}, 350)
+}

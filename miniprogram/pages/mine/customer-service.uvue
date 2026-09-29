@@ -1,0 +1,424 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">联系客服</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view class="contact-grid uni-row">
+				<view class="contact-tile uni-column" @click="callPhone">
+					<text class="tile-kicker">HOTLINE</text>
+					<text class="tile-label">官方热线</text>
+					<text class="tile-value">{{ phoneShow }}</text>
+					<view class="tile-act">
+						<text class="tile-act-txt">拨打</text>
+					</view>
+				</view>
+				<!-- #ifdef MP-WEIXIN -->
+				<view class="contact-tile-wrap">
+					<button
+						class="contact-tile contact-tile-btn uni-column"
+						open-type="contact"
+						session-from="customer-service-page"
+						show-message-card="true"
+						send-message-title="蒙企链探客服咨询"
+						send-message-path="pages/mine/customer-service"
+					>
+						<text class="tile-kicker">ONLINE</text>
+						<text class="tile-label">在线咨询</text>
+						<text class="tile-value">{{ hoursText }}</text>
+						<view class="tile-act">
+							<text class="tile-act-txt">去咨询</text>
+						</view>
+					</button>
+				</view>
+				<!-- #endif -->
+				<!-- #ifndef MP-WEIXIN -->
+				<view class="contact-tile contact-tile-right uni-column" @click="startChat">
+					<text class="tile-kicker">ONLINE</text>
+					<text class="tile-label">在线咨询</text>
+					<text class="tile-value">{{ hoursText }}</text>
+					<view class="tile-act">
+						<text class="tile-act-txt">去咨询</text>
+					</view>
+				</view>
+				<!-- #endif -->
+			</view>
+
+			<view v-for="(group, gi) in faqGroups" :key="gi" class="faq-block uni-column">
+				<text class="sec-title">{{ group.title }}</text>
+				<view class="card uni-column">
+					<view v-for="(faq, index) in group.items" :key="index" class="faq" @click="toggleFaq(gi, index)">
+						<view class="faq-q uni-row">
+							<view class="faq-idx">
+								<text class="faq-idx-text">{{ padIndex(index) }}</text>
+							</view>
+							<text class="faq-q-text">{{ faq.question }}</text>
+							<view :class="faq.open ? 'faq-plus faq-plus-on' : 'faq-plus'">
+								<text :class="faq.open ? 'faq-plus-text faq-plus-text-on' : 'faq-plus-text'">{{ faq.open ? '−' : '+' }}</text>
+							</view>
+						</view>
+						<view v-if="faq.open" class="faq-a-box">
+							<text class="faq-a">{{ faq.answer }}</text>
+						</view>
+						<view v-if="index < group.items.length - 1" class="line"></view>
+					</view>
+				</view>
+			</view>
+
+			<view class="pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, onMounted } from 'vue'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { fetchPlatformSettings, formatServicePhone } from '../../utils/platform-settings.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const SERVICE_PHONE = ref('19931708002')
+	const phoneShow = ref('199-3170-8002')
+	const hoursText = ref('工作日 09:00–18:00')
+
+	onMounted(() => {
+		fetchPlatformSettings().then((p) => {
+			SERVICE_PHONE.value = p.contact.phone
+			phoneShow.value = formatServicePhone(p.contact.phone)
+			hoursText.value = p.contact.hours
+		}).catch((_err) => {})
+	})
+
+	type FAQ = {
+		question: string
+		answer: string
+		open: boolean
+	}
+
+	type FAQGroup = {
+		title: string
+		items: FAQ[]
+	}
+
+	const faqGroups = ref<FAQGroup[]>([
+		{
+			title: '研学预约',
+			items: [
+				{
+					question: '怎么预约研学项目？',
+					answer: '打开底部「开启研学之路」，按分类或搜索找到项目，进入详情后点预约。选择出行日期、常用游客，需要时再选路线或租车司机，确认订单并完成支付即可。未支付订单可在「我的订单」继续支付。',
+					open: false
+				},
+				{
+					question: '可以带几位游客？如何添加？',
+					answer: '预约时需选择随行游客。可在「我的 → 常用游客」提前添加或批量导入，也可在填写预约时新增。请确保姓名、证件信息准确，现场核验会用到。',
+					open: false
+				},
+				{
+					question: '预约后能取消或改期吗？',
+					answer: '可在「我的订单」查看研学订单。出发前 7 天可免费取消；出发前 3–7 天取消收取订单金额 30% 手续费；出发前 3 天内一般不支持取消。改期请拨打官方热线或点在线咨询，由人工协助。',
+					open: false
+				},
+				{
+					question: '支付成功后还要做什么？',
+					answer: '订单状态变为待出行后，请留意项目动态公告。出发前请确认集合时间、地点和随身证件。现场研学导航将在后续版本提供。',
+					open: false
+				}
+			]
+		},
+		{
+			title: '现场研学',
+			items: [
+				{
+					question: '现场怎么参加研学？',
+					answer: '请按预约日期到达集合地点，并留意项目动态与现场组织安排。实时导航、点位打卡等功能将在后续版本重做上线。',
+					open: false
+				}
+			]
+		},
+		{
+			title: '卡券、成果与商城',
+			items: [
+				{
+					question: '卡券怎么获得、怎么用？',
+					answer: '研学活动、打卡或运营发放的优惠会进入「我的卡券」。文创商城结算时可选择一张可用卡券抵扣，每单限用一张，过期自动失效。',
+					open: false
+				},
+				{
+					question: '研学成果在哪里看？',
+					answer: '完成研学后，结业证书会发放到「我的 → 我的成果」，可预览和下载。',
+					open: false
+				},
+				{
+					question: '文创商品多久发货？能开发票吗？',
+					answer: '一般 1–2 个工作日发货，多数地区 3–7 天送达。物流在「我的订单」查看。电子发票请到「我的 → 电子发票」选择已完成订单申请，填写抬头后提交。',
+					open: false
+				}
+			]
+		},
+		{
+			title: '账号与其他',
+			items: [
+				{
+					question: '如何登录？换手机怎么办？',
+					answer: '使用微信一键登录。首次需完善资料。同一微信号在新设备打开即可同步预约、订单和卡券。如需换绑手机号，请到「设置」或联系客服协助。',
+					open: false
+				},
+				{
+					question: '司机入口是给谁用的？',
+					answer: '仅已开通司机身份的账号可见。用于出车接单、更新行程状态和申请提现。普通学生用户无需使用。企业后台管理请走网页控制台。',
+					open: false
+				}
+			]
+		}
+	])
+
+	const padIndex = (index: number): string => {
+		const n = index + 1
+		return n < 10 ? '0' + n.toString() : n.toString()
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const toggleFaq = (gi: number, index: number) => {
+		const group = faqGroups.value[gi]
+		if (group == null) return
+		const item = group.items[index]
+		if (item == null) return
+		item.open = !item.open
+	}
+
+	const callPhone = () => {
+		uni.showModal({
+			title: '拨打官方热线',
+			content: phoneShow.value,
+			confirmText: '拨打',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) {
+					uni.makePhoneCall({
+						phoneNumber: SERVICE_PHONE.value,
+						fail: (_err) => {
+							uni.showToast({ title: '拨打失败', icon: 'none' })
+						}
+					})
+				}
+			}
+		})
+	}
+
+	const startChat = () => {
+		uni.showToast({ title: '请在微信小程序中使用在线客服', icon: 'none' })
+	}
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 48px;
+		padding: 0 16px;
+		flex-direction: row;
+		align-items: center;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.body {
+		flex: 1;
+		padding: 12px 16px 0 16px;
+	}
+	.contact-grid {
+		align-items: stretch;
+		margin-bottom: 18px;
+	}
+	.contact-tile-wrap {
+		flex: 1;
+		margin-left: 10px;
+	}
+	.contact-tile-right {
+		margin-left: 10px;
+	}
+	.contact-tile {
+		flex: 1;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 14px 14px 12px 14px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.contact-tile-btn {
+		width: 100%;
+		margin: 0;
+		line-height: inherit;
+		text-align: left;
+		font-weight: 400;
+	}
+	.contact-tile-btn::after {
+		border: none;
+	}
+	.tile-kicker {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1.2px;
+		margin-bottom: 6px;
+	}
+	.tile-label {
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+	}
+	.tile-value {
+		font-size: 13px;
+		color: #374151;
+		margin-bottom: 14px;
+		lines: 2;
+	}
+	.tile-act {
+		height: 28px;
+		padding: 0 12px;
+		border-radius: 14px;
+		background-color: #1A73E8;
+		align-self: flex-start;
+		align-items: center;
+		justify-content: center;
+	}
+	.tile-act-txt{
+		font-size: 12px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 4px 0;
+		margin-bottom: 14px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.line {
+		height: 1px;
+		background-color: #FFFFFF;
+		margin: 0 16px;
+	}
+	.faq-block {
+		margin-bottom: 2px;
+	}
+	.sec-title {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin: 2px 4px 10px 4px;
+	}
+	.faq {
+		padding: 12px 16px 0 16px;
+	}
+	.faq-q {
+		align-items: center;
+		padding-bottom: 12px;
+	}
+	.faq-idx {
+		width: 28px;
+		height: 28px;
+		border-radius: 8px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		margin-right: 10px;
+		flex-shrink: 0;
+	}
+	.faq-idx-text {
+		font-size: 11px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.faq-q-text {
+		flex: 1;
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1A1A;
+		line-height: 22px;
+	}
+	.faq-plus {
+		width: 24px;
+		height: 24px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		margin-left: 8px;
+		flex-shrink: 0;
+	}
+	.faq-plus-on {
+		background-color: #1A73E8;
+	}
+	.faq-plus-text {
+		font-size: 16px;
+		font-weight: 700;
+		color: #1A1A1A;
+		line-height: 16px;
+	}
+	.faq-plus-text-on{
+		color: #FFFFFF;
+	}
+	.faq-a-box {
+		margin: 0 0 12px 38px;
+		padding: 10px 12px;
+		background-color: #FFFFFF;
+		border-radius: 10px;
+	}
+	.faq-a {
+		font-size: 13px;
+		color: #374151;
+		line-height: 21px;
+	}
+	.pad {
+		height: 24px;
+	}
+</style>

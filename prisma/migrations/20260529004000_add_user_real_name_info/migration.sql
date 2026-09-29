@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "realName" TEXT,
+ADD COLUMN "realNameIdCard" TEXT;

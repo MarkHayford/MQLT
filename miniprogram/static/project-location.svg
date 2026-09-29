@@ -1,0 +1,7 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="18" fill="#F1F5F9"/>
+  <!-- pin body -->
+  <path d="M32 16.5C25.649 16.5 20.5 21.537 20.5 27.75C20.5 35.9 32 47.5 32 47.5C32 47.5 43.5 35.9 43.5 27.75C43.5 21.537 38.351 16.5 32 16.5Z" fill="#FFFFFF" stroke="#1A73E8" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- inner dot -->
+  <circle cx="32" cy="27.5" r="4" fill="#1A73E8"/>
+</svg>

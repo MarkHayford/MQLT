@@ -1,0 +1,349 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar uni-row">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">{{ navTitle }}</text>
+		</view>
+
+		<view v-if="order != null" class="summary uni-column">
+			<text class="sum-status">{{ order!.statusLabel }}</text>
+			<text class="sum-line">{{ order!.projectTitle.length > 0 ? order!.projectTitle : '租车' }} · {{ order!.travelDateText }} · {{ order!.passengerCount }}人</text>
+			<text class="sum-line">上车 {{ order!.pickupAddress }}</text>
+			<view class="price-row uni-row" v-if="order!.offeredPriceText.length > 0 || order!.agreedPriceText.length > 0">
+				<text v-if="order!.agreedPriceText.length > 0" class="price-main">成交 {{ order!.agreedPriceText }}</text>
+				<text v-else class="price-main">报价 {{ order!.offeredPriceText }}</text>
+				<text v-if="order!.refPriceText.length > 0" class="price-ref">参考 {{ order!.refPriceText }}</text>
+			</view>
+		</view>
+
+		<scroll-view class="chat" scroll-y="true" :scroll-into-view="scrollInto" show-scrollbar="false">
+			<view v-if="loading" class="state"><text class="state-text">加载中…</text></view>
+			<view v-for="m in messages" :key="m.id" :id="'m-' + m.id" :class="bubbleClass(m)">
+				<text class="meta">{{ m.senderTypeLabel }} · {{ m.timeText }}</text>
+				<text class="bubble-text">{{ m.content }}</text>
+			</view>
+			<view v-if="!loading && messages.length === 0" class="state"><text class="state-text">暂无消息，打个招呼开始协商吧</text></view>
+			<view class="chat-pad"></view>
+		</scroll-view>
+
+		<!-- 司机报价 -->
+		<view v-if="isDriver && order != null && order!.status === 'NEGOTIATING'" class="offer-bar uni-column">
+			<view class="offer-row uni-row">
+				<input class="offer-input" type="digit" :value="offerInput" placeholder="输入报价（元）" @input="onOfferInput" />
+				<view class="main-btn" @click="submitOffer"><text class="main-btn-text">设报价</text></view>
+			</view>
+			<view class="ghost-btn" @click="releaseOrder"><text class="ghost-text">放弃协商（回池）</text></view>
+		</view>
+
+		<!-- 学员确认/拒绝 -->
+		<view v-if="isUser && order != null && order!.status === 'NEGOTIATING'" class="offer-bar uni-column">
+			<view v-if="order!.offeredPriceText.length > 0" class="user-price-ops uni-row">
+				<view class="ghost-btn flex1" @click="rejectPrice"><text class="ghost-text">拒绝报价</text></view>
+				<view class="main-btn flex1" @click="acceptPrice"><text class="main-btn-text">接受 {{ order!.offeredPriceText }}</text></view>
+			</view>
+			<view v-else class="hint"><text class="hint-text">等待司机报价…</text></view>
+			<view class="ghost-btn" @click="releaseOrder"><text class="ghost-text">结束协商（回池）</text></view>
+		</view>
+
+		<!-- 待支付 -->
+		<view v-if="isUser && order != null && order!.status === 'PRICE_CONFIRMED'" class="offer-bar uni-column">
+			<view class="main-btn" @click="payOrder"><text class="main-btn-text">去支付 {{ order!.agreedPriceText }}</text></view>
+			<text class="hint-text">确认价后请在 2 小时内支付，超时将取消订单</text>
+		</view>
+
+		<!-- 已支付 / 履约中 -->
+		<view v-if="order != null && (order!.status === 'PAID' || order!.status === 'EN_ROUTE' || order!.status === 'ARRIVED' || order!.status === 'IN_TRIP' || order!.status === 'COMPLETED')" class="offer-bar uni-column">
+			<text class="paid-text">{{ order!.agreedPriceText }} · {{ order!.statusLabel }}</text>
+			<text class="hint-text">{{ fulfillHint }}</text>
+		</view>
+
+		<!-- 发送消息 -->
+		<view v-if="canChat" class="composer uni-row">
+			<input class="composer-input" :value="draft" placeholder="输入消息" @input="onDraftInput" confirm-type="send" @confirm="sendMessage" />
+			<view class="send-btn" @click="sendMessage"><text class="send-text">发送</text></view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { getApi, postApi } from '../../utils/api-client.uts'
+	import { ApiEndpoints, endpointWithId } from '../../utils/api-endpoints.uts'
+
+	type RentalOrder = {
+		id: string
+		orderNo: string
+		projectTitle: string
+		travelDateText: string
+		passengerCount: number
+		pickupAddress: string
+		status: string
+		statusLabel: string
+		driverName: string
+		userId: string
+		driverUserId: string
+		refPriceText: string
+		offeredPriceText: string
+		agreedPriceText: string
+		offeredPrice: number | null
+		agreedPrice: number | null
+	}
+
+	type ChatMsg = {
+		id: string
+		senderType: string
+		senderTypeLabel: string
+		content: string
+		timeText: string
+		isSystem: boolean
+	}
+
+	const statusBarHeight = ref(20)
+	const orderId = ref('')
+	const roleHint = ref('') // user | driver | ''
+	const loading = ref(true)
+	const order = ref<RentalOrder | null>(null)
+	const messages = ref<ChatMsg[]>([])
+	const draft = ref('')
+	const offerInput = ref('')
+	const scrollInto = ref('')
+	const myUserId = ref('')
+	let pollTimer: number = 0
+
+	const isDriver = computed((): boolean => {
+		const o = order.value
+		if (o == null) return roleHint.value === 'driver'
+		if (roleHint.value === 'driver') return true
+		if (o.driverUserId.length > 0 && myUserId.value.length > 0 && o.driverUserId === myUserId.value) return true
+		return false
+	})
+	const isUser = computed((): boolean => {
+		if (isDriver.value) return false
+		return true
+	})
+	const canChat = computed((): boolean => {
+		const o = order.value
+		if (o == null) return false
+		const st = o.status
+		return st === 'NEGOTIATING' || st === 'PRICE_CONFIRMED' || st === 'PAID' || st === 'EN_ROUTE' || st === 'ARRIVED' || st === 'IN_TRIP' || st === 'COMPLETED'
+	})
+	const navTitle = computed((): string => {
+		if (isDriver.value) return '协商报价'
+		return '租车协商'
+	})
+
+	onLoad((query: any) => {
+		statusBarHeight.value = getStatusBarHeight()
+		if (query != null && query.id != null) orderId.value = query.id.toString()
+		if (query != null && query.role != null) roleHint.value = query.role.toString()
+		try {
+			const cached = uni.getStorageSync('mqlt_user_id')
+			if (cached != null) myUserId.value = cached.toString()
+		} catch (_e) {}
+	})
+	onShow(() => {
+		refreshAll()
+		if (pollTimer == 0) {
+			pollTimer = setInterval(() => { refreshAll() }, 8000) as number
+		}
+	})
+	onUnload(() => {
+		if (pollTimer != 0) {
+			clearInterval(pollTimer)
+			pollTimer = 0
+		}
+	})
+
+	const goBack = () => { uni.navigateBack({}) }
+
+	const bubbleClass = (m: ChatMsg): string => {
+		if (m.isSystem || m.senderType === 'system') return 'msg msg-sys uni-column'
+		if (m.senderType === 'driver') return 'msg msg-driver uni-column'
+		return 'msg msg-user uni-column'
+	}
+
+	const onDraftInput = (e: any) => {
+		draft.value = e != null && e.detail != null && e.detail.value != null ? e.detail.value.toString() : ''
+	}
+	const onOfferInput = (e: any) => {
+		offerInput.value = e != null && e.detail != null && e.detail.value != null ? e.detail.value.toString() : ''
+	}
+
+	const refreshAll = () => {
+		if (orderId.value.length === 0) {
+			loading.value = false
+			return
+		}
+		const detailUrl = endpointWithId(ApiEndpoints.studyRentalOrderDetail, orderId.value)
+		getApi<RentalOrder>(detailUrl, true).then((data) => {
+			order.value = data
+			loading.value = false
+			if (data.offeredPrice != null && offerInput.value.length === 0) {
+				offerInput.value = Number(data.offeredPrice).toFixed(2)
+			}
+		}).catch((_e) => { loading.value = false })
+
+		const msgUrl = endpointWithId(ApiEndpoints.studyRentalOrderMessages, orderId.value)
+		getApi<any>(msgUrl, true).then((data) => {
+			const list = data != null && data.items != null ? data.items as ChatMsg[] : []
+			messages.value = list
+			if (list.length > 0) {
+				scrollInto.value = 'm-' + list[list.length - 1].id
+			}
+		}).catch((_e) => {})
+	}
+
+	const sendMessage = () => {
+		const text = draft.value.trim()
+		if (text.length === 0) return
+		const url = endpointWithId(ApiEndpoints.studyRentalOrderMessages, orderId.value)
+		postApi<any>(url, { content: text }, true).then((_d) => {
+			draft.value = ''
+			refreshAll()
+		}).catch((err: any) => {
+			uni.showToast({ title: err != null && err.message != null ? err.message.toString() : '发送失败', icon: 'none' })
+		})
+	}
+
+	const submitOffer = () => {
+		const n = Number(offerInput.value)
+		if (!(n > 0)) {
+			uni.showToast({ title: '请输入有效报价', icon: 'none' })
+			return
+		}
+		const url = endpointWithId(ApiEndpoints.studyRentalOrderOffer, orderId.value)
+		postApi<any>(url, { price: n }, true).then((_d) => {
+			uni.showToast({ title: '已报价', icon: 'success' })
+			refreshAll()
+		}).catch((err: any) => {
+			// fallback commerce driver offer
+			const url2 = ApiEndpoints.commerceDriverRentalOffer.replace('{id}', orderId.value)
+			postApi<any>(url2, { price: n }, true).then((_d2) => {
+				uni.showToast({ title: '已报价', icon: 'success' })
+				refreshAll()
+			}).catch((e2: any) => {
+				uni.showToast({ title: e2 != null && e2.message != null ? e2.message.toString() : '报价失败', icon: 'none' })
+			})
+		})
+	}
+
+	const acceptPrice = () => {
+		uni.showModal({
+			title: '确认价格',
+			content: '确认接受司机报价并进入待支付？',
+			success: (res) => {
+				if (!res.confirm) return
+				const url = endpointWithId(ApiEndpoints.studyRentalOrderAcceptPrice, orderId.value)
+				postApi<any>(url, {}, true).then((_d) => {
+					uni.showToast({ title: '已确认，去支付', icon: 'success' })
+					refreshAll()
+				}).catch((err: any) => {
+					uni.showToast({ title: err != null && err.message != null ? err.message.toString() : '确认失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const rejectPrice = () => {
+		uni.showModal({
+			title: '拒绝报价',
+			content: '拒绝后订单将重新等待其他司机接单。确定？',
+			success: (res) => {
+				if (!res.confirm) return
+				const url = endpointWithId(ApiEndpoints.studyRentalOrderRejectPrice, orderId.value)
+				postApi<any>(url, { reason: '拒绝报价' }, true).then((_d) => {
+					uni.showToast({ title: '已拒绝，回池', icon: 'none' })
+					setTimeout(() => { uni.navigateBack({}) }, 600)
+				}).catch((err: any) => {
+					uni.showToast({ title: err != null && err.message != null ? err.message.toString() : '操作失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const releaseOrder = () => {
+		uni.showModal({
+			title: '结束协商',
+			content: '确定退回，重新等待接单？',
+			success: (res) => {
+				if (!res.confirm) return
+				const url = endpointWithId(ApiEndpoints.studyRentalOrderRelease, orderId.value)
+				postApi<any>(url, {}, true).then((_d) => {
+					uni.showToast({ title: '已回池', icon: 'success' })
+					setTimeout(() => { uni.navigateBack({}) }, 500)
+				}).catch((err: any) => {
+					uni.showToast({ title: err != null && err.message != null ? err.message.toString() : '失败', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const payOrder = () => {
+		uni.showModal({
+			title: '确认支付',
+			content: '当前为模拟支付（与研学预约相同），确认后订单变为已支付。',
+			confirmText: '确认支付',
+			success: (res) => {
+				if (!res.confirm) return
+				const url = endpointWithId(ApiEndpoints.studyRentalOrderPay, orderId.value)
+				postApi<any>(url, {}, true).then((_d) => {
+					uni.showToast({ title: '支付成功', icon: 'success' })
+					refreshAll()
+				}).catch((err: any) => {
+					uni.showToast({ title: err != null && err.message != null ? err.message.toString() : '支付失败', icon: 'none' })
+				})
+			}
+		})
+	}
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #1A73E8; }
+	.nav-bar { border-width: 0; border-color: #FFFFFF; height: 48px; align-items: center; padding: 0 12px; background-color: #1A73E8; }
+	.nav-back { flex-direction: row; align-items: center; width: 72px; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { color: #1A73E8; font-size: 14px; font-weight: 600; }
+	.nav-title { flex: 1; text-align: center; color: #FFFFFF; font-size: 17px; font-weight: 700; margin-right: 72px; }
+	.summary { background-color: #1A73E8; padding: 12px 16px 14px; }
+	.sum-status { color: #1A73E8; font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+	.sum-line { color: rgba(255,248,238,0.85); font-size: 13px; margin-top: 2px; }
+	.price-row { margin-top: 8px; align-items: baseline; }
+	.price-main { color: #FFFFFF; font-size: 18px; font-weight: 800; margin-right: 10px; }
+	.price-ref { color: rgba(26, 115, 232, 0.85); font-size: 12px; }
+	.chat { flex: 1; padding: 12px 14px; 
+ width: 100%;}
+	.state { padding: 24px; align-items: center; }
+	.state-text { color: #374151; font-size: 13px; }
+	.msg { margin-bottom: 10px; max-width: 88%; }
+	.msg-sys { align-self: center; max-width: 92%; }
+	.msg-user { align-self: flex-end; }
+	.msg-driver { align-self: flex-start; }
+	.meta { font-size: 11px; color: #9A8A72; margin-bottom: 4px; }
+	.bubble-text { background-color: #FFFFFF; color: #1A1A1A; font-size: 14px; line-height: 20px; padding: 10px 12px; border-radius: 12px; }
+	.msg-sys .bubble-text { background-color: transparent; color: #374151; font-size: 12px; text-align: center; padding: 4px; }
+	.msg-user .bubble-text { background-color: #1A73E8; color: #FFFFFF; }
+	.chat-pad { height: 12px; }
+	.offer-bar { padding: 10px 14px; background-color: #F7EFE0; border-top-width: 1px; border-top-style: solid; border-top-color: #E5E7EB; }
+	.offer-row { align-items: center; margin-bottom: 8px; }
+	.offer-input { flex: 1; height: 40px; background-color: #FFFFFF; border-radius: 10px; padding: 0 12px; margin-right: 8px; font-size: 15px; color: #1A1A1A; }
+	.main-btn { height: 42px; border-radius: 21px; background-color: #1A73E8; align-items: center; justify-content: center; padding: 0 16px; margin-bottom: 8px; }
+	.main-btn-text { color: #FFFFFF; font-size: 15px; font-weight: 700; }
+	.ghost-btn { height: 40px; border-radius: 20px; border-width: 1px; border-style: solid; border-color: #1A1A1A; align-items: center; justify-content: center; margin-bottom: 6px; }
+	.ghost-text { color: #1A1A1A; font-size: 14px; font-weight: 600; }
+	.user-price-ops { margin-bottom: 6px; }
+	.flex1 { flex: 1; margin-right: 8px; }
+	.hint { padding: 6px 0 10px; }
+	.hint-text { font-size: 12px; color: #374151; text-align: center; }
+	.paid-text { color: #1A1A1A; font-size: 15px; font-weight: 700; text-align: center; padding: 8px; }
+	.composer { padding: 8px 12px 12px; background-color: #FFFFFF; border-top-width: 1px; border-top-style: solid; border-top-color: #E5E7EB; align-items: center; }
+	.composer-input { flex: 1; height: 40px; background-color: #F5F7FB; border-radius: 20px; padding: 0 14px; font-size: 14px; color: #1A1A1A; margin-right: 8px; }
+	.send-btn { height: 40px; padding: 0 16px; border-radius: 20px; background-color: #1A73E8; align-items: center; justify-content: center; }
+	.send-text { color: #FFFFFF; font-size: 14px; font-weight: 700; }
+</style>

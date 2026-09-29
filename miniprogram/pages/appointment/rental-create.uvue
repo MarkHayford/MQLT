@@ -1,0 +1,757 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar uni-row">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">发租车需求</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<!-- 1. 研学项目 -->
+			<view class="section-card uni-column">
+				<view class="section-gold-edge"></view>
+				<view class="section-head uni-column">
+					<text class="section-kicker">01 PROJECT</text>
+					<text class="section-title">研学项目</text>
+					<text class="section-desc">选择本次租车对应的研学项目</text>
+				</view>
+				<view class="picker-row" @click="pickProject">
+					<text :class="projectTitle.length > 0 ? 'picker-val' : 'picker-ph'">{{ projectTitle.length > 0 ? projectTitle : '选择研学项目' }}</text>
+					<text class="picker-arrow">›</text>
+				</view>
+			</view>
+
+			<!-- 2. 出行日期（单选日历） -->
+			<view class="section-card uni-column">
+				<view class="section-gold-edge"></view>
+				<view class="section-head uni-column">
+					<text class="section-kicker">02 DATE</text>
+					<text class="section-title">出行日期</text>
+					<text class="section-desc">选择租车出行当天</text>
+				</view>
+
+				<view class="cal-nav uni-row">
+					<view class="cal-nav-btn" @click="shiftMonth(-1)">
+						<text class="cal-nav-btn-text">‹</text>
+					</view>
+					<text class="cal-month-title">{{ calendarTitle }}</text>
+					<view class="cal-nav-btn" @click="shiftMonth(1)">
+						<text class="cal-nav-btn-text">›</text>
+					</view>
+				</view>
+
+				<view class="cal-week-row uni-row">
+					<text v-for="w in weekLabels" :key="w" class="cal-week-cell">{{ w }}</text>
+				</view>
+
+				<view class="cal-grid">
+					<view
+						v-for="cell in calendarCells"
+						:key="cell.key"
+						:class="['cal-cell', cell.inMonth ? '' : 'cal-cell-muted', cell.open ? '' : 'cal-cell-closed', cell.selected ? 'cal-cell-on' : '', cell.isToday ? 'cal-cell-today' : '']"
+						@click="selectDay(cell)"
+					>
+						<text :class="['cal-day-num', cell.selected ? 'cal-day-num-on' : '']">{{ cell.day > 0 ? cell.day.toString() : '' }}</text>
+					</view>
+				</view>
+
+				<text v-if="travelDate.length > 0" class="cal-selected">已选 {{ travelDate }}</text>
+				<text v-else class="cal-hint">点选出行日期</text>
+			</view>
+
+			<!-- 3. 出行人数 -->
+			<view class="section-card uni-column">
+				<view class="section-gold-edge"></view>
+				<view class="section-head uni-column">
+					<text class="section-kicker">03 GUESTS</text>
+					<text class="section-title">出行人数</text>
+					<text class="section-desc">含成人与儿童，便于司机评估运力</text>
+				</view>
+				<view class="stepper uni-row">
+					<view class="step-btn" @click="decPax"><text class="step-btn-text">−</text></view>
+					<text class="step-val">{{ passengerCount }}</text>
+					<view class="step-btn" @click="incPax"><text class="step-btn-text">+</text></view>
+					<text class="step-unit">人</text>
+				</view>
+			</view>
+
+			<!-- 4. 上车点 -->
+			<view class="section-card uni-column">
+				<view class="section-gold-edge"></view>
+				<view class="section-head uni-column">
+					<text class="section-kicker">04 PICKUP</text>
+					<text class="section-title">上车点</text>
+					<text class="section-desc">地图点选或定位；提交时带经纬度</text>
+				</view>
+
+				<view class="pickup-block uni-column">
+					<view class="pickup-head uni-row">
+						<view class="pickup-titles uni-column">
+							<text class="pickup-desc">点击地图或「地图选点」设置位置</text>
+						</view>
+						<view class="pickup-locate-btn" @click="locateUser">
+							<text class="pickup-locate-text">{{ locatingUser ? '定位中' : '定位' }}</text>
+						</view>
+					</view>
+
+					<view class="pickup-map-wrap">
+						<map
+							id="rental-create-pickup-map"
+							class="pickup-map"
+							:latitude="mapLatitude"
+							:longitude="mapLongitude"
+							:scale="mapScale"
+							:markers="pickupMarkers"
+							:show-location="true"
+							:enable-scroll="true"
+							:enable-zoom="true"
+							@tap="onPickupMapTap"
+						></map>
+						<view class="pickup-map-tip">
+							<text class="pickup-map-tip-text">点击地图选择上车点</text>
+						</view>
+					</view>
+
+					<view class="pickup-info uni-column">
+						<text class="pickup-info-label">已选上车点</text>
+						<text class="pickup-info-value">{{ pickupAddressText }}</text>
+						<view class="pickup-actions uni-row">
+							<view class="pickup-action-btn" @click="choosePickupOnMap">
+								<text class="pickup-action-text">地图选点</text>
+							</view>
+							<view class="pickup-action-btn pickup-action-btn-ghost" @click="useCurrentAsPickup" v-if="hasUserLocation">
+								<text class="pickup-action-text-ghost">用当前位置</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- 5. 备注 -->
+			<view class="section-card uni-column">
+				<view class="section-gold-edge"></view>
+				<view class="section-head uni-column">
+					<text class="section-kicker">05 NOTE</text>
+					<text class="section-title">备注</text>
+					<text class="section-desc">行李、集合时间、特殊需求等（选填）</text>
+				</view>
+				<textarea class="textarea" v-model="remark" placeholder="例如：需要带行李舱、接送时间等" placeholder-style="color:#374151;" />
+			</view>
+
+			<view class="hint uni-column">
+				<text class="hint-text">提交后等待司机接单，双方协商价格；确认价后才会产生待支付订单。</text>
+			</view>
+
+			<view class="footer-spacer"></view>
+		</scroll-view>
+
+		<view class="bottom-bar">
+			<view :class="submitting ? 'submit submit-off' : 'submit'" @click="submit">
+				<text class="submit-text">{{ submitting ? '提交中…' : '提交租车' }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { postApi, getApi } from '../../utils/api-client.uts'
+	import { ApiEndpoints } from '../../utils/api-endpoints.uts'
+	import { getAuthToken } from '../../utils/api-client.uts'
+
+	type CalCell = {
+		key: string
+		day: number
+		inMonth: boolean
+		open: boolean
+		selected: boolean
+		isToday: boolean
+		year: number
+		month: number
+	}
+
+	const statusBarHeight = ref(20)
+	const projectId = ref('')
+	const projectTitle = ref('')
+	const travelDate = ref('')
+	const passengerCount = ref(2)
+	const remark = ref('')
+	const submitting = ref(false)
+	const projectOptions = ref<any[]>([])
+
+	const weekLabels: string[] = ['日', '一', '二', '三', '四', '五', '六']
+	const viewYear = ref(2026)
+	const viewMonth = ref(1)
+
+	const mapLatitude = ref(40.84)
+	const mapLongitude = ref(111.75)
+	const mapScale = ref(15)
+	const userLatitude = ref(0)
+	const userLongitude = ref(0)
+	const hasUserLocation = ref(false)
+	const locatingUser = ref(false)
+	const pickupLatitude = ref(0)
+	const pickupLongitude = ref(0)
+	const hasPickupPoint = ref(false)
+	const pickupAddress = ref('')
+	const pickupMarkers = ref<any[]>([])
+
+	const pad2 = (n: number): string => {
+		return n < 10 ? '0' + n.toString() : n.toString()
+	}
+
+	const dayKeyOf = (y: number, m: number, d: number): string => {
+		return y.toString() + '-' + pad2(m) + '-' + pad2(d)
+	}
+
+	const chinaDateKeyNow = (): string => {
+		const now = new Date()
+		const utc = now.getTime() + now.getTimezoneOffset() * 60000
+		const china = new Date(utc + 8 * 3600000)
+		const y = china.getFullYear()
+		const m = china.getMonth() + 1
+		const d = china.getDate()
+		return dayKeyOf(y, m, d)
+	}
+
+	const todayKey = (): string => {
+		return chinaDateKeyNow()
+	}
+
+	const calendarTitle = computed((): string => {
+		return viewYear.value.toString() + '年' + viewMonth.value.toString() + '月'
+	})
+
+	const calendarCells = computed((): CalCell[] => {
+		const y = viewYear.value
+		const m = viewMonth.value
+		const first = new Date(y, m - 1, 1)
+		const startWeek = first.getDay()
+		const daysInMonth = new Date(y, m, 0).getDate()
+		const tk = todayKey()
+		const tkParts = tk.split('-')
+		const ty = parseInt(tkParts[0])
+		const tm = parseInt(tkParts[1])
+		const td = parseInt(tkParts[2])
+		const cells: CalCell[] = []
+		const prevDays = new Date(y, m - 1, 0).getDate()
+		for (let i = 0; i < startWeek; i++) {
+			const d = prevDays - startWeek + 1 + i
+			const pm = m === 1 ? 12 : m - 1
+			const py = m === 1 ? y - 1 : y
+			cells.push({
+				key: 'p-' + dayKeyOf(py, pm, d),
+				day: d,
+				inMonth: false,
+				open: false,
+				selected: false,
+				isToday: false,
+				year: py,
+				month: pm
+			})
+		}
+		for (let d = 1; d <= daysInMonth; d++) {
+			const key = dayKeyOf(y, m, d)
+			const open = key >= tk
+			cells.push({
+				key: key,
+				day: d,
+				inMonth: true,
+				open: open,
+				selected: travelDate.value === key,
+				isToday: y === ty && m === tm && d === td,
+				year: y,
+				month: m
+			})
+		}
+		while (cells.length % 7 !== 0) {
+			const n = cells.length - startWeek - daysInMonth + 1
+			const nm = m === 12 ? 1 : m + 1
+			const ny = m === 12 ? y + 1 : y
+			cells.push({
+				key: 'n-' + dayKeyOf(ny, nm, n),
+				day: n,
+				inMonth: false,
+				open: false,
+				selected: false,
+				isToday: false,
+				year: ny,
+				month: nm
+			})
+		}
+		return cells
+	})
+
+	const pickupAddressText = computed((): string => {
+		if (!hasPickupPoint.value) return '尚未选择，请在地图上点选'
+		if (pickupAddress.value.length > 0) return pickupAddress.value
+		return formatCoord(pickupLatitude.value) + ', ' + formatCoord(pickupLongitude.value)
+	})
+
+	const formatCoord = (n: number): string => {
+		return n.toFixed(6)
+	}
+
+	const refreshPickupMarker = () => {
+		if (!hasPickupPoint.value) {
+			pickupMarkers.value = []
+			return
+		}
+		pickupMarkers.value = [
+			{
+				id: 1,
+				latitude: pickupLatitude.value,
+				longitude: pickupLongitude.value,
+				width: 28,
+				height: 28,
+				title: '上车点',
+				callout: {
+					content: '上车点',
+					display: 'ALWAYS',
+					padding: 6,
+					borderRadius: 8,
+					fontSize: 12,
+					color: '#FFFFFF',
+					bgColor: '#1A1A1A'
+				}
+			}
+		]
+	}
+
+	const setPickupPoint = (lat: number, lng: number, address: string) => {
+		pickupLatitude.value = lat
+		pickupLongitude.value = lng
+		hasPickupPoint.value = true
+		pickupAddress.value = address
+		mapLatitude.value = lat
+		mapLongitude.value = lng
+		refreshPickupMarker()
+	}
+
+	const locateUser = () => {
+		if (locatingUser.value) return
+		locatingUser.value = true
+		uni.getLocation({
+			type: 'gcj02',
+			isHighAccuracy: true,
+			success: (res) => {
+				locatingUser.value = false
+				userLatitude.value = res.latitude
+				userLongitude.value = res.longitude
+				hasUserLocation.value = true
+				mapLatitude.value = res.latitude
+				mapLongitude.value = res.longitude
+				mapScale.value = 16
+				if (!hasPickupPoint.value) {
+					setPickupPoint(res.latitude, res.longitude, '当前位置附近')
+				}
+			},
+			fail: (_err) => {
+				locatingUser.value = false
+				uni.showToast({ title: '定位失败，请检查定位权限', icon: 'none' })
+			}
+		})
+	}
+
+	const useCurrentAsPickup = () => {
+		if (!hasUserLocation.value) {
+			locateUser()
+			return
+		}
+		setPickupPoint(userLatitude.value, userLongitude.value, '当前位置附近')
+		uni.showToast({ title: '已设为上车点', icon: 'success' })
+	}
+
+	const onPickupMapTap = (e: any) => {
+		const detail = e != null ? e.detail : null
+		if (detail == null) return
+		const lat = detail.latitude != null ? Number(detail.latitude) : 0
+		const lng = detail.longitude != null ? Number(detail.longitude) : 0
+		if (!(lat > 0) || !(lng > 0)) return
+		setPickupPoint(lat, lng, '地图选点 ' + formatCoord(lat) + ', ' + formatCoord(lng))
+	}
+
+	const choosePickupOnMap = () => {
+		const lat = hasPickupPoint.value ? pickupLatitude.value : (hasUserLocation.value ? userLatitude.value : mapLatitude.value)
+		const lng = hasPickupPoint.value ? pickupLongitude.value : (hasUserLocation.value ? userLongitude.value : mapLongitude.value)
+		uni.chooseLocation({
+			latitude: lat,
+			longitude: lng,
+			success: (res) => {
+				const name = res.name != null ? res.name.toString() : ''
+				const addr = res.address != null ? res.address.toString() : ''
+				let label = name
+				if (label.length === 0) label = addr
+				if (label.length === 0) label = '已选上车点'
+				else if (addr.length > 0 && name.length > 0 && name !== addr) label = name + ' · ' + addr
+				setPickupPoint(res.latitude, res.longitude, label)
+				uni.showToast({ title: '上车点已更新', icon: 'success' })
+			},
+			fail: (_err) => {
+			}
+		})
+	}
+
+	const shiftMonth = (delta: number) => {
+		let y = viewYear.value
+		let m = viewMonth.value + delta
+		if (m < 1) {
+			m = 12
+			y--
+		} else if (m > 12) {
+			m = 1
+			y++
+		}
+		viewYear.value = y
+		viewMonth.value = m
+	}
+
+	const selectDay = (cell: CalCell) => {
+		if (!cell.inMonth || cell.day <= 0) return
+		if (!cell.open) {
+			uni.showToast({ title: '不能选择过去的日期', icon: 'none' })
+			return
+		}
+		travelDate.value = cell.key
+	}
+
+	onLoad((query: any) => {
+		statusBarHeight.value = getStatusBarHeight()
+		const tk = todayKey()
+		const parts = tk.split("-")
+		viewYear.value = parseInt(parts[0])
+		viewMonth.value = parseInt(parts[1])
+		if (query != null && query.projectId != null) {
+			projectId.value = query.projectId.toString()
+		}
+		if (query != null && query.projectTitle != null) {
+			projectTitle.value = decodeURIComponent(query.projectTitle.toString())
+		}
+		loadProjects()
+	})
+
+	const loadProjects = () => {
+		getApi<any[]>(ApiEndpoints.studyProjects, false).then((list) => {
+			const arr: any[] = list != null ? list : []
+			projectOptions.value = arr
+			if (projectId.value.length > 0 && projectTitle.value.length === 0) {
+				for (let i = 0; i < arr.length; i++) {
+					if (arr[i].id == projectId.value) {
+						projectTitle.value = (arr[i].title != null ? arr[i].title.toString() : '')
+						break
+					}
+				}
+			}
+		}).catch((_e) => {})
+	}
+
+	const goBack = () => { uni.navigateBack({}) }
+
+	const incPax = () => {
+		if (passengerCount.value < 60) passengerCount.value = passengerCount.value + 1
+	}
+	const decPax = () => {
+		if (passengerCount.value > 1) passengerCount.value = passengerCount.value - 1
+	}
+
+	const pickProject = () => {
+		const names: string[] = []
+		const ids: string[] = []
+		const list = projectOptions.value
+		for (let i = 0; i < list.length; i++) {
+			ids.push(list[i].id.toString())
+			names.push(list[i].title != null ? list[i].title.toString() : list[i].id.toString())
+		}
+		if (names.length === 0) {
+			uni.showToast({ title: '暂无项目', icon: 'none' })
+			return
+		}
+		uni.showActionSheet({
+			itemList: names.slice(0, 6),
+			success: (res) => {
+				const idx = res.tapIndex
+				if (idx >= 0 && idx < ids.length) {
+					projectId.value = ids[idx]
+					projectTitle.value = names[idx]
+				}
+			}
+		})
+	}
+
+	const submit = () => {
+		if (submitting.value) return
+		if (getAuthToken().length === 0) {
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			return
+		}
+		if (projectId.value.length === 0) {
+			uni.showToast({ title: '请选择研学项目', icon: 'none' })
+			return
+		}
+		if (travelDate.value.length === 0) {
+			uni.showToast({ title: '请选择出行日期', icon: 'none' })
+			return
+		}
+		if (!hasPickupPoint.value) {
+			uni.showToast({ title: '请选择上车点', icon: 'none' })
+			return
+		}
+		if (pickupAddress.value.trim().length === 0) {
+			uni.showToast({ title: '请选择上车点', icon: 'none' })
+			return
+		}
+		submitting.value = true
+		const body: any = {
+			projectId: projectId.value,
+			travelDate: travelDate.value,
+			passengerCount: passengerCount.value,
+			pickupAddress: pickupAddress.value.trim(),
+			pickupLatitude: pickupLatitude.value,
+			pickupLongitude: pickupLongitude.value,
+			remark: remark.value.trim()
+		}
+		postApi<any>(ApiEndpoints.studyRentalOrders, body, true).then((order) => {
+			submitting.value = false
+			uni.showToast({ title: '已提交，等待接单', icon: 'success' })
+			const oid = order != null && order.id != null ? order.id.toString() : ''
+			setTimeout(() => {
+				if (oid.length > 0) {
+					uni.redirectTo({ url: '/pages/appointment/rental-detail?id=' + oid })
+				} else {
+					uni.navigateBack({})
+				}
+			}, 400)
+		}).catch((err: any) => {
+			submitting.value = false
+			uni.showToast({ title: err != null && err.message != null ? err.message.toString() : '提交失败', icon: 'none' })
+		})
+	}
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #1A73E8; }
+	.nav-bar { border-width: 0; border-color: #FFFFFF; height: 48px; align-items: center; padding: 0 12px; background-color: #1A73E8; }
+	.nav-back { flex-direction: row; align-items: center; width: 72px; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { color: #1A73E8; font-size: 14px; font-weight: 600; }
+	.nav-title { flex: 1; text-align: center; color: #FFFFFF; font-size: 17px; font-weight: 700; margin-right: 72px; }
+	.body { flex: 1; padding: 14px 16px; 
+ width: 100%;}
+
+	.section-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px 14px 14px 14px;
+		margin-bottom: 12px;
+		overflow: hidden;
+		position: relative;
+	}
+	.section-gold-edge {
+		position: absolute;
+		left: 0; right: 0; top: 0;
+		height: 3px;
+		background-color: #1A73E8;
+	}
+	.section-head { margin-bottom: 14px; padding-top: 2px; }
+	.section-kicker {
+		font-size: 10px; font-weight: 800; color: #1A73E8;
+		letter-spacing: 1.2px; margin-bottom: 6px;
+	}
+	.section-title { font-size: 17px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px; }
+	.section-desc { font-size: 12px; color: #374151; line-height: 18px; }
+
+	.picker-row {
+		flex-direction: row; align-items: center; justify-content: space-between;
+		min-height: 44px; padding: 10px 12px; border-radius: 12px;
+		background-color: #F5F7FB; border-width: 1px; border-style: solid; border-color: #E5E7EB;
+	}
+	.picker-val { font-size: 16px; color: #1A1A1A; font-weight: 600; flex: 1; }
+	.picker-ph { font-size: 16px; color: #374151; flex: 1; }
+	.picker-arrow { font-size: 22px; color: #9CA3AF; margin-left: 8px; }
+
+	.cal-nav {
+		align-items: center; justify-content: space-between; margin-bottom: 10px;
+	}
+	.cal-nav-btn {
+		width: 36px; height: 36px; border-radius: 18px; background-color: #E8EEF8;
+		align-items: center; justify-content: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.cal-nav-btn-text { font-size: 22px; color: #1A1A1A; font-weight: 600; line-height: 24px; }
+	.cal-month-title { font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.cal-week-row { flex-direction: row; margin-bottom: 4px; }
+	.cal-week-cell {
+		width: 14.28%; text-align: center; font-size: 11px; color: #9CA3AF; font-weight: 600;
+		padding: 4px 0;
+	}
+	.cal-grid { flex-direction: row; flex-wrap: wrap; }
+	.cal-cell {
+		width: 14.28%;
+		height: 44px;
+		padding: 4px 2px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 10px;
+		margin-bottom: 4px;
+	}
+	.cal-cell-muted { opacity: 0.28; }
+	.cal-cell-closed { opacity: 0.4; }
+	.cal-cell-today { background-color: #FFFFFF; }
+	.cal-cell-on {
+		background-color: #1A73E8;
+		opacity: 1;
+	}
+	.cal-day-num {
+		font-size: 14px; font-weight: 700; color: #1A1A1A;
+	}
+	.cal-day-num-on { color: #1A73E8; }
+	.cal-hint {
+		font-size: 12px; color: #9CA3AF; margin-top: 8px; line-height: 17px;
+	}
+	.cal-selected {
+		font-size: 13px; color: #1A1A1A; font-weight: 700; margin-top: 8px;
+	}
+
+	.stepper { align-items: center; }
+	.step-btn {
+		width: 40px; height: 40px; border-radius: 20px; background-color: #FFFFFF;
+		align-items: center; justify-content: center;
+		border-width: 1px; border-style: solid; border-color: #E5E7EB;
+	}
+	.step-btn-text { font-size: 22px; color: #1A1A1A; font-weight: 700; }
+	.step-val {
+		width: 64px; text-align: center; font-size: 22px; font-weight: 800; color: #1A1A1A;
+	}
+	.step-unit { font-size: 14px; color: #374151; font-weight: 700; margin-left: 4px; }
+
+	.pickup-block { margin-top: 0; }
+	.pickup-head {
+		align-items: center;
+		margin-bottom: 10px;
+	}
+	.pickup-titles { flex: 1; min-width: 0; }
+	.pickup-title {
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 2px;
+	}
+	.pickup-desc {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+	.pickup-locate-btn {
+		padding: 6px 12px;
+		border-radius: 14px;
+		background-color: #1A73E8;
+		flex-shrink: 0;
+		margin-left: 8px;
+	}
+	.pickup-locate-text {
+		font-size: 12px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+	.pickup-map-wrap {
+		width: 100%;
+		height: 190px;
+		border-radius: 14px;
+		overflow: hidden;
+		position: relative;
+		background-color: #E5E7EB;
+		margin-bottom: 10px;
+	}
+	.pickup-map {
+		width: 100%;
+		height: 190px;
+	}
+	.pickup-map-tip {
+		position: absolute;
+		left: 10px;
+		bottom: 10px;
+		padding: 4px 10px;
+		border-radius: 12px;
+		background-color: rgba(0, 0, 0, 0.72);
+	}
+	.pickup-map-tip-text {
+		font-size: 11px;
+		color: #FFFFFF;
+		font-weight: 600;
+	}
+	.pickup-info {
+		padding: 12px;
+		border-radius: 12px;
+		background-color: #F5F7FB;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(0, 0, 0, 0.06);
+	}
+	.pickup-info-label {
+		font-size: 12px;
+		color: #9CA3AF;
+		font-weight: 600;
+		margin-bottom: 4px;
+	}
+	.pickup-info-value {
+		font-size: 14px;
+		font-weight: 700;
+		color: #1A1A1A;
+		lines: 2;
+		margin-bottom: 10px;
+	}
+	.pickup-actions {
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	.pickup-action-btn {
+		padding: 8px 14px;
+		border-radius: 16px;
+		background-color: #1A73E8;
+		margin-right: 8px;
+		margin-bottom: 4px;
+	}
+	.pickup-action-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+	.pickup-action-btn-ghost {
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.pickup-action-text-ghost {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.textarea {
+		min-height: 88px; font-size: 15px; color: #1A1A1A; width: 100%;
+		padding: 10px 12px; border-radius: 12px; background-color: #F5F7FB;
+	}
+
+	.hint { padding: 4px 8px 12px 8px; }
+	.hint-text { font-size: 12px; color: #374151; line-height: 18px; }
+	.footer-spacer { height: 100px; }
+	.bottom-bar {
+		position: fixed; left: 0; right: 0; bottom: 0;
+		padding: 12px 16px 28px 16px; background-color: #FFFFFF; border-top-width: 1px; border-top-style: solid; border-top-color: #E5E7EB;
+	}
+	.submit {
+		height: 48px; border-radius: 24px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+		box-shadow: none;
+	}
+	.submit-off { opacity: 0.55; }
+	.submit-text{ color: #FFFFFF; font-size: 16px; font-weight: 800; }
+</style>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>研学小游戏模板</title>
+  <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+  <script src="http://127.0.0.1:3000/api/v1/study/h5/sdk.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0F3F3A; color: #FFF8EE; font-family: -apple-system, sans-serif; }
+    .box { padding: 28px 20px 96px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p { line-height: 1.6; color: rgba(255,248,238,.82); }
+    .score { font-size: 48px; font-weight: 800; color: #E8C56B; margin: 24px 0; }
+    .row { display: flex; gap: 10px; }
+    button { flex: 1; height: 48px; border: 0; border-radius: 16px; font-size: 16px; font-weight: 800; }
+    .ok { background: #E8C56B; color: #0F3F3A; }
+    .no { background: rgba(255,248,238,.12); color: #FFF8EE; }
+    code { display: block; margin-top: 18px; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.22); font-size: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>研学 H5 接入模板</h1>
+    <p>把游戏逻辑写在本页。通关时调用 <b>MQLT.complete</b>，失败调用 <b>MQLT.fail</b>。小程序打开时会自动带上 playToken。</p>
+    <div class="score" id="score">86</div>
+    <div class="row">
+      <button class="ok" type="button" onclick="win()">通关并上报</button>
+      <button class="no" type="button" onclick="lose()">不合格</button>
+    </div>
+    <code>MQLT.complete({ score: 86, passed: true, durationMs: 120000, payload: { stars: 2 } })
+MQLT.fail({ score: 40, payload: { reason: 'timeout' } })
+MQLT.progress({ score: 10, payload: { level: 1 } })</code>
+  </div>
+  <script>
+    var started = Date.now();
+    function win() {
+      MQLT.complete({
+        score: 86,
+        passed: true,
+        durationMs: Date.now() - started,
+        payload: { demo: true, stars: 2 }
+      });
+    }
+    function lose() {
+      MQLT.fail({
+        score: 40,
+        durationMs: Date.now() - started,
+        payload: { demo: true, reason: 'fail-button' }
+      });
+    }
+  </script>
+</body>
+</html>

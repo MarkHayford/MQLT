@@ -1,0 +1,19 @@
+import { API_BASE_URL } from '../../../utils/api-config.uts'
+import { ApiEndpoints } from '../../../utils/api-endpoints.uts'
+
+export function resolveMallProductImageUrl(value: any): string {
+	const raw = value != null ? value.toString().trim() : ''
+	if (raw.length === 0) return ''
+	if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0 || raw.indexOf('wxfile://') === 0 || raw.indexOf('file://') === 0) return raw
+	if (raw.charAt(0) === '/') {
+		const productsEndpoint = ApiEndpoints.mallProducts
+		const marker = '/mall/products'
+		const markerIndex = productsEndpoint.indexOf(marker)
+		const apiPrefix = markerIndex > 0 ? productsEndpoint.substring(0, markerIndex) : ''
+		if (apiPrefix.length > 0 && raw.indexOf(apiPrefix + '/') !== 0) {
+			return API_BASE_URL + apiPrefix + raw
+		}
+		return API_BASE_URL + raw
+	}
+	return API_BASE_URL + '/' + raw
+}

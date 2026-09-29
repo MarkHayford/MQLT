@@ -1,0 +1,932 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav uni-row">
+			<view class="nav-back uni-row" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">商品详情</text>
+<view class="nav-space"></view>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" :show-scrollbar="false" :bounces="true" :scroll-into-view="composerAnchor">
+			<swiper v-if="galleryUrls.length > 1" class="hero" :indicator-dots="true" :circular="true">
+				<swiper-item v-for="(url, gi) in galleryUrls" :key="'hero-'+gi" @click="previewAt(gi)">
+					<image :src="url" class="hero-img" mode="aspectFill"></image>
+				</swiper-item>
+			</swiper>
+			<view v-else class="hero" @click="previewProductImage">
+				<image v-if="coverUrl.length > 0" :src="coverUrl" class="hero-img" mode="aspectFill"></image>
+				<view v-else class="hero-empty">
+					<text class="hero-empty-txt">暂无图片</text>
+				</view>
+			</view>
+
+			<view class="sheet uni-column">
+				<view class="gold-edge"></view>
+				<text class="kicker">SOUVENIR</text>
+				<view class="price-row uni-row">
+					<text class="currency">¥</text>
+					<text class="price">{{ displayPrice }}</text>
+					<view v-if="displayCategory.length > 0" class="cat-tag">
+						<text class="cat-tag-txt">{{ displayCategory }}</text>
+					</view>
+				</view>
+				<text class="name">{{ displayName }}</text>
+				<text v-if="ratingCount > 0" class="rate-line">{{ ratingAvgText }} · {{ ratingCount }} 条评价</text>
+				<text v-if="displayIntro.length > 0" class="sub">{{ displayIntro }}</text>
+
+				<view class="rule"></view>
+
+				<view class="service-row uni-row">
+					<view class="service-item uni-row" v-for="(s, i) in services" :key="'sv-'+i">
+						<view class="dot"></view>
+						<text class="service-txt">{{ s }}</text>
+					</view>
+				</view>
+
+				<view class="block uni-column">
+					<text class="block-title">商品规格</text>
+					<view class="spec-row uni-row" v-for="spec in visibleSpecs" :key="spec.label">
+						<text class="spec-label">{{ spec.label }}</text>
+						<text class="spec-value">{{ spec.value }}</text>
+					</view>
+					<view v-if="specsHasMore" class="spec-more" @click="toggleSpecs">
+						<text class="spec-more-txt">{{ specsOpen ? '收起' : '更多' }}</text>
+					</view>
+				</view>
+
+				<view class="block uni-column">
+					<text class="block-title">图文详情</text>
+					<view v-for="b in detailBlocks" :key="b.id" class="story-block">
+						<rich-text v-if="b.type === 'text'" class="story-rich" :nodes="b.html"></rich-text>
+						<image v-if="b.type === 'image' && b.url.length > 0" :src="b.url" class="detail-img" :style="'width:' + b.width.toString() + '%'" mode="widthFix" @click="previewUrl(b.url)"></image>
+						<swiper v-if="b.type === 'carousel' && b.urls.length > 0" class="detail-swiper" :indicator-dots="true" :circular="true">
+							<swiper-item v-for="(u, ui) in b.urls" :key="b.id + '-c-' + ui.toString()">
+								<image :src="u" class="detail-swiper-img" mode="aspectFill" @click="previewUrl(u)"></image>
+							</swiper-item>
+						</swiper>
+						<view v-if="b.type === 'stack'">
+							<image v-for="(u, ui) in b.urls" :key="b.id + '-s-' + ui.toString()" :src="u" class="detail-img" mode="widthFix" @click="previewUrl(u)"></image>
+						</view>
+					</view>
+				</view>
+
+				<view class="block uni-column">
+					<text class="block-title">评价 {{ commentTotal }}</text>
+					<view v-if="commentDays.length === 0" class="cmt-empty">
+						<text class="cmt-empty-txt">还没有评价</text>
+					</view>
+					<view v-for="g in commentDays" :key="g.date" class="cmt-day">
+						<text class="cmt-date">{{ g.date }}</text>
+						<view v-for="c in g.items" :key="c.id" :class="c.depth > 0 ? 'cmt cmt-nested' : 'cmt'">
+							<view class="cmt-hd uni-row">
+								<text class="cmt-name">{{ c.authorName }}</text>
+								<text v-if="c.rating > 0" class="cmt-stars">{{ starLine(c.rating) }}</text>
+							</view>
+							<text v-if="c.replyToName.length > 0" class="cmt-to">回复 {{ c.replyToName }}</text>
+							<text class="cmt-txt">{{ c.content }}</text>
+							<text v-if="canComment" class="cmt-reply-btn" @click="startReply(c.id, c.authorName)">{{ replyTo === c.id ? '取消回复' : '回复' }}</text>
+						</view>
+					</view>
+					<view v-if="commentHasMore" class="spec-more" @click="loadMoreComments">
+						<text class="spec-more-txt">更多评价</text>
+					</view>
+					<view v-if="canComment && replyTo.length === 0" class="star-pick uni-row">
+						<text v-for="n in starLevels" :key="'pk'+n" :class="n <= ratingPick ? 'star-on' : 'star-off'" @click="setRating(n)">★</text>
+					</view>
+					<view v-if="canComment" id="cmt-composer" class="cmt-bar uni-row">
+						<input class="cmt-input" type="text" :placeholder="replyHint" v-model="commentText" confirm-type="send" @confirm="sendComment" />
+						<view v-if="replyTo.length > 0" class="cmt-cancel" @click="cancelReply">
+							<text class="cmt-cancel-txt">取消</text>
+						</view>
+						<view class="cmt-send" @click="sendComment">
+							<text class="cmt-send-txt">发送</text>
+						</view>
+					</view>
+					<view v-else class="cmt-locked">
+						<text class="cmt-locked-txt">完成购买后可评价</text>
+					</view>
+				</view>
+			</view>
+			<view class="safe"></view>
+		</scroll-view>
+
+		<view class="buy-bar uni-row">
+			
+			
+			<!-- #ifdef MP-WEIXIN -->
+			<button
+				class="svc-btn svc-contact uni-column"
+				open-type="contact"
+				session-from="product-detail"
+				show-message-card="false"
+			>
+				<image src="/static/detail-nav-chat.svg" class="svc-icon" mode="aspectFit"></image>
+				<text class="svc-txt">联系客服</text>
+			</button>
+			<!-- #endif -->
+			<!-- #ifndef MP-WEIXIN -->
+			<view class="svc-btn uni-column" @click="goCustomerService">
+				<image src="/static/detail-nav-chat.svg" class="svc-icon" mode="aspectFit"></image>
+				<text class="svc-txt">联系客服</text>
+			</view>
+			<!-- #endif -->
+			<view :class="['cart-btn', isInCart ? 'cart-btn-on' : '']" @click="handleToggleCart">
+				<text :class="['cart-btn-txt', isInCart ? 'cart-btn-txt-on' : '']">{{ isInCart ? '已加入购物车' : '加入购物车' }}</text>
+			</view>
+			<view class="buy-btn" @click="handleBuyNow">
+				<text class="buy-btn-txt">立即购买</text>
+			</view>
+		</view>
+
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { createMallProductComment, fetchMallProductComments, fetchMallProductDetail, fetchMallProducts, fetchMallReviewAccess, type MallCommentGroup, type MallDetailBlock, type MallProduct, type MallProductComment, type MallSpec } from './utils/mall-products.uts'
+	import { resolveMallProductImageUrl } from './utils/mall-product-image.uts'
+	import { ApiEndpoints } from '../../utils/api-endpoints.uts'
+	import { deleteApi, getApi, getAuthToken, postApi } from '../../utils/api-client.uts'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { promptLoginThenGoMine } from '../../utils/app-nav.uts'
+
+	type CartItem = {
+		id: string
+		productId: string
+		quantity: number
+		selected: boolean
+	}
+
+	type CommentView = {
+		id: string
+		depth: number
+		authorName: string
+		content: string
+		rating: number
+		replyToName: string
+	}
+
+	type CommentDay = {
+		date: string
+		items: CommentView[]
+	}
+
+	const statusBarHeight = getStatusBarHeight()
+	const product = ref<MallProduct | null>(null)
+	const shopProjectId = ref('')
+	const isInCart = ref(false)
+	const cartTotal = ref(0)
+
+	const comments = ref<MallProductComment[]>([])
+	const commentDays = ref<CommentDay[]>([])
+	const commentTotal = ref(0)
+	const commentPage = ref(1)
+	const commentHasMore = ref(false)
+	const commentText = ref('')
+	const replyTo = ref('')
+	const replyName = ref('')
+	const ratingPick = ref(0)
+	const ratingAvg = ref(0)
+	const ratingCount = ref(0)
+	const canComment = ref(false)
+	const wantReview = ref(false)
+	const preselectCouponId = ref('')
+	const composerAnchor = ref('')
+	const specsOpen = ref(false)
+	const starLevels = [1, 2, 3, 4, 5]
+
+	const galleryUrls = computed((): string[] => {
+		const p = product.value
+		if (p == null) return []
+		const urls: string[] = []
+		const list = p.gallery
+		if (list != null) {
+			for (let i = 0; i < list.length; i++) {
+				const u = resolveMallProductImageUrl(list[i])
+				if (u.length > 0) urls.push(u)
+			}
+		}
+		if (urls.length === 0) {
+			const cover = resolveMallProductImageUrl(p.imageUrl)
+			if (cover.length > 0) urls.push(cover)
+		}
+		return urls
+	})
+
+	const coverUrl = computed((): string => {
+		const urls = galleryUrls.value
+		if (urls.length > 0) return urls[0]
+		return ''
+	})
+
+	const displayName = computed((): string => {
+		const p = product.value
+		if (p == null || p.name.length === 0) return '文创商品'
+		return p.name
+	})
+
+	const displayPrice = computed((): string => {
+		const p = product.value
+		if (p == null) return '—'
+		return p.price
+	})
+
+	const displayCategory = computed((): string => {
+		const p = product.value
+		if (p == null) return ''
+		if (p.category === '奖品') return ''
+		return p.category
+	})
+
+	const displayIntro = computed((): string => {
+		const p = product.value
+		if (p == null || p.intro == null) return ''
+		return p.intro.toString()
+	})
+
+	const displayDescription = computed((): string => {
+		const p = product.value
+		if (p == null || p.description == null) return ''
+		return p.description.toString()
+	})
+
+	const services = computed((): string[] => {
+		const p = product.value
+		if (p == null || p.services == null || p.services.length === 0) return ['官方正品', '极速发货', '七天无理由']
+		return p.services
+	})
+	const ratingAvgText = computed((): string => {
+		const n = ratingAvg.value
+		if (n <= 0) return '暂无评分'
+		return n.toString() + ' 分'
+	})
+	const replyHint = computed((): string => {
+		if (replyTo.value.length > 0) {
+			const name = replyName.value
+			if (name.length > 0) return '回复 ' + name
+			return '回复评价'
+		}
+		return '写评价'
+	})
+	const specs = computed((): MallSpec[] => {
+		const p = product.value
+		if (p == null || p.specs == null || p.specs.length === 0) {
+			return [
+				{ label: '品类', value: '研学文创周边' },
+				{ label: '适用', value: '研学纪念 / 日常使用' },
+				{ label: '发货', value: '下单后安排发出' }
+			]
+		}
+		return p.specs
+	})
+	const visibleSpecs = computed((): MallSpec[] => {
+		const list = specs.value
+		if (specsOpen.value || list.length <= 3) return list
+		return list.slice(0, 3)
+	})
+	const specsHasMore = computed((): boolean => {
+		return specs.value.length > 3
+	})
+	const detailBlocks = computed((): MallDetailBlock[] => {
+		const p = product.value
+		const out: MallDetailBlock[] = []
+		if (p != null && p.detailBlocks != null) {
+			for (let i = 0; i < p.detailBlocks.length; i++) {
+				const b = p.detailBlocks[i]
+				const urls: string[] = []
+				if (b.urls != null) {
+					for (let j = 0; j < b.urls.length; j++) {
+						const u = resolveMallProductImageUrl(b.urls[j])
+						if (u.length > 0) urls.push(u)
+					}
+				}
+				const url = b.url != null ? resolveMallProductImageUrl(b.url) : ''
+				out.push({
+					id: b.id,
+					type: b.type,
+					html: b.html != null ? b.html : '',
+					url: url,
+					width: b.width > 0 ? b.width : 100,
+					urls: urls
+				})
+			}
+		}
+		if (out.length > 0) return out
+		if (p != null && p.description != null && p.description.length > 0) {
+			return [{ id: 'legacy', type: 'text', html: '<p>' + p.description + '</p>', url: '', width: 100, urls: [] }]
+		}
+		return out
+	})
+	const toggleSpecs = () => {
+		specsOpen.value = !specsOpen.value
+	}
+	const previewUrl = (url: string) => {
+		if (url.length === 0) return
+		uni.previewImage({ urls: [url], current: url })
+	}
+
+	const hasToken = (): boolean => {
+		return getAuthToken().length > 0
+	}
+
+	const refreshCartBadge = () => {
+		if (!hasToken()) {
+			cartTotal.value = 0
+			return
+		}
+		getApi<any[]>(ApiEndpoints.mallCart, true).then((list) => {
+			let total = 0
+			for (let i = 0; i < list.length; i++) {
+				total += list[i]['quantity'] as number
+			}
+			cartTotal.value = total
+		}).catch((_err) => {
+			cartTotal.value = 0
+		})
+	}
+
+	const requireLogin = (): boolean => {
+		if (hasToken()) return true
+		promptLoginThenGoMine()
+		return false
+	}
+
+	const checkCartStatus = (productId: string) => {
+		if (!hasToken()) {
+			isInCart.value = false
+			return
+		}
+		getApi<CartItem[]>(ApiEndpoints.mallCart, true).then((list) => {
+			let exists = false
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].productId === productId) {
+					exists = true
+					break
+				}
+			}
+			isInCart.value = exists
+		}).catch((_err) => {
+			isInCart.value = false
+		})
+	}
+
+	const previewAt = (index: number) => {
+		const urls = galleryUrls.value
+		if (urls.length === 0) return
+		const current = index >= 0 && index < urls.length ? urls[index] : urls[0]
+		uni.previewImage({
+			current: current,
+			urls: urls
+		})
+	}
+
+	const previewProductImage = () => {
+		previewAt(0)
+	}
+
+	const starLine = (n: number): string => {
+		let s = ''
+		for (let i = 1; i <= 5; i++) {
+			s += i <= n ? '★' : '☆'
+		}
+		return s
+	}
+
+	const flattenComments = (list: MallProductComment[], depth: number): CommentView[] => {
+		const out: CommentView[] = []
+		for (let i = 0; i < list.length; i++) {
+			const row = list[i]
+			const toName = row.replyToName != null ? row.replyToName.toString() : ''
+			out.push({
+				id: row.id,
+				depth: depth,
+				authorName: row.authorName,
+				content: row.content,
+				rating: row.rating,
+				replyToName: toName
+			})
+			const replies = row.replies
+			if (replies != null && replies.length > 0) {
+				const nested = flattenComments(replies, depth + 1)
+				for (let j = 0; j < nested.length; j++) {
+					out.push(nested[j])
+				}
+			}
+		}
+		return out
+	}
+
+	const applyCommentList = (groups: MallCommentGroup[], items: MallProductComment[], total: number, avg: number, count: number) => {
+		const days: CommentDay[] = []
+		for (let i = 0; i < groups.length; i++) {
+			days.push({
+				date: groups[i].date,
+				items: flattenComments(groups[i].items, 0)
+			})
+		}
+		commentDays.value = days
+		comments.value = items
+		commentTotal.value = total
+		ratingAvg.value = avg
+		ratingCount.value = count
+	}
+
+	const loadComments = (id: string, page: number = 1) => {
+		fetchMallProductComments(id, page, 10).then((res) => {
+			const groups = res.groups != null ? res.groups : []
+			const items = res.items != null ? res.items : []
+			const total = res.total
+			commentPage.value = page
+			commentHasMore.value = page * 10 < total
+			if (page > 1) {
+				const merged: CommentDay[] = []
+				const existing = commentDays.value
+				for (let i = 0; i < existing.length; i++) merged.push(existing[i])
+				for (let g = 0; g < groups.length; g++) {
+					const day = groups[g]
+					const nested = flattenComments(day.items, 0)
+					let hit = -1
+					for (let m = 0; m < merged.length; m++) {
+						if (merged[m].date === day.date) {
+							hit = m
+							break
+						}
+					}
+					if (hit >= 0) {
+						const nextItems: CommentView[] = []
+						for (let a = 0; a < merged[hit].items.length; a++) nextItems.push(merged[hit].items[a])
+						for (let b = 0; b < nested.length; b++) nextItems.push(nested[b])
+						merged[hit] = { date: day.date, items: nextItems }
+					} else {
+						merged.push({ date: day.date, items: nested })
+					}
+				}
+				const nextComments: MallProductComment[] = []
+				for (let c = 0; c < comments.value.length; c++) nextComments.push(comments.value[c])
+				for (let d = 0; d < items.length; d++) nextComments.push(items[d])
+				commentDays.value = merged
+				comments.value = nextComments
+				commentTotal.value = total
+				ratingAvg.value = res.ratingAvg
+				ratingCount.value = res.ratingCount
+			} else {
+				applyCommentList(groups, items, total, res.ratingAvg, res.ratingCount)
+			}
+		}).catch((_err) => {
+			if (page <= 1) applyCommentList([], [], 0, 0, 0)
+			commentHasMore.value = false
+		})
+	}
+
+	const loadMoreComments = () => {
+		const p = product.value
+		if (p == null || !commentHasMore.value) return
+		loadComments(p.id, commentPage.value + 1)
+	}
+
+	const loadReviewAccess = (id: string) => {
+		if (!hasToken()) {
+			canComment.value = false
+			return
+		}
+		fetchMallReviewAccess(id).then((res) => {
+			canComment.value = res != null && res.canComment
+			if (wantReview.value && canComment.value) {
+				composerAnchor.value = 'cmt-composer'
+			}
+		}).catch((_err) => {
+			canComment.value = false
+		})
+	}
+
+	const cancelReply = () => {
+		replyTo.value = ''
+		replyName.value = ''
+	}
+
+	const startReply = (id: string, name: string) => {
+		if (replyTo.value === id) {
+			cancelReply()
+			return
+		}
+		replyTo.value = id
+		replyName.value = name
+	}
+
+	const setRating = (n: number) => {
+		ratingPick.value = n
+	}
+
+	const sendComment = () => {
+		const p = product.value
+		if (p == null) return
+		if (!requireLogin()) return
+		const text = commentText.value.trim()
+		if (text.length === 0) return
+		if (replyTo.value.length === 0 && ratingPick.value < 1) {
+			uni.showToast({ title: '请先点星评分', icon: 'none' })
+			return
+		}
+		createMallProductComment(p.id, text, replyTo.value, ratingPick.value).then((_row) => {
+			commentText.value = ''
+			replyTo.value = ''
+			replyName.value = ''
+			ratingPick.value = 0
+			loadComments(p.id)
+		}).catch((err) => {
+			const msg = err != null && err.message != null ? err.message.toString() : '发送失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const id = options['id'] != null ? options['id'].toString() : ''
+		const name = options['name'] != null ? options['name'].toString() : '文创商品'
+		const pid = options['projectId']
+		shopProjectId.value = pid != null ? decodeURIComponent(pid.toString()) : ''
+		wantReview.value = options['review'] != null && options['review'].toString() === '1'
+		preselectCouponId.value = options['couponId'] != null ? decodeURIComponent(options['couponId'].toString()) : ''
+
+		if (id.length > 0) {
+			fetchMallProductDetail(id).then((found) => {
+				if (found != null) {
+					product.value = found
+					if (found.ratingAvg > 0) ratingAvg.value = found.ratingAvg
+					if (found.ratingCount > 0) ratingCount.value = found.ratingCount
+					checkCartStatus(found.id)
+					loadComments(found.id)
+					loadReviewAccess(found.id)
+				}
+			}).catch((_err) => {
+				product.value = null
+				uni.showToast({ title: '商品详情加载失败', icon: 'none' })
+			})
+		} else {
+			loadProductByName(name)
+		}
+	})
+
+	const loadProductByName = (name: string) => {
+		fetchMallProducts(shopProjectId.value).then((list) => {
+			let found: MallProduct | null = null
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].name === name) {
+					found = list[i]
+					break
+				}
+			}
+			if (found == null && list.length > 0) found = list[0]
+			if (found != null) {
+				product.value = found
+				if (found.ratingAvg > 0) ratingAvg.value = found.ratingAvg
+				if (found.ratingCount > 0) ratingCount.value = found.ratingCount
+				checkCartStatus(found.id)
+				loadComments(found.id)
+				loadReviewAccess(found.id)
+			}
+		}).catch((_err) => {
+			product.value = null
+			uni.showToast({ title: '商品详情加载失败', icon: 'none' })
+		})
+	}
+
+	onShow(() => {
+		const p = product.value
+		if (p != null) {
+			checkCartStatus(p.id)
+			loadReviewAccess(p.id)
+		}
+		refreshCartBadge()
+	})
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const cartBadge = computed((): string => {
+		if (cartTotal.value > 99) return '99+'
+		return cartTotal.value.toString()
+	})
+
+	const goOrders = () => {
+		uni.navigateTo({ url: '/pages/mine/my-orders?status=all' })
+	}
+
+	const goCart = () => {
+		uni.navigateTo({ url: '/pages/products/cart' })
+	}
+
+	const goCustomerService = () => {
+		uni.navigateTo({ url: '/pages/mine/customer-service' })
+	}
+
+	const handleBuyNow = () => {
+		const p = product.value
+		if (p == null) return
+		if (!requireLogin()) return
+		if (p.stock <= 0) {
+			uni.showToast({ title: '商品暂时缺货', icon: 'none' })
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/products/order-confirm?source=direct&productId=' + encodeURIComponent(p.id) + (preselectCouponId.value.length > 0 ? '&couponId=' + encodeURIComponent(preselectCouponId.value) : '')
+		})
+	}
+
+	const handleToggleCart = () => {
+		const p = product.value
+		if (p == null) return
+		if (!requireLogin()) return
+
+		if (isInCart.value) {
+			getApi<CartItem[]>(ApiEndpoints.mallCart, true).then((list) => {
+				let itemId = ''
+				for (let i = 0; i < list.length; i++) {
+					if (list[i].productId === p.id) {
+						itemId = list[i].id
+						break
+					}
+				}
+				if (itemId.length === 0) return
+				deleteApi<any>(ApiEndpoints.mallCart + '/' + itemId, true).then((_res) => {
+					isInCart.value = false
+					refreshCartBadge()
+					uni.showToast({ title: '已移出购物车', icon: 'none' })
+				}).catch((_err) => {
+					uni.showToast({ title: '移出购物车失败', icon: 'none' })
+				})
+			}).catch((_err) => {
+				uni.showToast({ title: '购物车刷新失败', icon: 'none' })
+			})
+			return
+		}
+
+		postApi<any>(ApiEndpoints.mallCart, {
+			productId: p.id,
+			quantity: 1
+		}, true).then((_res) => {
+			isInCart.value = true
+			refreshCartBadge()
+			uni.showToast({ title: '已加入购物车', icon: 'success' })
+		}).catch((_err) => {
+			uni.showToast({ title: '加入购物车失败', icon: 'none' })
+		})
+	}
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		align-items: center;
+		padding: 0 12px;
+		background-color: #FFFFFF;
+	}
+	.nav-back { align-items: center; width: 88px; }
+	.nav-back-icon { width: 18px; height: 18px; }
+	.nav-back-text { font-size: 15px; color: #1A1A1A; margin-left: 2px; }
+	.nav-title { flex: 1; text-align: center; font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.nav-space { width: 88px; border-width: 0; }
+	.body { flex: 1; width: 100%; }
+
+	.hero {
+		width: 100%;
+		height: 280px;
+		background-color: #F5F7FB;
+	}
+	.hero-img { width: 100%; height: 280px; }
+	.hero-empty {
+		width: 100%;
+		height: 280px;
+		align-items: center;
+		justify-content: center;
+	}
+	.hero-empty-txt { font-size: 13px; color: #374151; }
+	.cmt { margin-bottom: 12px; }
+	.cmt-nested { margin-left: 12px; padding-left: 10px; border-left-width: 2px; border-left-style: solid; border-left-color: #E5E7EB; }
+	.cmt-day { margin-bottom: 8px; }
+	.cmt-date { font-size: 12px; font-weight: 800; color: #1A73E8; margin-bottom: 8px; }
+	.cmt-hd { align-items: center; margin-bottom: 4px; }
+	.cmt-name { font-size: 12px; color: #374151; font-weight: 700; margin-right: 8px; }
+	.cmt-stars { font-size: 12px; color: #1A73E8; }
+	.cmt-to { font-size: 12px; color: #374151; margin-bottom: 4px; }
+	.cmt-txt { font-size: 14px; color: #1A1A1A; line-height: 22px; }
+	.cmt-reply-btn { margin-top: 6px; font-size: 12px; color: #1A73E8; }
+	.cmt-empty { padding: 8px 0 12px 0; }
+	.cmt-empty-txt { font-size: 13px; color: #374151; }
+	.star-pick { margin: 8px 0 4px 0; }
+	.star-on { font-size: 22px; color: #1A73E8; margin-right: 6px; }
+	.star-off { font-size: 22px; color: #E5E7EB; margin-right: 6px; }
+	.rate-line { font-size: 13px; color: #1A73E8; font-weight: 700; margin-bottom: 8px; }
+	.cmt-bar { margin-top: 8px; align-items: center; }
+	.cmt-input {
+		flex: 1;
+		height: 36px;
+		background-color: #F5F7FB;
+		padding: 0 14px;
+		font-size: 14px;
+		color: #1A1A1A;
+		border-radius: 18px;
+	}
+	.cmt-cancel {
+		margin-left: 8px;
+		height: 36px;
+		padding: 0 12px;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		align-items: center;
+		justify-content: center;
+	}
+	.cmt-cancel-txt { color: #1A1A1A; font-size: 13px; font-weight: 700; }
+	.cmt-send {
+		margin-left: 8px;
+		height: 36px;
+		padding: 0 16px;
+		background-color: #1A73E8;
+		border-radius: 18px;
+		align-items: center;
+		justify-content: center;
+	}
+	.cmt-send-txt { color: #FFFFFF; font-size: 13px; font-weight: 700; }
+	.cmt-locked { padding: 10px 0 4px 0; }
+	.cmt-locked-txt { font-size: 13px; color: #374151; }
+
+	.sheet {
+		margin: -18px 0 0 0;
+		padding: 18px 16px 8px 16px;
+		border-top-left-radius: 20px;
+		border-top-right-radius: 20px;
+		background-color: #FFFFFF;
+		position: relative;
+		overflow: hidden;
+	}
+	.gold-edge {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: absolute;
+		left: 0; right: 0; top: 0;
+		height: 3px;
+		background-color: #1A73E8;
+	}
+	.kicker {
+		font-size: 10px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1.4px;
+		margin-bottom: 10px;
+		margin-top: 4px;
+	}
+	.price-row { align-items: flex-end; margin-bottom: 8px; }
+	.currency {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A73E8;
+		margin-bottom: 4px;
+	}
+	.price {
+		font-size: 32px;
+		font-weight: 800;
+		color: #1A73E8;
+		margin-left: 2px;
+		margin-right: 10px;
+	}
+	.cat-tag {
+		height: 22px;
+		padding: 0 8px;
+		border-radius: 6px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 6px;
+	}
+	.cat-tag-txt { font-size: 11px; font-weight: 800; color: #FFFFFF; }
+	.name {
+		font-size: 22px;
+		font-weight: 800;
+		color: #1A1A1A;
+		line-height: 30px;
+		margin-bottom: 8px;
+	}
+	.sub {
+		font-size: 14px;
+		color: #374151;
+		line-height: 22px;
+		margin-bottom: 4px;
+	}
+	.rule {
+		height: 1px;
+		background-color: #E5E7EB;
+		margin: 14px 0;
+	}
+	.service-row {
+		justify-content: space-between;
+		margin-bottom: 16px;
+	}
+	.service-item { align-items: center; }
+	.dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 3px;
+		background-color: #1A73E8;
+		margin-right: 6px;
+	}
+	.service-txt { font-size: 12px; color: #374151; font-weight: 600; }
+
+	.block { margin-bottom: 16px; }
+	.block-title {
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 10px;
+	}
+	.spec-row {
+		height: 40px;
+		align-items: center;
+		border-bottom-width: 0.5px;
+		border-bottom-style: solid;
+		border-bottom-color: #E5E7EB;
+	}
+	.spec-label { width: 72px; font-size: 13px; color: #374151; }
+	.spec-value { flex: 1; font-size: 13px; color: #1A1A1A; font-weight: 600; }
+	.spec-more { padding: 10px 0 2px 0; align-items: center; }
+	.spec-more-txt { font-size: 13px; font-weight: 700; color: #1A73E8; }
+	.story-block { margin-bottom: 12px; }
+	.story-rich { font-size: 14px; color: #374151; line-height: 24px; }
+	.detail-swiper { width: 100%; height: 200px; border-radius: 12px; overflow: hidden; background-color: #F5F7FB; }
+	.detail-swiper-img { width: 100%; height: 200px; }
+	.para {
+		font-size: 14px;
+		color: #374151;
+		line-height: 24px;
+		margin-bottom: 12px;
+	}
+	.detail-img {
+		width: 100%;
+		border-radius: 12px;
+		margin-bottom: 12px;
+		background-color: #F5F7FB;
+		display: block;
+		min-height: 1px;
+	}
+	.safe { height: 96px; }
+
+	.buy-bar {
+		position: fixed;
+		left: 0; right: 0; bottom: 0;
+		padding: 10px 16px calc(10px + env(safe-area-inset-bottom)) 16px;
+		background-color: #FFFFFF;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+		z-index: 100;
+		align-items: center;
+	}
+	.svc-btn {
+		width: 52px;
+		align-items: center;
+		justify-content: center;
+		margin-right: 10px;
+		flex-shrink: 0;
+	}
+	.svc-contact {
+		padding: 0;
+		margin-right: 10px;
+		background-color: transparent;
+		border-width: 0;
+		line-height: 1.2;
+	}
+	.svc-contact::after { border-width: 0; }
+	.svc-icon { width: 20px; height: 20px; margin-bottom: 2px; }
+	.svc-txt { font-size: 10px; font-weight: 700; color: #374151; }
+	.cart-btn {
+		flex: 1;
+		height: 46px;
+		border-radius: 23px;
+		background-color: #E8EEF8;
+		align-items: center;
+		justify-content: center;
+		margin-right: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.cart-btn-on { background-color: #E8F5E9; }
+	.cart-btn-txt { font-size: 15px; font-weight: 800; color: #1A1A1A; }
+	.cart-btn-txt-on { color: #15803D; }
+	.buy-btn {
+		flex: 1;
+		height: 46px;
+		border-radius: 23px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.buy-btn-txt { font-size: 15px; font-weight: 800; color: #FFFFFF; }
+</style>

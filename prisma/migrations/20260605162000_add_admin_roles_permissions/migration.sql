@@ -1,0 +1,6 @@
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "adminRole" TEXT NOT NULL DEFAULT 'NONE';
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "adminPermissions" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+
+UPDATE "User"
+SET "adminRole" = 'SUPER_ADMIN'
+WHERE "isAdmin" = true AND ("adminRole" IS NULL OR "adminRole" = 'NONE');

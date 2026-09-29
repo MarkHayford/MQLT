@@ -1,0 +1,824 @@
+<template>
+	<view class="page-wrapper" :style="pageStyle">
+		<view class="fixed-header">
+			<view class="status-bar" :style="statusBarStyle"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<view v-if="mode === 'edit' && editIndex >= 0" class="nav-right" @click="handleDelete">
+					<text class="nav-right-text">删除</text>
+				</view>
+				<text class="nav-title">{{ mode === 'list' ? '发票抬头' : (editIndex >= 0 ? '编辑抬头' : '新增抬头') }}</text>
+			</view>
+		</view>
+
+		<!-- 列表模式 -->
+		<scroll-view v-if="mode === 'list'" class="main-scroll" :style="mainScrollStyle" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="scroll-inner">
+				<view v-for="(item, index) in titles" :key="item.id" class="title-card" @click="enterEdit(index)">
+					<view class="title-card-head uni-row">
+						<view :class="['type-tag', item.type === 'company' ? 'type-tag-company' : 'type-tag-personal']">
+							<text :class="['type-tag-text', item.type === 'company' ? 'type-tag-text-company' : 'type-tag-text-personal']">{{ item.type === 'company' ? '企业' : '个人' }}</text>
+						</view>
+						<text class="title-name">{{ item.name }}</text>
+						<view v-if="item.isDefault" class="default-tag">
+							<text class="default-tag-text">默认</text>
+						</view>
+					</view>
+
+					<view v-if="item.type === 'company' && item.taxNo.length > 0" class="info-row uni-row">
+						<text class="info-label">税号</text>
+						<text class="info-value">{{ item.taxNo }}</text>
+					</view>
+					<view v-if="item.email.length > 0" class="info-row uni-row">
+						<text class="info-label">邮箱</text>
+						<text class="info-value">{{ item.email }}</text>
+					</view>
+					<view v-if="item.phone.length > 0" class="info-row uni-row">
+						<text class="info-label">电话</text>
+						<text class="info-value">{{ maskPhone(item.phone) }}</text>
+					</view>
+
+					<view class="card-actions uni-row">
+						<view class="action-cell" @click.stop="setDefault(index)">
+							<view :class="['radio-circle', item.isDefault ? 'radio-circle-active' : '']">
+								<view v-if="item.isDefault" class="radio-dot"></view>
+							</view>
+							<text :class="['action-cell-text', item.isDefault ? 'action-cell-text-active' : '']">设为默认</text>
+						</view>
+						<view class="action-cell" @click.stop="enterEdit(index)">
+							<image src="/static/icon-edit.svg" class="action-cell-icon" mode="aspectFit"></image>
+							<text class="action-cell-text">编辑</text>
+						</view>
+						<view class="action-cell" @click.stop="confirmDelete(index)">
+							<image src="/static/func-trash.svg" class="action-cell-icon" mode="aspectFit"></image>
+							<text class="action-cell-text action-cell-text-danger">删除</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="titles.length === 0" class="empty-state uni-column">
+					<image src="/static/icon-invoice.svg" class="empty-icon" mode="aspectFit"></image>
+					<text class="empty-title">暂无发票抬头</text>
+					<text class="empty-desc">添加常用抬头，开票更便捷</text>
+				</view>
+
+				<view class="bottom-spacer"></view>
+			</view>
+		</scroll-view>
+
+		<!-- 编辑模式 -->
+		<scroll-view v-else class="main-scroll" :style="mainScrollStyle" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="scroll-inner">
+				<!-- 抬头类型 -->
+				<view class="form-section">
+					<text class="section-title">抬头类型</text>
+					<view class="type-row uni-row">
+						<view :class="['type-btn', formType === 'personal' ? 'type-btn-active' : '']" @click="formType = 'personal'">
+							<text :class="['type-btn-text', formType === 'personal' ? 'type-btn-text-active' : '']">个人</text>
+						</view>
+						<view :class="['type-btn', formType === 'company' ? 'type-btn-active' : '']" @click="formType = 'company'">
+							<text :class="['type-btn-text', formType === 'company' ? 'type-btn-text-active' : '']">企业</text>
+						</view>
+					</view>
+				</view>
+
+				<!-- 抬头信息 -->
+				<view class="form-section">
+					<text class="section-title">{{ formType === 'company' ? '企业信息' : '个人信息' }}</text>
+					<view class="form-group">
+						<view class="form-item">
+							<text class="form-label">{{ formType === 'company' ? '企业名称' : '姓名' }}</text>
+							<input class="form-input" type="text" :placeholder="formType === 'company' ? '请输入企业名称' : '请输入姓名'" v-model="formName" :maxlength="50" placeholder-style="color: #E5E7EB;" />
+						</view>
+						<view v-if="formType === 'company'" class="form-item">
+							<text class="form-label">税号</text>
+							<input class="form-input" type="text" placeholder="请输入纳税人识别号" v-model="formTaxNo" :maxlength="20" placeholder-style="color: #E5E7EB;" />
+						</view>
+					</view>
+				</view>
+
+				<!-- 更多信息 -->
+				<view v-if="formType === 'company'" class="form-section">
+					<text class="section-title">更多信息（选填）</text>
+					<view class="form-group">
+						<view class="form-item">
+							<text class="form-label">注册地址</text>
+							<input class="form-input" type="text" placeholder="请输入注册地址" v-model="formAddress" :maxlength="100" placeholder-style="color: #E5E7EB;" />
+						</view>
+						<view class="form-item">
+							<text class="form-label">注册电话</text>
+							<input class="form-input" type="text" placeholder="请输入注册电话" v-model="formCompanyPhone" :maxlength="20" placeholder-style="color: #E5E7EB;" />
+						</view>
+						<view class="form-item">
+							<text class="form-label">开户银行</text>
+							<input class="form-input" type="text" placeholder="请输入开户银行" v-model="formBank" :maxlength="50" placeholder-style="color: #E5E7EB;" />
+						</view>
+						<view class="form-item">
+							<text class="form-label">银行账号</text>
+							<input class="form-input" type="text" placeholder="请输入银行账号" v-model="formBankAccount" :maxlength="30" placeholder-style="color: #E5E7EB;" />
+						</view>
+					</view>
+				</view>
+
+				<!-- 联系方式 -->
+				<view class="form-section">
+					<text class="section-title">联系方式</text>
+					<view class="form-group">
+						<view class="form-item">
+							<text class="form-label">接收邮箱</text>
+							<input class="form-input" type="text" placeholder="电子发票将发送到该邮箱" v-model="formEmail" :maxlength="50" placeholder-style="color: #E5E7EB;" />
+						</view>
+						<view class="form-item">
+							<text class="form-label">手机号</text>
+							<input class="form-input" type="number" placeholder="选填，便于联系" v-model="formPhone" :maxlength="11" placeholder-style="color: #E5E7EB;" />
+						</view>
+					</view>
+				</view>
+
+				<!-- 默认 -->
+				<view class="switch-section uni-row" @click="formIsDefault = !formIsDefault">
+					<view class="switch-info uni-column">
+						<text class="switch-title">设为默认抬头</text>
+						<text class="switch-desc">申请发票时将自动选用</text>
+					</view>
+					<view :class="['switch-track', formIsDefault ? 'switch-track-on' : '']">
+						<view :class="['switch-thumb', formIsDefault ? 'switch-thumb-on' : '']"></view>
+					</view>
+				</view>
+
+				<view class="bottom-spacer"></view>
+			</view>
+		</scroll-view>
+
+		<!-- 底部按钮 -->
+		<view class="bottom-action-bar">
+			<view v-if="mode === 'list'" class="add-btn" @click="enterAdd">
+				<text class="add-btn-text">+ 新增抬头</text>
+			</view>
+			<view v-else class="submit-btn" @click="submitForm">
+				<text class="submit-btn-text">保存</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { createInvoiceTitle, deleteInvoiceTitle, fetchInvoiceTitles, updateInvoiceTitle } from '../../utils/user-services.uts'
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const windowHeight = layout.windowHeight
+	const screenHeight = layout.screenHeight
+	const navBarHeight = 44
+	const headerTotalHeight = statusBarHeight + navBarHeight
+
+	const pageStyle = 'height: ' + screenHeight + 'px;'
+	const statusBarStyle = 'height: ' + statusBarHeight + 'px;'
+	const mainScrollStyle = 'top: ' + headerTotalHeight + 'px; height: ' + (windowHeight - headerTotalHeight) + 'px;'
+
+	type InvoiceTitle = {
+		id: string
+		type: string
+		name: string
+		taxNo: string
+		address: string
+		companyPhone: string
+		bank: string
+		bankAccount: string
+		email: string
+		phone: string
+		isDefault: boolean
+	}
+
+	const titles = ref<InvoiceTitle[]>([])
+	const mode = ref('list')
+	const editIndex = ref(-1)
+
+	const formType = ref('personal')
+	const formName = ref('')
+	const formTaxNo = ref('')
+	const formAddress = ref('')
+	const formCompanyPhone = ref('')
+	const formBank = ref('')
+	const formBankAccount = ref('')
+	const formEmail = ref('')
+	const formPhone = ref('')
+	const formIsDefault = ref(false)
+
+	const maskPhone = (phone: string): string => {
+		if (phone.length === 11) {
+			return phone.substring(0, 3) + ' **** ' + phone.substring(7)
+		}
+		return phone
+	}
+
+	const loadTitles = () => {
+		fetchInvoiceTitles<any>().then((list) => {
+			const mapped: InvoiceTitle[] = []
+			for (let i = 0; i < list.length; i++) {
+				const item = list[i]
+				mapped.push({
+					id: item['id'] as string,
+					type: item['type'] as string,
+					name: item['name'] as string,
+					taxNo: item['taxNo'] != null ? (item['taxNo'] as string) : '',
+					address: '',
+					companyPhone: '',
+					bank: '',
+					bankAccount: '',
+					email: item['email'] as string,
+					phone: item['phone'] != null ? (item['phone'] as string) : '',
+					isDefault: item['isDefault'] as boolean
+				})
+			}
+			titles.value = mapped
+		}).catch((_err) => {
+			titles.value = []
+			uni.showToast({ title: '发票抬头加载失败', icon: 'none' })
+		})
+	}
+
+	const resetForm = () => {
+		formType.value = 'personal'
+		formName.value = ''
+		formTaxNo.value = ''
+		formAddress.value = ''
+		formCompanyPhone.value = ''
+		formBank.value = ''
+		formBankAccount.value = ''
+		formEmail.value = ''
+		formPhone.value = ''
+		formIsDefault.value = false
+	}
+
+	const enterAdd = () => {
+		resetForm()
+		editIndex.value = -1
+		mode.value = 'edit'
+	}
+
+	const enterEdit = (index: number) => {
+		const item = titles.value[index]
+		if (item == null) return
+		editIndex.value = index
+		formType.value = item.type
+		formName.value = item.name
+		formTaxNo.value = item.taxNo
+		formAddress.value = item.address
+		formCompanyPhone.value = item.companyPhone
+		formBank.value = item.bank
+		formBankAccount.value = item.bankAccount
+		formEmail.value = item.email
+		formPhone.value = item.phone
+		formIsDefault.value = item.isDefault
+		mode.value = 'edit'
+	}
+
+	const validateEmail = (email: string): boolean => {
+		if (email.length === 0) return true
+		const at = email.indexOf('@')
+		if (at <= 0 || at !== email.lastIndexOf('@')) return false
+		const local = email.substring(0, at)
+		const domain = email.substring(at + 1)
+		if (local.length === 0 || domain.length < 3) return false
+		const dot = domain.indexOf('.')
+		if (dot <= 0 || dot === domain.length - 1) return false
+		return true
+	}
+
+	const validatePhone = (phone: string): boolean => {
+		if (phone.length === 0) return true
+		if (phone.length !== 11) return false
+		if (phone.charAt(0) !== '1') return false
+		const second = phone.charCodeAt(1)
+		if (second < 51 || second > 57) return false
+		for (let i = 0; i < phone.length; i++) {
+			const c = phone.charCodeAt(i)
+			if (c < 48 || c > 57) return false
+		}
+		return true
+	}
+
+	const submitForm = () => {
+		const trimmedName = formName.value.trim()
+		const trimmedEmail = formEmail.value.trim()
+		const trimmedPhone = formPhone.value.trim()
+
+		if (trimmedName.length === 0) {
+			uni.showToast({ title: formType.value === 'company' ? '请输入企业名称' : '请输入姓名', icon: 'none' })
+			return
+		}
+		if (formType.value === 'company') {
+			const tax = formTaxNo.value.trim().toUpperCase().replace(/\s+/g, '')
+			if (tax.length === 0) {
+				uni.showToast({ title: '请输入纳税人识别号', icon: 'none' })
+				return
+			}
+			if (!(tax.length === 15 || tax.length === 17 || tax.length === 18 || tax.length === 20)) {
+				uni.showToast({ title: '税号需为15/17/18/20位', icon: 'none' })
+				return
+			}
+			const taxRe = /^[0-9A-Z]+$/
+			if (!taxRe.test(tax)) {
+				uni.showToast({ title: '税号仅支持字母数字', icon: 'none' })
+				return
+			}
+			formTaxNo.value = tax
+		}
+		if (trimmedEmail.length === 0) {
+			uni.showToast({ title: '请输入接收邮箱', icon: 'none' })
+			return
+		}
+		if (!validateEmail(trimmedEmail)) {
+			uni.showToast({ title: '邮箱格式不正确', icon: 'none' })
+			return
+		}
+		if (!validatePhone(trimmedPhone)) {
+			uni.showToast({ title: '手机号格式不正确', icon: 'none' })
+			return
+		}
+
+		const payload = {
+			type: formType.value,
+			name: trimmedName,
+			taxNo: formTaxNo.value.trim(),
+			email: trimmedEmail,
+			phone: trimmedPhone,
+			isDefault: formIsDefault.value || titles.value.length === 0
+		}
+		const target = editIndex.value >= 0 ? titles.value[editIndex.value] : null
+		const request = target != null ? updateInvoiceTitle<InvoiceTitle>(target.id, payload) : createInvoiceTitle<InvoiceTitle>(payload)
+		request.then((_res) => {
+			uni.showToast({ title: '保存成功', icon: 'success' })
+			setTimeout(() => {
+				editIndex.value = -1
+				mode.value = 'list'
+				loadTitles()
+			}, 600)
+		}).catch((err) => {
+			const msg = err != null && err.message != null ? err.message.toString() : '保存失败，请稍后重试'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	const setDefault = (index: number) => {
+		const target = titles.value[index]
+		if (target == null) return
+		if (target.isDefault) return
+		updateInvoiceTitle<InvoiceTitle>(target.id, { isDefault: true }).then((_res) => {
+			loadTitles()
+			uni.showToast({ title: '已设为默认', icon: 'success' })
+		}).catch((_err) => {
+			uni.showToast({ title: '设置默认失败', icon: 'none' })
+		})
+	}
+
+	const confirmDelete = (index: number) => {
+		uni.showModal({
+			title: '删除抬头',
+			content: '确定要删除该发票抬头吗？',
+			confirmText: '删除',
+			confirmColor: '#DC2626',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) {
+					const target = titles.value[index]
+					if (target == null) return
+					deleteInvoiceTitle(target.id).then((_res) => {
+						loadTitles()
+						uni.showToast({ title: '已删除', icon: 'success' })
+					}).catch((_err) => {
+						uni.showToast({ title: '删除失败', icon: 'none' })
+					})
+				}
+			}
+		})
+	}
+
+	const handleDelete = () => {
+		if (editIndex.value < 0) return
+		uni.showModal({
+			title: '删除抬头',
+			content: '确定要删除该发票抬头吗？',
+			confirmText: '删除',
+			confirmColor: '#DC2626',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) {
+					const target = titles.value[editIndex.value]
+					if (target == null) return
+					deleteInvoiceTitle(target.id).then((_res) => {
+						uni.showToast({ title: '已删除', icon: 'success' })
+						setTimeout(() => {
+							editIndex.value = -1
+							mode.value = 'list'
+							loadTitles()
+						}, 500)
+					}).catch((_err) => {
+						uni.showToast({ title: '删除失败', icon: 'none' })
+					})
+				}
+			}
+		})
+	}
+
+	const goBack = () => {
+		if (mode.value === 'edit') {
+			mode.value = 'list'
+			editIndex.value = -1
+			return
+		}
+		uni.navigateBack()
+	}
+
+	onLoad(() => {
+		loadTitles()
+	})
+
+	onShow(() => {
+		loadTitles()
+	})
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+		position: relative;
+	}
+	.fixed-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1000;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.nav-bar { background-color: #FFFFFF; border-width: 0; border-color: #FFFFFF; padding-right: 96px; }
+	.nav-right {
+		position: relative;
+		padding: 4px 8px;
+		margin-left: 6px;
+		z-index: 2;
+	}
+	.nav-right-text {
+		font-size: 14px;
+		color: #1A73E8;
+		font-weight: 700;
+	}
+
+	.main-scroll {
+		position: absolute;
+		left: 0;
+		right: 0;
+	}
+	.scroll-inner {
+		padding: 16px;
+	}
+
+	/* 列表卡片 */
+	.title-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 14px 16px;
+		margin-bottom: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.title-card-head {
+		align-items: center;
+		margin-bottom: 10px;
+	}
+	.type-tag {
+		padding: 3px 8px;
+		border-radius: 6px;
+		margin-right: 10px;
+	}
+	.type-tag-personal {
+		background-color: #FFFFFF;
+	}
+	.type-tag-company {
+		background-color: #1A73E8;
+	}
+	.type-tag-text {
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.type-tag-text-personal {
+		color: #1A1A1A;
+	}
+	.type-tag-text-company {
+		color: #1A73E8;
+	}
+	.title-name {
+		flex: 1;
+		font-size: 16px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.default-tag {
+		background-color: #1A73E8;
+		padding: 2px 8px;
+		border-radius: 8px;
+		margin-left: 6px;
+	}
+	.default-tag-text {
+		color: #FFFFFF;
+		font-size: 11px;
+		font-weight: 800;
+	}
+
+	.info-row {
+		align-items: center;
+		margin-bottom: 6px;
+	}
+	.info-label {
+		width: 50px;
+		font-size: 13px;
+		color: #9CA3AF;
+		flex-shrink: 0;
+	}
+	.info-value {
+		flex: 1;
+		font-size: 13px;
+		color: #374151;
+		font-weight: 500;
+	}
+
+	.card-actions {
+		justify-content: space-around;
+		padding-top: 12px;
+		margin-top: 6px;
+		border-top-width: 0.5px;
+		border-top-color: #FFFFFF;
+	}
+	.action-cell {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		padding: 4px 0;
+	}
+	.radio-circle {
+		width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		border-width: 1.5px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		margin-right: 6px;
+	}
+	.radio-circle-active {
+		border-color: #1A1A1A;
+	}
+	.radio-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 4px;
+		background-color: #1A73E8;
+	}
+	.action-cell-icon {
+		font-size: 13px;
+		margin-right: 4px;
+	}
+	.action-cell-text {
+		font-size: 13px;
+		color: #374151;
+		font-weight: 500;
+	}
+	.action-cell-text-active {
+		color: #1A1A1A;
+		font-weight: 700;
+	}
+	.action-cell-text-danger {
+		color: #DC2626;
+	}
+
+	.empty-state {
+		padding-top: 100px;
+		align-items: center;
+	}
+	.empty-icon {
+		font-size: 56px;
+		margin-bottom: 14px;
+	}
+	.empty-title {
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+	}
+	.empty-desc {
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	/* 表单 */
+	.form-section {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px 18px 8px 18px;
+		margin-bottom: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.section-title {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 8px;
+		letter-spacing: 1px;
+	}
+	.type-row {
+		margin-bottom: 4px;
+	}
+	.type-btn {
+		flex: 1;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 16px;
+		background-color: #E8EEF8;
+		margin: 0 4px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.type-btn-active {
+		background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+	.type-btn-text {
+		font-size: 14px;
+		color: #374151;
+		font-weight: 500;
+	}
+	.type-btn-text-active {
+		color: #FFFFFF;
+		font-weight: 800;
+	}
+	.form-group {
+		flex-direction: column;
+	}
+	.form-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 12px 0;
+		border-bottom-width: 0.5px;
+		border-bottom-color: rgba(0, 0, 0, 0.08);
+	}
+	.form-item:last-child {
+		border-bottom-width: 0;
+	}
+	.form-label {
+		width: 80px;
+		font-size: 15px;
+		color: #1A1A1A;
+		font-weight: 500;
+		flex-shrink: 0;
+	}
+	.form-input {
+		flex: 1;
+		font-size: 15px;
+		color: #1A1A1A;
+	}
+
+	.switch-section {
+		padding: 16px 18px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.switch-info {
+		flex: 1;
+	}
+	.switch-title {
+		font-size: 15px;
+		color: #1A1A1A;
+		font-weight: 600;
+		margin-bottom: 2px;
+	}
+	.switch-desc {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+	.switch-track {
+		width: 48px;
+		height: 28px;
+		border-radius: 14px;
+		background-color: #E5E7EB;
+		justify-content: center;
+		padding: 2px;
+	}
+	.switch-track-on {
+		background-color: #1A73E8;
+	}
+	.switch-thumb {
+		width: 24px;
+		height: 24px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+	}
+	.switch-thumb-on {
+		margin-left: 20px;
+	}
+
+	.bottom-spacer {
+		height: 100px;
+	}
+
+	.bottom-action-bar {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 12px 16px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+		background-color: #F5F7FB;
+	}
+	.add-btn {
+		height: 48px;
+		background-color: #1A73E8;
+		border-radius: 24px;
+		align-items: center;
+		justify-content: center;
+	}
+	.add-btn-text{
+		color: #FFFFFF;
+		font-size: 16px;
+		font-weight: 800;
+	}
+	.submit-btn {
+		height: 48px;
+		background-color: #1A73E8;
+		border-radius: 24px;
+		align-items: center;
+		justify-content: center;
+	}
+	.submit-btn-text{
+		color: #FFFFFF;
+		font-size: 16px;
+		font-weight: 800;
+	}
+</style>

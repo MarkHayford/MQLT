@@ -1,0 +1,432 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">提现</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view class="balance-card uni-column">
+				<text class="balance-label">可提现金额</text>
+				<text class="balance-value">{{ wallet.availableText }}</text>
+				<view class="balance-meta uni-row">
+					<text class="balance-meta-text">审核中 {{ wallet.pendingText }}</text>
+					<text class="balance-meta-dot">·</text>
+					<text class="balance-meta-text">已提现 {{ wallet.withdrawnText }}</text>
+				</view>
+			</view>
+
+			<view class="form-card uni-column">
+				<text class="form-title">提现金额</text>
+				<view class="amount-row uni-row">
+					<text class="amount-prefix">¥</text>
+					<input class="amount-input" type="digit" v-model="amountText" placeholder="0.00" placeholder-style="color:#E5E7EB;" />
+					<text class="amount-all" @click="fillAll">全部</text>
+				</view>
+				<text class="form-hint">最低提现 {{ minText }}，预计 1–3 个工作日到账</text>
+			</view>
+
+			<view class="form-card uni-column">
+				<text class="form-title">到账方式</text>
+				<view class="channel-row uni-row">
+					<view :class="channel === 'WECHAT' ? 'ch-chip ch-chip-on' : 'ch-chip'" @click="channel = 'WECHAT'">
+						<text :class="channel === 'WECHAT' ? 'ch-chip-text ch-chip-text-on' : 'ch-chip-text'">微信零钱</text>
+					</view>
+					<view :class="channel === 'BANK' ? 'ch-chip ch-chip-on' : 'ch-chip'" @click="channel = 'BANK'">
+						<text :class="channel === 'BANK' ? 'ch-chip-text ch-chip-text-on' : 'ch-chip-text'">银行卡</text>
+					</view>
+				</view>
+				<view v-if="channel === 'BANK'" class="bank-fields uni-column">
+					<view class="field uni-row">
+						<text class="field-label">户名</text>
+						<input class="field-input" type="text" v-model="accountName" placeholder="与身份证一致" placeholder-style="color:#E5E7EB;" />
+					</view>
+					<view class="field uni-row">
+						<text class="field-label">银行</text>
+						<input class="field-input" type="text" v-model="bankName" placeholder="如 中国工商银行" placeholder-style="color:#E5E7EB;" />
+					</view>
+					<view class="field uni-row">
+						<text class="field-label">卡号</text>
+						<input class="field-input" type="number" v-model="bankAccount" placeholder="银行卡号" placeholder-style="color:#E5E7EB;" />
+					</view>
+				</view>
+				<view v-else class="wechat-tip">
+					<text class="form-hint">将打入当前微信绑定的零钱，需司机实名与微信一致</text>
+				</view>
+			</view>
+
+			<view class="submit-wrap">
+				<view :class="submitting ? 'submit-btn submit-off' : 'submit-btn'" @click="submit">
+					<text class="submit-btn-text">{{ submitting ? '提交中…' : '确认提现' }}</text>
+				</view>
+			</view>
+
+			<view class="sec uni-column">
+				<text class="sec-title">提现记录</text>
+				<view v-for="item in records" :key="item.id" class="rec uni-row">
+					<view class="rec-main uni-column">
+						<text class="rec-amount">{{ item.amountText }}</text>
+						<text class="rec-sub">{{ item.channelLabel }} · {{ item.timeText }}</text>
+					</view>
+					<text :class="statusClass(item.status)">{{ item.statusLabel }}</text>
+				</view>
+				<view v-if="records.length === 0" class="empty">
+					<text class="empty-t">暂无提现记录</text>
+				</view>
+			</view>
+			<view class="pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { emptyDriverWallet, fetchDriverWallet, parseDriverWallet, fetchDriverHome, requestDriverWithdraw, fetchDriverWithdrawals, type DriverWallet, type DriverWithdrawRecord } from '../../utils/commerce.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const wallet = ref<DriverWallet>(emptyDriverWallet())
+	const records = ref<DriverWithdrawRecord[]>([])
+	const amountText = ref('')
+	const channel = ref('WECHAT')
+	const accountName = ref('')
+	const bankName = ref('')
+	const bankAccount = ref('')
+	const submitting = ref(false)
+
+	const minText = computed((): string => {
+		return '¥' + wallet.value.minAmount.toFixed(2)
+	})
+
+	const goBack = () => { uni.navigateBack() }
+
+	const fillAll = () => {
+		amountText.value = wallet.value.availableAmount.toFixed(2)
+	}
+
+	const statusClass = (status: string): string => {
+		if (status === 'PAID' || status === 'SUCCESS') return 'rec-st rec-st-ok'
+		if (status === 'REJECTED' || status === 'FAILED') return 'rec-st rec-st-bad'
+		return 'rec-st'
+	}
+
+	const load = () => {
+		fetchDriverHome().then((home) => {
+			wallet.value = parseDriverWallet(home)
+		}).catch((_e) => {})
+		fetchDriverWallet().then((w) => {
+			wallet.value = w
+		}).catch((_e) => {})
+		fetchDriverWithdrawals().then((list) => {
+			records.value = list
+		}).catch((_e) => {
+			records.value = []
+		})
+	}
+
+	const submit = () => {
+		if (submitting.value) return
+		const amount = parseFloat(amountText.value)
+		if (amount != amount || amount <= 0) {
+			uni.showToast({ title: '请输入提现金额', icon: 'none' })
+			return
+		}
+		if (amount < wallet.value.minAmount) {
+			uni.showToast({ title: '最低提现 ' + minText.value, icon: 'none' })
+			return
+		}
+		if (amount > wallet.value.availableAmount + 0.001) {
+			uni.showToast({ title: '超过可提现金额', icon: 'none' })
+			return
+		}
+		if (channel.value === 'BANK') {
+			if (accountName.value.trim().length === 0) {
+				uni.showToast({ title: '请填写户名', icon: 'none' })
+				return
+			}
+			if (bankName.value.trim().length === 0) {
+				uni.showToast({ title: '请填写开户行', icon: 'none' })
+				return
+			}
+			if (bankAccount.value.trim().length < 8) {
+				uni.showToast({ title: '请填写正确卡号', icon: 'none' })
+				return
+			}
+		}
+		uni.showModal({
+			title: '确认提现',
+			content: '提现 ' + amount.toFixed(2) + ' 元到' + (channel.value === 'BANK' ? '银行卡' : '微信零钱') + '？',
+			success: (res) => {
+				if (!res.confirm) return
+				submitting.value = true
+				requestDriverWithdraw(amount, channel.value, accountName.value.trim(), bankName.value.trim(), bankAccount.value.trim(), '').then((_r) => {
+					submitting.value = false
+					amountText.value = ''
+					uni.showToast({ title: '已提交审核', icon: 'success' })
+					load()
+				}).catch((e) => {
+					submitting.value = false
+					const msg = e != null && e.message != null ? e.message.toString() : '提现失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	onShow(() => { load() })
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #F5F7FB;
+	}
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 48px;
+		padding: 0 16px;
+		flex-direction: row;
+		align-items: center;
+		position: relative;
+		background-color: #F5F7FB;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.body {
+		flex: 1;
+		padding: 8px 16px 0 16px;
+	}
+	.balance-card {
+		background-color: #1A73E8;
+		border-radius: 16px;
+		padding: 22px 20px 18px 20px;
+		margin-bottom: 14px;
+		border-width: 0;
+		border-color: #1A73E8;
+	}
+	.balance-label {
+		font-size: 12px;
+		color: rgba(255, 248, 238, 0.72);
+		margin-bottom: 6px;
+	}
+	.balance-value {
+		font-size: 32px;
+		font-weight: 800;
+		color: #1A73E8;
+		margin-bottom: 10px;
+	}
+	.balance-meta {
+		align-items: center;
+	}
+	.balance-meta-text {
+		font-size: 12px;
+		color: rgba(255, 248, 238, 0.7);
+	}
+	.balance-meta-dot {
+		margin: 0 8px;
+		color: rgba(255, 248, 238, 0.4);
+		font-size: 12px;
+	}
+	.form-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.form-title {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 12px;
+	}
+	.amount-row {
+		align-items: center;
+		padding-bottom: 10px;
+		border-bottom-width: 0.5px;
+		border-bottom-style: solid;
+		border-bottom-color: #E5E7EB;
+		margin-bottom: 10px;
+	}
+	.amount-prefix {
+		font-size: 28px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-right: 6px;
+	}
+	.amount-input {
+		flex: 1;
+		height: 44px;
+		font-size: 28px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.amount-all {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A73E8;
+		padding: 6px 0 6px 10px;
+	}
+	.form-hint {
+		font-size: 12px;
+		color: #374151;
+		line-height: 18px;
+	}
+	.channel-row {
+		margin-bottom: 8px;
+	}
+	.ch-chip {
+		padding: 8px 14px;
+		border-radius: 16px;
+		background-color: #E8EEF8;
+		margin-right: 8px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.ch-chip-on {
+		background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+	.ch-chip-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.ch-chip-text-on{
+		color: #FFFFFF;
+	}
+	.bank-fields {
+		margin-top: 8px;
+	}
+	.field {
+		align-items: center;
+		height: 44px;
+		border-bottom-width: 0.5px;
+		border-bottom-style: solid;
+		border-bottom-color: #F5F7FB;
+	}
+	.field-label {
+		width: 48px;
+		font-size: 14px;
+		color: #374151;
+	}
+	.field-input {
+		flex: 1;
+		height: 44px;
+		font-size: 14px;
+		color: #1A1A1A;
+	}
+	.wechat-tip {
+		margin-top: 4px;
+	}
+	.submit-wrap {
+		margin: 8px 0 18px 0;
+	}
+	.submit-btn {
+		height: 48px;
+		border-radius: 24px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.submit-off {
+		opacity: 0.55;
+	}
+	.submit-btn-text {
+		font-size: 16px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.sec-title {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin: 4px 4px 10px 4px;
+	}
+	.rec {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 14px 16px;
+		margin-bottom: 8px;
+		align-items: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.rec-main {
+		flex: 1;
+	}
+	.rec-amount {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+	}
+	.rec-sub {
+		font-size: 12px;
+		color: #374151;
+	}
+	.rec-st {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1A73E8;
+	}
+	.rec-st-ok {
+		color: #1A1A1A;
+	}
+	.rec-st-bad {
+		color: #1A73E8;
+	}
+	.empty {
+		padding: 16px 8px;
+		align-items: center;
+	}
+	.empty-t {
+		font-size: 13px;
+		color: #374151;
+	}
+	.pad {
+		height: 32px;
+	}
+</style>

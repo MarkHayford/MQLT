@@ -1,0 +1,428 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+			</view>
+			<text class="nav-title">个人信息</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view class="hero uni-column">
+				<button class="avatar-btn" open-type="chooseAvatar" @chooseavatar="handleChooseWechatAvatar">
+					<view class="avatar" :style="avatarBgStyle">
+						<image v-if="avatarUrl.length > 0" :src="avatarUrl" class="avatar-img" mode="aspectFill" @error="handleAvatarError"></image>
+						<text v-else class="avatar-txt">{{ avatarText }}</text>
+					</view>
+				</button>
+				<text class="hero-name">{{ displayName }}</text>
+				<text class="hero-hint">点击头像更换微信头像</text>
+			</view>
+
+			<view class="card uni-column">
+				<text class="set-head">账号</text>
+				<view class="row uni-row" @click="handleViewRealName">
+					<text class="row-label">姓名</text>
+					<text :class="realName.length > 0 ? 'row-val row-val-ok' : 'row-val'">{{ realName.length > 0 ? realName : '未填写' }}</text>
+				</view>
+				<view class="line"></view>
+				<view class="row uni-row" @click="handleEditPhone">
+					<text class="row-label">手机号</text>
+					<text class="row-val">{{ phoneText }}</text>
+				</view>
+				<view class="line"></view>
+				<view class="row uni-row" @click="handleViewStudyNo">
+					<text class="row-label">ID</text>
+					<text class="row-val">{{ studyNo }}</text>
+				</view>
+			</view>
+
+			<view class="card uni-column">
+				<text class="set-head">服务</text>
+				<view class="row uni-row" @click="goAddressList">
+					<text class="row-label">收货地址</text>
+					<text class="row-val">进入</text>
+				</view>
+				<view class="line"></view>
+				<view class="row uni-row" @click="goInvoiceTitles">
+					<text class="row-label">发票抬头</text>
+					<text class="row-val">进入</text>
+				</view>
+			</view>
+
+			<view v-if="isLoggedIn" class="logout" @click="handleLogout">
+				<text class="logout-text">退出登录</text>
+			</view>
+			<view class="pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import { fetchUserProfile, uploadUserAvatar } from '../../utils/user-services.uts'
+	import { resolveAvatarImageUrl } from '../../utils/avatar-url.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const userPhone = ref('')
+	const avatarUrl = ref('')
+	const avatarText = ref('游')
+	const avatarBgIndex = ref(0)
+	const studyNo = ref('未生成')
+	const realName = ref('')
+	const realNameIdCardMasked = ref('')
+	const isLoggedIn = ref(false)
+	let isSaving = false
+
+	type AvatarTheme = {
+		start: string
+		end: string
+	}
+
+	const avatarThemes: AvatarTheme[] = [
+		{ start: '#1A1A1A', end: '#1A73E8' },
+		{ start: '#B45309', end: '#F59E0B' },
+		{ start: '#1A73E8', end: '#93C5FD' },
+		{ start: '#007A33', end: '#00C853' },
+		{ start: '#2E7D6F', end: '#81C784' },
+		{ start: '#1A73E8', end: '#93C5FD' }
+	]
+
+	const avatarBgStyle = computed((): string => {
+		const idx = avatarBgIndex.value < avatarThemes.length ? avatarBgIndex.value : 0
+		const t = avatarThemes[idx]
+		return 'background-image: linear-gradient(135deg, ' + t.start + ' 0%, ' + t.end + ' 100%);'
+	})
+
+	const displayName = computed((): string => {
+		if (realName.value.length > 0) return realName.value
+		return '研学用户'
+	})
+
+	const phoneText = computed((): string => {
+		const phone = userPhone.value
+		if (phone.length === 11) return phone.substring(0, 3) + ' **** ' + phone.substring(7)
+		if (phone.length > 0) return phone
+		return '未绑定'
+	})
+
+	const applyProfile = (profile: any) => {
+		userPhone.value = profile.phone != null ? profile.phone.toString() : ''
+		studyNo.value = profile.studyNo != null && profile.studyNo.toString().length > 0 ? profile.studyNo.toString() : '未生成'
+		// 展示名优先真实姓名
+		const name = profile.realName != null && profile.realName.toString().length > 0
+			? profile.realName.toString()
+			: ''
+		realName.value = name
+		realNameIdCardMasked.value = profile.realNameIdCardMasked != null ? profile.realNameIdCardMasked.toString() : ''
+		avatarUrl.value = resolveAvatarImageUrl(profile.avatarUrl, profile.updatedAt)
+		const idx = profile.avatarTheme != null ? parseInt(profile.avatarTheme.toString()) : 0
+		avatarBgIndex.value = !isNaN(idx) && idx >= 0 && idx < avatarThemes.length ? idx : 0
+		avatarText.value = realName.value.length > 0 ? realName.value.substring(0, 1) : '游'
+	}
+
+	const loadProfile = () => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		isLoggedIn.value = token != null && token.toString().length > 0
+		if (!isLoggedIn.value) return
+		fetchUserProfile().then((profile) => {
+			applyProfile(profile)
+		}).catch((_err) => {
+			uni.showToast({ title: '个人信息加载失败', icon: 'none' })
+		})
+	}
+
+	onShow(() => {
+		loadProfile()
+	})
+
+	const ensureLoggedIn = (): boolean => {
+		if (!isLoggedIn.value) {
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			return false
+		}
+		return true
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const goAddressList = () => {
+		uni.navigateTo({ url: '/pages/mine/address-list' })
+	}
+
+	const goInvoiceTitles = () => {
+		uni.navigateTo({ url: '/pages/mine/invoice-titles' })
+	}
+
+	const handleChooseWechatAvatar = (event: any) => {
+		if (!ensureLoggedIn()) return
+		if (event.detail == null || event.detail.avatarUrl == null) {
+			uni.showToast({ title: '未获取到微信头像', icon: 'none' })
+			return
+		}
+		const filePath = event.detail.avatarUrl.toString()
+		if (filePath.length === 0) {
+			uni.showToast({ title: '未获取到微信头像', icon: 'none' })
+			return
+		}
+		if (isSaving) return
+		isSaving = true
+		uni.showLoading({ title: '上传中...' })
+		uploadUserAvatar(filePath).then((ret) => {
+			isSaving = false
+			uni.hideLoading()
+			if (ret.avatarUrl == null || ret.avatarUrl.length === 0) {
+				uni.showToast({ title: '头像上传失败：服务端未返回地址', icon: 'none' })
+				return
+			}
+			avatarUrl.value = resolveAvatarImageUrl(ret.avatarUrl, Date.now().toString())
+			uni.showToast({ title: '头像已更新', icon: 'success' })
+			loadProfile()
+		}).catch((err) => {
+			isSaving = false
+			uni.hideLoading()
+			const raw = err != null && err.message != null ? err.message.toString() : '头像上传失败'
+			const message = raw.indexOf('url not in domain list') >= 0 ? '请把上传域名配进 uploadFile 合法域名' : raw
+			uni.showToast({ title: message.length > 0 ? message : '头像上传失败', icon: 'none' })
+		})
+	}
+
+	const handleAvatarError = () => {
+		avatarUrl.value = ''
+	}
+
+	const handleViewRealName = () => {
+		if (!ensureLoggedIn()) return
+		const content = realName.value.length > 0
+			? '姓名：' + realName.value + '\n身份证号：' + (realNameIdCardMasked.value.length > 0 ? realNameIdCardMasked.value : '未填写') + '\n\n如需修改，请前往设置页面。'
+			: '暂未填写实名信息。\n\n如需填写或修改，请前往设置页面。'
+		uni.showModal({
+			title: '姓名 / 实名信息',
+			content,
+			confirmText: '前往设置',
+			cancelText: '关闭',
+			success: (res) => {
+				if (res.confirm) {
+					uni.navigateTo({ url: '/pages/mine/settings' })
+				}
+			}
+		})
+	}
+
+	const handleEditPhone = () => {
+		if (!ensureLoggedIn()) return
+		uni.showModal({
+			title: '修改手机号',
+			content: '手机号仅支持查看，如需修改请前往设置页面。',
+			confirmText: '前往设置',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) {
+					uni.navigateTo({ url: '/pages/mine/settings' })
+				}
+			}
+		})
+	}
+
+	const handleViewStudyNo = () => {
+		uni.showModal({
+			title: '我的 ID',
+			content: studyNo.value + '\n\nID 是您在平台的唯一身份标识，可用于研学签到、好友添加。',
+			confirmText: '复制',
+			cancelText: '关闭',
+			success: (res) => {
+				if (res.confirm) {
+					uni.setClipboardData({
+						data: studyNo.value,
+						success: () => {
+							uni.showToast({ title: 'ID 已复制', icon: 'success' })
+						}
+					})
+				}
+			}
+		})
+	}
+
+	const handleLogout = () => {
+		uni.showModal({
+			title: '确定退出登录吗？',
+			confirmColor: '#DC2626',
+			success: (res) => {
+				if (res.confirm) {
+					uni.removeStorageSync(StorageKeys.authToken)
+					uni.showToast({ title: '已安全退出', icon: 'none' })
+					setTimeout(() => {
+						uni.navigateBack()
+					}, 600)
+				}
+			}
+		})
+	}
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 48px;
+		padding: 0 16px;
+		flex-direction: row;
+		align-items: center;
+	}
+	.nav-back {
+		width: 32px;
+		height: 32px;
+		align-items: center;
+		justify-content: center;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+	}
+	.nav-title {
+		font-size: 20px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-left: 4px;
+	}
+	.body {
+		flex: 1;
+		padding: 8px 16px 0 16px;
+	}
+	.hero {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 22px 16px 18px 16px;
+		margin-bottom: 16px;
+		align-items: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		box-shadow: none;
+	}
+	.avatar-btn {
+		padding: 0;
+		margin: 0;
+		background-color: transparent;
+		border-width: 0;
+		line-height: 1;
+		overflow: visible;
+	}
+	.avatar-btn::after {
+		border-width: 0;
+	}
+	.avatar {
+		width: 76px;
+		height: 76px;
+		border-radius: 38px;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+	.avatar-img {
+		width: 76px;
+		height: 76px;
+		border-radius: 38px;
+	}
+	.avatar-txt {
+		color: #FFFFFF;
+		font-size: 30px;
+		font-weight: 800;
+	}
+	.hero-name {
+		margin-top: 12px;
+		font-size: 18px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.hero-hint {
+		margin-top: 4px;
+		font-size: 12px;
+		color: #374151;
+	}
+	.set-head {
+		font-size: 17px;
+		font-weight: 800;
+		color: #1A1A1A;
+		align-self: flex-start;
+		margin: 14px 16px 0 16px;
+		padding-bottom: 6px;
+		border-bottom-width: 2px;
+		border-bottom-style: solid;
+		border-bottom-color: #1A73E8;
+	}
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 0 0 4px 0;
+		margin-bottom: 16px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		box-shadow: none;
+	}
+	.row {
+		height: 48px;
+		align-items: center;
+		padding: 0 16px;
+	}
+	.row-label {
+		flex: 1;
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.row-val {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A73E8;
+
+	}
+	.row-val-ok {
+		color: #1A1A1A;
+	}
+	.line {
+		height: 1px;
+		background-color: #E5E7EB;
+		margin: 0 16px;
+	}
+	.logout {
+		margin-top: 28px;
+		height: 48px;
+		border-radius: 24px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.logout-text {
+		font-size: 15px;
+		font-weight: 800;
+		color: #DC2626;
+	}
+	.pad {
+		height: 32px;
+	}
+</style>

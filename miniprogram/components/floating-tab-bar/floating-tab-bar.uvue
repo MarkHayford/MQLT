@@ -1,0 +1,207 @@
+<template>
+	<view class="tab-bar-container">
+
+		<!-- 1. 背景层：只负责背景色 -->
+		<view class="tab-bar-glass"></view>
+
+		<!-- 2. 边框层：独立渲染线框，确保不被裁剪 -->
+		<view class="tab-bar-border"></view>
+
+		<!-- 3. 内容层 -->
+		<view class="tab-bar">
+			<view class="tab-item" @click="switchTab(0, '/pages/tabs/index')">
+				<view :class="['tab-icon-box', currentIndex === 0 ? 'active-icon-box' : '']">
+					<image :src="currentIndex === 0 ? '/static/tab-home-active.svg' : '/static/tab-home.svg'" class="tab-icon-img" mode="aspectFit"></image>
+				</view>
+				<text :class="['tab-text', currentIndex === 0 ? 'active-text' : '']">资讯</text>
+			</view>
+
+			<view class="tab-item center-item" @click="switchTab(1, '/pages/tabs/appointment')">
+				<view class="center-btn-shell">
+					<view :class="['center-btn', currentIndex === 1 ? 'center-btn-on' : '']">
+						<image src="/static/tab-appointment.svg" class="center-icon-img" mode="aspectFit"></image>
+					</view>
+				</view>
+				<text :class="['tab-text', currentIndex === 1 ? 'active-text' : '']">研学之路</text>
+			</view>
+
+			<view class="tab-item" @click="switchTab(2, '/pages/tabs/mine')">
+				<view :class="['tab-icon-box', currentIndex === 2 ? 'active-icon-box' : '']">
+					<image :src="currentIndex === 2 ? '/static/tab-mine-active.svg' : '/static/tab-mine.svg'" class="tab-icon-img" mode="aspectFit"></image>
+				</view>
+				<text :class="['tab-text', currentIndex === 2 ? 'active-text' : '']">我的</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+
+	const props = defineProps({
+		current: {
+			type: Number,
+			default: 0
+		}
+	})
+
+	const currentIndex = ref(props.current)
+
+	const switchTab = (index : number, url : string) => {
+		if (currentIndex.value === index) return
+		uni.switchTab({
+			url: url,
+			fail: (_err) => {
+				uni.reLaunch({ url: url })
+			}
+		})
+	}
+</script>
+
+<style>
+	.tab-bar-container {
+		position: fixed;
+		bottom: 25px;
+		left: 20px;
+		right: 20px;
+		height: 70px;
+		z-index: 999;
+		overflow: visible;
+		background-color: transparent;
+	}
+
+
+	.tab-bar-glass {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 70px;
+		background-color: rgba(255, 255, 255, 0.95);
+		border-radius: 35px;
+		overflow: visible;
+		z-index: 1;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+
+
+	.tab-bar-border {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 70px;
+		border-radius: 35px;
+		border: 1px solid rgba(26, 115, 232, 0.18);
+		z-index: 2;
+		pointer-events: none; /* 确保不阻挡点击事件 */
+	}
+
+	.tab-bar {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 70px;
+		flex-direction: row;
+		justify-content: space-around;
+		align-items: flex-end;
+		padding: 0 10px;
+		z-index: 3;
+		overflow: visible;
+	}
+
+	.tab-item {
+		align-items: center;
+		justify-content: center;
+		flex: 1;
+		height: 70px;
+	}
+
+	.tab-icon-box {
+		width: 32px;
+		height: 32px;
+		border-radius: 16px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.active-icon-box {
+		transform: scale(1.18);
+		animation-name: tabPop;
+		animation-duration: 0.32s;
+		animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+	}
+
+	@keyframes tabPop {
+		0% { transform: scale(1); }
+		100% { transform: scale(1.18); }
+	}
+
+	.tab-icon-img {
+		width: 24px;
+		height: 24px;
+		background-color: transparent;
+	}
+
+	.tab-text {
+		font-size: 11px;
+		color: #9CA3AF;
+		margin-top: 4px;
+		font-weight: 500;
+	}
+
+	.active-text {
+		color: #8AB4F8;
+		font-weight: 600;
+	}
+
+	.center-item {
+		height: 70px;
+		justify-content: flex-end;
+		align-items: center;
+		overflow: visible;
+	}
+
+	.center-btn-shell {
+		width: 58px;
+		height: 58px;
+		position: relative;
+		margin-top: -22px;
+		margin-bottom: 4px;
+		overflow: visible;
+	}
+	.center-btn {
+		position: relative;
+		z-index: 1;
+		width: 58px;
+		height: 58px;
+		border-radius: 50%;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		border-width: 2px;
+		border-style: solid;
+		border-color: rgba(138, 180, 248, 0.55);
+		transition-property: transform;
+		transition-duration: 0.2s;
+		overflow: visible;
+		box-shadow: 0 8px 16px rgba(0, 0, 0, 0.22);
+	}
+
+
+	.center-btn:active {
+		transform: scale(0.9);
+	}
+	.center-btn-on {
+		transform: scale(1.06);
+		background-color: #1A73E8;
+		border-color: #8AB4F8;
+	}
+
+	.center-icon-img {
+		width: 26px;
+		height: 26px;
+		background-color: transparent;
+	}
+</style>

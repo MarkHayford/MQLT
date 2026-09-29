@@ -1,0 +1,228 @@
+import { ApiEndpoints } from './api-endpoints.uts'
+import { getApi } from './api-client.uts'
+
+export const STUDY_BOOKING_CHANGED = 'studyBookingChanged'
+let bookedProjectIds: string[] = []
+let unpaidProjectIds: string[] = []
+let pendingProjectIds: string[] = []
+let dismissedProgressBannerIds: string[] = []
+
+export function subscribeStudyBookingChanged(handler: () => void): void {
+	uni.$on(STUDY_BOOKING_CHANGED, handler)
+}
+
+export function unsubscribeStudyBookingChanged(handler: () => void): void {
+	uni.$off(STUDY_BOOKING_CHANGED, handler)
+}
+
+export function getBookedProjectIds(): string[] {
+	const list: string[] = []
+	for (let i = 0; i < bookedProjectIds.length; i++) list.push(bookedProjectIds[i])
+	return list
+}
+
+export function checkStudyInProgressJoined(projectId: string, status: string): boolean {
+	return checkStudyProjectInProgress(status) && checkStudyProjectBooked(projectId)
+}
+
+export function isProgressBannerDismissed(projectId: string): boolean {
+	for (let i = 0; i < dismissedProgressBannerIds.length; i++) {
+		if (dismissedProgressBannerIds[i] === projectId) return true
+	}
+	return false
+}
+
+export function dismissProgressBanner(projectId: string): void {
+	const ids = getDismissedBannerIds()
+	for (let i = 0; i < ids.length; i++) {
+		if (ids[i] === projectId) return
+	}
+	ids.push(projectId)
+	dismissedProgressBannerIds = ids
+}
+
+function getDismissedBannerIds(): string[] {
+	const list: string[] = []
+	for (let i = 0; i < dismissedProgressBannerIds.length; i++) list.push(dismissedProgressBannerIds[i])
+	return list
+}
+
+export function checkStudyProjectBooked(projectId: string): boolean {
+	const ids = getBookedProjectIds()
+	for (let i = 0; i < ids.length; i++) {
+		if (ids[i] === projectId) return true
+	}
+	return false
+}
+
+export function checkStudyProjectUnpaid(projectId: string): boolean {
+	for (let i = 0; i < unpaidProjectIds.length; i++) {
+		if (unpaidProjectIds[i] === projectId) return true
+	}
+	return false
+}
+
+export function checkStudyProjectPending(projectId: string): boolean {
+	for (let i = 0; i < pendingProjectIds.length; i++) {
+		if (pendingProjectIds[i] === projectId) return true
+	}
+	return false
+}
+
+export function addProjectBooking(projectId: string): void {
+	const pending: string[] = []
+	for (let j = 0; j < unpaidProjectIds.length; j++) {
+		if (unpaidProjectIds[j] !== projectId) pending.push(unpaidProjectIds[j])
+	}
+	unpaidProjectIds = pending
+	const processing: string[] = []
+	for (let k = 0; k < pendingProjectIds.length; k++) {
+		if (pendingProjectIds[k] !== projectId) processing.push(pendingProjectIds[k])
+	}
+	pendingProjectIds = processing
+	for (let i = 0; i < bookedProjectIds.length; i++) {
+		if (bookedProjectIds[i] === projectId) return
+	}
+	bookedProjectIds.push(projectId)
+	uni.$emit(STUDY_BOOKING_CHANGED, projectId)
+}
+
+type StudyBookingProjectRef = {
+	id: string
+}
+
+type StudyBookingRef = {
+	projectId: string | null
+	status: string | null
+	project: StudyBookingProjectRef | null
+}
+
+export function isStudyBookingActiveStatus(status: string | null): boolean {
+	return status === 'booked' || status === 'BOOKED' || status === 'completed' || status === 'COMPLETED'
+}
+
+export function isStudyBookingUnpaidStatus(status: string | null): boolean {
+	return status === 'unpaid' || status === 'UNPAID'
+}
+
+export function isStudyBookingPendingStatus(status: string | null): boolean {
+	return status === 'pending' || status === 'PENDING'
+}
+
+export function syncStudyBookingsFromApi(): Promise<string[]> {
+	return new Promise<string[]>((resolve, reject) => {
+		getApi<StudyBookingRef[]>(ApiEndpoints.studyBookings, true).then((list) => {
+			const ids: string[] = []
+			const unpaidIds: string[] = []
+			const processingIds: string[] = []
+			for (let i = 0; i < list.length; i++) {
+				const entry = list[i]
+				let id = entry.projectId
+				if ((id == null || id.length === 0) && entry.project != null) id = entry.project.id
+				if (id == null || id.length === 0) continue
+				if (isStudyBookingActiveStatus(entry.status)) ids.push(id)
+				if (isStudyBookingUnpaidStatus(entry.status)) unpaidIds.push(id)
+				if (isStudyBookingPendingStatus(entry.status)) processingIds.push(id)
+			}
+			bookedProjectIds = ids
+			unpaidProjectIds = unpaidIds
+			pendingProjectIds = processingIds
+			uni.$emit(STUDY_BOOKING_CHANGED, '')
+			resolve(ids)
+		}).catch((err) => {
+			reject(err)
+		})
+	})
+}
+
+export function checkStudyProjectFull(status: string, enrolled: number, maxCapacity: number): boolean {
+	if (status === '预约满员') return true
+	if (maxCapacity > 0 && enrolled >= maxCapacity) return true
+	return false
+}
+
+export function checkStudyProjectInProgress(status: string): boolean {
+	return status === '正在进行中'
+}
+
+export function checkStudyProjectEnded(status: string): boolean {
+	return status === '已结束'
+}
+
+/** 将「正在进行中」的项目排在最前，其余保持原有相对顺序 */
+export function sortProjectsInProgressFirst<T>(projects: T[], getStatus: (p: T) => string): T[] {
+	const inProgress: T[] = []
+	const others: T[] = []
+	for (let i = 0; i < projects.length; i++) {
+		const item = projects[i]
+		if (checkStudyProjectInProgress(getStatus(item))) {
+			inProgress.push(item)
+		} else {
+			others.push(item)
+		}
+	}
+	const sorted: T[] = []
+	for (let i = 0; i < inProgress.length; i++) sorted.push(inProgress[i])
+	for (let i = 0; i < others.length; i++) sorted.push(others[i])
+	return sorted
+}
+
+/**
+ * 列表/首页主按钮是否置灰。
+ * 业务简化：不再因「正在进行中」禁用；仅暂未开放 / 已结束 / 满员禁用。
+ * 已预约、待支付等仍可点（文案走 getStudyBookBtnText）。
+ */
+export function checkStudyBookDisabled(projectId: string, status: string, enrolled: number, maxCapacity: number): boolean {
+	if (status === '暂未开放') return true
+	if (checkStudyProjectEnded(status)) return true
+	if (checkStudyProjectPending(projectId)) return false
+	if (checkStudyProjectUnpaid(projectId)) return false
+	if (checkStudyProjectBooked(projectId)) return false
+	if (checkStudyProjectFull(status, enrolled, maxCapacity)) return true
+	return false
+}
+
+export function checkStudyBookedActive(projectId: string): boolean {
+	return checkStudyProjectBooked(projectId)
+}
+
+/**
+ * 首页/列表入口文案：开放侧统一「查看详情」，不再出现「正在进行中」。
+ * defaultLabel 一般为「查看详情」；详情页内申请按钮请直接写「申请预约」。
+ */
+export function getStudyBookBtnText(
+	projectId: string,
+	status: string,
+	enrolled: number,
+	maxCapacity: number,
+	defaultLabel: string,
+	fullLabel: string = '已满员'
+): string {
+	if (status === '暂未开放') return '暂未开放'
+	if (checkStudyProjectEnded(status)) return '已结束'
+	if (checkStudyProjectPending(projectId)) return '去处理'
+	if (checkStudyProjectUnpaid(projectId)) return '去支付'
+	if (checkStudyProjectBooked(projectId)) return defaultLabel
+	if (checkStudyProjectFull(status, enrolled, maxCapacity)) return fullLabel
+	return defaultLabel
+}
+
+export function getStudyEnrollHint(projectId: string, status: string): string {
+	if (status === '暂未开放') return '预约暂未开放'
+	if (checkStudyProjectEnded(status)) return '活动已结束'
+	if (checkStudyProjectPending(projectId)) return '待处理'
+	if (checkStudyProjectUnpaid(projectId)) return '待支付'
+	if (checkStudyProjectBooked(projectId)) return '已预约'
+	return '可预约'
+}
+
+/** 卡片上展示的状态文案：去掉「正在进行中」；「可预约」不再展示角标 */
+export function getStudyStatusDisplay(status: string): string {
+	if (status === '暂未开放') return '暂未开放'
+	if (checkStudyProjectEnded(status)) return '已结束'
+	if (status === '预约满员') return '预约满员'
+	if (checkStudyProjectInProgress(status)) return ''
+	if (status == null || status.length === 0) return ''
+	if (status === '可预约') return ''
+	return status
+}

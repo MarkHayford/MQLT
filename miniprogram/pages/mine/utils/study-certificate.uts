@@ -1,0 +1,141 @@
+export type StudyCertificateDownloadData = {
+	certificateNo: string
+	holderName: string
+	projectTitle: string
+	summary: string
+	issuedDate: string
+	issuedAt: string
+}
+
+function escapeXml(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&apos;')
+}
+
+function wrapText(value: string, maxLength: number): string[] {
+	const lines: string[] = []
+	let rest = value.trim()
+	while (rest.length > maxLength) {
+		lines.push(rest.substring(0, maxLength))
+		rest = rest.substring(maxLength)
+	}
+	if (rest.length > 0) lines.push(rest)
+	return lines
+}
+
+export function buildStudyCertificateContent(certificate: StudyCertificateDownloadData): string {
+	const issuedDate = certificate.issuedDate.length > 0 ? certificate.issuedDate : certificate.issuedAt
+	return '研学电子证书\n\n' +
+		'项目名称：' + certificate.projectTitle + '\n' +
+		'学员姓名：' + certificate.holderName + '\n' +
+		'证书编号：' + certificate.certificateNo + '\n' +
+		'颁发日期：' + issuedDate + '\n\n' +
+		certificate.summary
+}
+
+export function buildStudyCertificateSvg(certificate: StudyCertificateDownloadData): string {
+	const issuedDate = certificate.issuedDate.length > 0 ? certificate.issuedDate : certificate.issuedAt
+	const projectLines = wrapText(certificate.projectTitle.length > 0 ? certificate.projectTitle : '研学项目', 18)
+	const summaryLines = wrapText(certificate.summary.length > 0 ? certificate.summary : '已完成本项目规定研学任务，特发此证。', 28)
+	let projectText = ''
+	for (let i = 0; i < projectLines.length && i < 2; i++) {
+		projectText += '<text x="600" y="' + (250 + i * 44).toString() + '" text-anchor="middle" font-size="36" font-weight="700" fill="#163532">' + escapeXml(projectLines[i]) + '</text>'
+	}
+	let summaryText = ''
+	for (let i = 0; i < summaryLines.length && i < 3; i++) {
+		summaryText += '<text x="600" y="' + (500 + i * 34).toString() + '" text-anchor="middle" font-size="24" fill="#5B6865">' + escapeXml(summaryLines[i]) + '</text>'
+	}
+	return '<?xml version="1.0" encoding="UTF-8"?>' +
+		'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840">' +
+		'<defs>' +
+		'<linearGradient id="paper" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FBF7EA"/><stop offset="58%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#E9F4EF"/></linearGradient>' +
+		'<linearGradient id="ribbon" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#1A73E8"/><stop offset="100%" stop-color="#1A73E8"/></linearGradient>' +
+		'</defs>' +
+		'<rect width="1200" height="840" fill="#E7EEE9"/>' +
+		'<rect x="56" y="54" width="1088" height="728" rx="28" fill="url(#paper)"/>' +
+		'<rect x="86" y="84" width="1028" height="668" rx="20" fill="none" stroke="#B99A58" stroke-width="4"/>' +
+		'<rect x="120" y="118" width="960" height="600" rx="16" fill="none" stroke="#D9C58D" stroke-width="1.5" stroke-dasharray="10 12"/>' +
+		'<rect x="410" y="132" width="380" height="58" rx="29" fill="url(#ribbon)"/>' +
+		'<text x="600" y="171" text-anchor="middle" font-size="28" font-weight="700" fill="#FFFFFF">研学电子证书</text>' +
+		projectText +
+		'<text x="600" y="390" text-anchor="middle" font-size="54" font-weight="800" fill="#1A1A1A">' + escapeXml(certificate.holderName.length > 0 ? certificate.holderName : '研学学员') + '</text>' +
+		'<text x="600" y="448" text-anchor="middle" font-size="26" fill="#374151">已完成本项目规定研学任务，特发此证。</text>' +
+		summaryText +
+		'<g transform="translate(892 560)">' +
+		'<circle cx="78" cy="78" r="72" fill="none" stroke="#B73A32" stroke-width="6"/>' +
+		'<circle cx="78" cy="78" r="50" fill="none" stroke="#B73A32" stroke-width="2"/>' +
+		'<text x="78" y="73" text-anchor="middle" font-size="20" font-weight="700" fill="#B73A32">蒙企链探</text>' +
+		'<text x="78" y="101" text-anchor="middle" font-size="18" fill="#B73A32">研学证书</text>' +
+		'</g>' +
+		'<text x="152" y="656" font-size="24" fill="#4C5A57">证书编号：' + escapeXml(certificate.certificateNo) + '</text>' +
+		'<text x="152" y="696" font-size="24" fill="#4C5A57">颁发日期：' + escapeXml(issuedDate) + '</text>' +
+		'<text x="600" y="792" text-anchor="middle" font-size="20" fill="#7A8582">Mengqi Chain Study Certificate</text>' +
+		'</svg>'
+}
+
+export function downloadStudyCertificate(certificate: StudyCertificateDownloadData): void {
+	const imageContent = buildStudyCertificateSvg(certificate)
+	const textContent = buildStudyCertificateContent(certificate)
+	const safeNo = certificate.certificateNo.replace(/[\\/:*?"<>|]/g, '-')
+	const fileName = safeNo + '.svg'
+	const filePath = uni.env.USER_DATA_PATH + '/' + fileName
+
+	uni.showLoading({ title: '生成中...' })
+	const fs = uni.getFileSystemManager()
+	fs.writeFile({
+		filePath: filePath,
+		data: imageContent,
+		encoding: 'utf8',
+		success: (_res) => {
+			uni.hideLoading()
+			uni.saveImageToPhotosAlbum({
+				filePath: filePath,
+				success: () => {
+					uni.showToast({ title: '证书图片已保存', icon: 'success' })
+				},
+				fail: (_err) => {
+					uni.previewImage({
+						urls: [filePath],
+						current: filePath,
+						fail: () => {
+							uni.openDocument({
+								filePath: filePath,
+								showMenu: true,
+								success: () => {
+									uni.showToast({ title: '证书图片已生成', icon: 'success' })
+								},
+								fail: () => {
+									uni.setClipboardData({
+										data: textContent,
+										success: () => {
+											uni.showToast({ title: '证书内容已复制', icon: 'none' })
+										},
+										fail: () => {
+											uni.showToast({ title: '下载失败，请稍后重试', icon: 'none' })
+										}
+									})
+								}
+							})
+						}
+					})
+				}
+			})
+		},
+		fail: (_err) => {
+			uni.hideLoading()
+			uni.setClipboardData({
+				data: textContent,
+				success: () => {
+					uni.showToast({ title: '证书内容已复制，可粘贴保存', icon: 'none' })
+				},
+				fail: () => {
+					uni.showToast({ title: '下载失败，请稍后重试', icon: 'none' })
+				}
+			})
+		}
+	})
+}

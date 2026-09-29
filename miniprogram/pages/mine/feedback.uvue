@@ -1,0 +1,297 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-right" @click="goHistory">记录</text>
+			<text class="nav-title">反馈与建议</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view class="card uni-column">
+				<text class="label">类型</text>
+				<view class="chips uni-row">
+					<view
+						v-for="(item, index) in typeOptions"
+						:key="index"
+						:class="selectedType === item.value ? 'chip chip-on' : 'chip'"
+						@click="selectType(item.value)"
+					>
+						<text :class="selectedType === item.value ? 'chip-text chip-text-on' : 'chip-text'">{{ item.label }}</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="card uni-column">
+				<text class="label">内容</text>
+				<textarea
+					class="textarea"
+					placeholder="请简要说明问题或建议"
+					v-model="content"
+					:maxlength="500"
+					placeholder-style="color:#6B7280;"
+				/>
+				<text class="count">{{ content.length }}/500</text>
+			</view>
+
+			<view class="card uni-column">
+				<text class="label">手机号（选填）</text>
+				<input class="input" type="number" v-model="contactPhone" :maxlength="11" placeholder="方便我们联系你" placeholder-style="color:#6B7280;" />
+			</view>
+
+			<view class="submit-wrap">
+				<view :class="canSubmit ? 'submit-btn' : 'submit-btn submit-off'" @click="submitFeedback">
+					<text class="submit-btn-text">提交</text>
+				</view>
+			</view>
+			<view class="pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { submitFeedback as submitFeedbackApi } from '../../utils/user-services.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+
+	type FeedbackType = {
+		value: string
+		label: string
+	}
+
+	const typeOptions = ref<FeedbackType[]>([
+		{ value: 'bug', label: '功能异常' },
+		{ value: 'experience', label: '体验建议' },
+		{ value: 'content', label: '内容问题' },
+		{ value: 'service', label: '客服服务' },
+		{ value: 'feature', label: '功能建议' },
+		{ value: 'other', label: '其他' }
+	])
+
+	const selectedType = ref('')
+	const content = ref('')
+	const contactPhone = ref('')
+
+	const canSubmit = computed((): boolean => {
+		return selectedType.value.length > 0 && content.value.trim().length >= 5
+	})
+
+	const selectType = (value: string) => {
+		selectedType.value = value
+	}
+
+	const validatePhone = (phone: string): boolean => {
+		if (phone.length === 0) return true
+		if (phone.length !== 11) return false
+		if (phone.charAt(0) !== '1') return false
+		const second = phone.charCodeAt(1)
+		if (second < 51 || second > 57) return false
+		for (let i = 0; i < phone.length; i++) {
+			const c = phone.charCodeAt(i)
+			if (c < 48 || c > 57) return false
+		}
+		return true
+	}
+
+	const submitFeedback = () => {
+		if (selectedType.value.length === 0) {
+			uni.showToast({ title: '请选择类型', icon: 'none' })
+			return
+		}
+		if (content.value.trim().length < 5) {
+			uni.showToast({ title: '请至少输入 5 个字', icon: 'none' })
+			return
+		}
+		if (!validatePhone(contactPhone.value.trim())) {
+			uni.showToast({ title: '手机号格式不正确', icon: 'none' })
+			return
+		}
+
+		uni.showLoading({ title: '提交中' })
+		submitFeedbackApi<any>({
+			type: selectedType.value,
+			content: content.value.trim(),
+			tags: [] as string[],
+			contactPhone: contactPhone.value.trim(),
+			contactEmail: ''
+		}).then((_res) => {
+			uni.hideLoading()
+			uni.showToast({ title: '已提交', icon: 'success' })
+			setTimeout(() => {
+				selectedType.value = ''
+				content.value = ''
+				contactPhone.value = ''
+				uni.redirectTo({ url: '/pages/mine/feedback-list' })
+			}, 800)
+		}).catch((_err) => {
+			uni.hideLoading()
+			uni.showToast({ title: '提交失败，请稍后重试', icon: 'none' })
+		})
+	}
+
+	const goHistory = () => {
+		uni.navigateTo({ url: '/pages/mine/feedback-list' })
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 48px;
+		padding: 0 16px;
+		flex-direction: row;
+		align-items: center;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.nav-bar { background-color: #FFFFFF; border-width: 0; border-color: #FFFFFF; padding-right: 96px; }
+	.nav-right {
+		position: relative;
+		z-index: 2;
+		margin-left: 10px;
+		font-size: 14px;
+		font-weight: 700;
+		color: #1A73E8;
+	}
+	.body {
+		flex: 1;
+		padding: 8px 16px 0 16px;
+	}
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.label {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 10px;
+	}
+	.chips {
+		flex-wrap: wrap;
+	}
+	.chip {
+		padding: 7px 12px;
+		border-radius: 16px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		margin-right: 8px;
+		margin-bottom: 8px;
+	}
+	.chip-on {
+		background-color: #1A73E8;
+		border-color: #1A73E8;
+	}
+	.chip-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.chip-text-on{
+		color: #FFFFFF;
+	}
+	.textarea {
+		width: 100%;
+		min-height: 120px;
+		font-size: 15px;
+		color: #1A1A1A;
+		line-height: 22px;
+		padding: 12px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		border-radius: 12px;
+	}
+	.count {
+		font-size: 12px;
+		color: #374151;
+		text-align: right;
+		margin-top: 6px;
+	}
+	.input {
+		height: 40px;
+		font-size: 15px;
+		color: #1A1A1A;
+		padding: 0 12px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		border-radius: 20px;
+	}
+	.submit-wrap {
+		margin: 8px 0 12px 0;
+	}
+	.submit-btn {
+		height: 48px;
+		border-radius: 24px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.submit-off {
+		opacity: 0.45;
+	}
+	.submit-btn-text {
+		font-size: 16px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.pad {
+		height: 24px;
+	}
+</style>

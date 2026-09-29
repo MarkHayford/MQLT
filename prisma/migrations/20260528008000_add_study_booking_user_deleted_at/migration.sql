@@ -1,0 +1,1 @@
+ALTER TABLE "StudyBooking" ADD COLUMN IF NOT EXISTS "userDeletedAt" TIMESTAMP(3);

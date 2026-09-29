@@ -1,0 +1,928 @@
+<template>
+	<view class="page-container">
+		<mqlt-scape tone="mine"></mqlt-scape>
+		<scroll-view class="main-scroll" scroll-y="true" show-scrollbar="false" bounces="true">
+
+			<!-- 顶部用户区 -->
+			<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="profile-hero-shell" @click="goUserProfile">
+				<view class="profile-hero-glass"></view>
+				<view class="profile-hero-line"></view>
+				<view class="profile-hero">
+					<view class="profile-hero-accent"></view>
+					<view class="profile-flock">
+					
+					</view>
+				<view class="profile-row">
+					<view class="user-avatar" :style="avatarBgStyle">
+						<image v-if="avatarUrl.length > 0" :src="avatarUrl" class="user-avatar-img" mode="aspectFill" @error="handleAvatarError"></image>
+						<text v-else class="user-avatar-text">{{ avatarText }}</text>
+					</view>
+					<view class="user-info">
+						<text class="user-name">{{ isLoggedIn ? userNickname : '未登录' }}</text>
+						<text class="user-desc">{{ isLoggedIn ? 'ID: ' + studyNo : '登录后同步预约与订单' }}</text>
+					</view>
+					<text class="profile-chevron" v-if="isLoggedIn">›</text>
+				</view>
+
+				<view class="auth-block" v-if="!isLoggedIn" @click.stop>
+					<view class="auth-btn auth-btn-primary" @click="handleWechatLogin">
+						<text class="auth-btn-text-light">微信登录</text>
+					</view>
+					<view class="auth-agree-row">
+						<text class="auth-agree-text">登录后即视为同意</text>
+						<text class="auth-agree-link" @click="openAgreement('服务协议')">《服务协议》</text>
+						<text class="auth-agree-text">和</text>
+						<text class="auth-agree-link" @click="openAgreement('隐私条款')">《隐私条款》</text>
+					</view>
+				</view>
+
+				<!-- 用户资产/数据区域 (仅登录显示) -->
+				<view class="profile-stats uni-row" v-if="isLoggedIn">
+					<view class="stat-item uni-column" @click.stop="goMyCoupons">
+						<text class="stat-value">{{ userCouponCount }}</text>
+						<text class="stat-label">我的卡券</text>
+					</view>
+					<view class="stat-divider"></view>
+					<view class="stat-item uni-column" @click.stop="goMyPuzzle">
+						<text class="stat-value">{{ userPuzzleCount }}</text>
+						<text class="stat-label">我的成果</text>
+					</view>
+				</view>
+			</view>
+			</view>
+
+			<!-- 研学预约 + 商城订单合并为一处 -->
+			<view class="mine-card">
+				<view class="mine-card-glass"></view>
+				<view class="mine-card-line"></view>
+			<view class="ios-group order-group">
+				<view class="order-header" @click="goMyOrders('all')">
+					<text class="order-header-title">我的订单</text>
+					<view class="order-header-grow"></view>
+					<text class="cell-link">全部 ›</text>
+				</view>
+				<view class="order-chip-row">
+					<view class="order-chip" @click="goMyOrders('unpaid')">
+						<view class="order-chip-stage">
+							<view class="order-chip-icon-wrap">
+								<image src="/static/order-unpaid.svg" class="order-chip-icon-img" mode="aspectFit"></image>
+							</view>
+							<view class="order-chip-badge" v-if="orderUnpaidCount > 0">
+								<text class="order-chip-badge-text">{{ formatBadge(orderUnpaidCount) }}</text>
+							</view>
+						</view>
+						<text class="order-chip-label">待支付</text>
+					</view>
+					<view class="order-chip" @click="goMyOrders('active')">
+						<view class="order-chip-stage">
+							<view class="order-chip-icon-wrap">
+								<image src="/static/order-unused.svg" class="order-chip-icon-img" mode="aspectFit"></image>
+							</view>
+							<view class="order-chip-badge" v-if="orderActiveCount > 0">
+								<text class="order-chip-badge-text">{{ formatBadge(orderActiveCount) }}</text>
+							</view>
+						</view>
+						<text class="order-chip-label">进行中</text>
+					</view>
+					<view class="order-chip" @click="goMyOrders('completed')">
+						<view class="order-chip-stage">
+							<view class="order-chip-icon-wrap">
+								<image src="/static/order-completed.svg" class="order-chip-icon-img" mode="aspectFit"></image>
+							</view>
+							<view class="order-chip-badge" v-if="orderCompletedCount > 0">
+								<text class="order-chip-badge-text">{{ formatBadge(orderCompletedCount) }}</text>
+							</view>
+						</view>
+						<text class="order-chip-label">已完成</text>
+					</view>
+					<view class="order-chip" @click="goMyOrders('cancelled')">
+						<view class="order-chip-stage">
+							<view class="order-chip-icon-wrap">
+								<image src="/static/order-cancelled.svg" class="order-chip-icon-img" mode="aspectFit"></image>
+							</view>
+							<view class="order-chip-badge" v-if="orderCancelledCount > 0">
+								<text class="order-chip-badge-text">{{ formatBadge(orderCancelledCount) }}</text>
+							</view>
+						</view>
+						<text class="order-chip-label">已取消</text>
+					</view>
+				</view>
+			</view>
+			</view>
+
+			<!-- 更多功能分组 -->
+			<view class="mine-card">
+				<view class="mine-card-glass"></view>
+				<view class="mine-card-line"></view>
+			<view class="ios-group">
+				<view class="ios-cell" @click="goTravelers">
+					<view class="cell-icon-wrap cell-icon-cyan">
+						<image src="/static/mine-travelers.svg" class="cell-icon-img" mode="aspectFit"></image>
+					</view>
+					<text class="cell-title">常用游客</text>
+					<text class="cell-chevron">›</text>
+				</view>
+				<view class="ios-cell" @click="handleAction('电子发票')">
+					<view class="cell-icon-wrap cell-icon-orange">
+						<image src="/static/mine-invoice.svg" class="cell-icon-img" mode="aspectFit"></image>
+					</view>
+					<text class="cell-title">电子发票</text>
+					<text class="cell-chevron">›</text>
+				</view>
+				<view class="ios-cell" @click="handleAction('反馈与建议')">
+					<view class="cell-icon-wrap cell-icon-green">
+						<image src="/static/mine-feedback.svg" class="cell-icon-img" mode="aspectFit"></image>
+					</view>
+					<text class="cell-title">反馈与建议</text>
+					<text class="cell-chevron">›</text>
+				</view>
+				<view class="ios-cell" @click="handleAction('联系客服')">
+					<view class="cell-icon-wrap cell-icon-purple">
+						<image src="/static/mine-customer.svg" class="cell-icon-img" mode="aspectFit"></image>
+					</view>
+					<text class="cell-title">联系客服</text>
+					<text class="cell-chevron">›</text>
+				</view>
+				<view v-if="showDriverEntry" class="ios-cell" @click="goDriver">
+					<view class="cell-icon-wrap cell-icon-blue">
+						<image src="/static/icon-car.svg" class="cell-icon-img" mode="aspectFit"></image>
+					</view>
+					<text class="cell-title">司机入口</text>
+					<text v-if="driverBadge.length > 0" class="cell-badge">{{ driverBadge }}</text>
+					<text class="cell-chevron">›</text>
+				</view>
+				<view class="ios-cell ios-cell-single" @click="goSettings">
+					<view class="cell-icon-wrap cell-icon-gray">
+						<image src="/static/mine-settings.svg" class="cell-icon-img" mode="aspectFit"></image>
+					</view>
+					<text class="cell-title">设置</text>
+					<text class="cell-chevron">›</text>
+				</view>
+			</view>
+			</view>
+
+			<view class="bottom-spacer"></view>
+		</scroll-view>
+		<splash-announce></splash-announce>
+		<floating-tab-bar :current="2"></floating-tab-bar>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow, onLoad, onUnload } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { ensureNativeTabBarHidden } from '../../utils/tab-bar.uts'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import { countUnusedCoupons, displayUserName, fetchMallOrders, fetchUserCoupons, fetchUserProfile } from '../../utils/user-services.uts'
+	import { resolveAvatarImageUrl } from '../../utils/avatar-url.uts'
+	import { fetchProjectPuzzles } from '../../utils/puzzle-data.uts'
+	import { startWechatLogin } from '../../utils/wechat-auth.uts'
+	import { checkStudyProjectInProgress, isStudyBookingPendingStatus, isStudyBookingUnpaidStatus } from '../../utils/study-booking.uts'
+	import { fetchStudyBookings } from '../../utils/study-projects.uts'
+	import { formatCartBadgeText } from '../../utils/mall-cart.uts'
+	import { fetchCommerceAccess, hasDriverAccess } from '../../utils/commerce.uts'
+
+	const isLoggedIn = ref(false)
+	const showDriverEntry = ref(false)
+	const driverBadge = ref('')
+	const userNickname = ref('')
+	const userPhone = ref('')
+	const avatarUrl = ref('')
+	const avatarText = ref('游')
+	const avatarBgIndex = ref(0)
+	const userCouponCount = ref(0)
+	const userPuzzleCount = ref(0)
+	const studyNo = ref('YX888888')
+	const statusBarHeight = getStatusBarHeight()
+	const orderUnpaidCount = ref(0)
+	const orderActiveCount = ref(0)
+	const orderCompletedCount = ref(0)
+	const orderCancelledCount = ref(0)
+	let orderCountLoading = false
+
+	const formatBadge = (count: number): string => {
+		return formatCartBadgeText(count)
+	}
+
+	const clearOrderCounts = () => {
+		orderUnpaidCount.value = 0
+		orderActiveCount.value = 0
+		orderCompletedCount.value = 0
+		orderCancelledCount.value = 0
+	}
+
+	const studyBucket = (status: string, projectStatus: string): string => {
+		const st = status.trim().toLowerCase()
+		if (isStudyBookingPendingStatus(st) || isStudyBookingUnpaidStatus(st)) return 'unpaid'
+		if (st === 'cancelled' || st === 'canceled') return 'cancelled'
+		if (st === 'completed') return 'completed'
+		if (checkStudyProjectInProgress(projectStatus)) return 'active'
+		return 'active'
+	}
+
+	const mallBucket = (status: string): string => {
+		const st = status.trim().toLowerCase()
+		if (st === 'unpaid') return 'unpaid'
+		if (st === 'cancelled' || st === 'canceled') return 'cancelled'
+		if (st === 'completed') return 'completed'
+		// paid / unreceived / unused 等均算进行中
+		return 'active'
+	}
+
+	const refreshOrderCounts = () => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token == null || token.toString().length === 0) {
+			clearOrderCounts()
+			return
+		}
+		if (orderCountLoading) return
+		orderCountLoading = true
+		let unpaid = 0
+		let active = 0
+		let completed = 0
+		let cancelled = 0
+		let pending = 2
+		const done = () => {
+			pending--
+			if (pending > 0) return
+			orderCountLoading = false
+			orderUnpaidCount.value = unpaid
+			orderActiveCount.value = active
+			orderCompletedCount.value = completed
+			orderCancelledCount.value = cancelled
+		}
+
+		fetchStudyBookings().then((list) => {
+			for (let i = 0; i < list.length; i++) {
+				const b = list[i]
+				const projectStatus = b.project != null && b.project.status != null ? b.project.status : ''
+				const bucket = studyBucket(b.status, projectStatus)
+				if (bucket === 'unpaid') unpaid++
+				else if (bucket === 'active') active++
+				else if (bucket === 'completed') completed++
+				else if (bucket === 'cancelled') cancelled++
+			}
+			done()
+		}).catch((_e) => {
+			done()
+		})
+
+		fetchMallOrders<any>('all').then((list) => {
+			for (let i = 0; i < list.length; i++) {
+				const raw = list[i]
+				const st = raw != null && raw['status'] != null ? raw['status'].toString() : ''
+				const bucket = mallBucket(st)
+				if (bucket === 'unpaid') unpaid++
+				else if (bucket === 'active') active++
+				else if (bucket === 'completed') completed++
+				else if (bucket === 'cancelled') cancelled++
+			}
+			done()
+		}).catch((_e) => {
+			done()
+		})
+	}
+
+	type AvatarTheme = {
+		start: string
+		end: string
+	}
+
+	const avatarThemes: AvatarTheme[] = [
+		{ start: '#1A1A1A', end: '#374151' },
+		{ start: '#B45309', end: '#F59E0B' },
+		{ start: '#1565C0', end: '#42A5F5' },
+		{ start: '#007A33', end: '#00C853' },
+		{ start: '#2E7D6F', end: '#81C784' },
+		{ start: '#1E3A5F', end: '#3B82F6' }
+	]
+
+	const avatarBgStyle = computed((): string => {
+		const idx = avatarBgIndex.value < avatarThemes.length ? avatarBgIndex.value : 0
+		const t = avatarThemes[idx]
+		return 'background-image: linear-gradient(135deg, ' + t.start + ' 0%, ' + t.end + ' 100%);'
+	})
+
+	const maskPhone = (phone: string): string => {
+		if (phone.length === 11) {
+			return phone.substring(0, 3) + ' **** ' + phone.substring(7)
+		}
+		return phone
+	}
+
+	const refreshUserInfo = () => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token != null && token.toString().length > 0) {
+			isLoggedIn.value = true
+			fetchUserProfile().then((profile) => {
+				userNickname.value = displayUserName(profile)
+				userPhone.value = profile.phone != null ? profile.phone : ''
+				avatarUrl.value = resolveAvatarImageUrl(profile.avatarUrl, profile.updatedAt)
+				avatarText.value = userNickname.value.length > 0 ? userNickname.value.substring(0, 1) : '游'
+				avatarBgIndex.value = profile.avatarTheme >= 0 && profile.avatarTheme < avatarThemes.length ? profile.avatarTheme : 0
+				studyNo.value = profile.studyNo != null && profile.studyNo.length > 0 ? profile.studyNo : '未生成'
+				refreshCouponCount()
+				refreshPuzzleCount()
+				refreshOrderCounts()
+			}).catch((_err) => {
+				userNickname.value = '研学用户'
+				userPhone.value = ''
+				avatarUrl.value = ''
+				avatarText.value = '游'
+				avatarBgIndex.value = 0
+				studyNo.value = '加载失败'
+				userCouponCount.value = 0
+				userPuzzleCount.value = 0
+				clearOrderCounts()
+			})
+		} else {
+			isLoggedIn.value = false
+			userNickname.value = ''
+			userPhone.value = ''
+			avatarUrl.value = ''
+			avatarText.value = '游'
+			avatarBgIndex.value = 0
+			userCouponCount.value = 0
+			userPuzzleCount.value = 0
+			clearOrderCounts()
+		}
+	}
+
+	const refreshCouponCount = () => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token == null || token.toString().length === 0) {
+			userCouponCount.value = 0
+			return
+		}
+		fetchUserCoupons().then((list) => {
+			userCouponCount.value = countUnusedCoupons(list)
+		}).catch((_err) => {
+			userCouponCount.value = 0
+		})
+	}
+
+	const refreshPuzzleCount = () => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token == null || token.toString().length === 0) {
+			userPuzzleCount.value = 0
+			return
+		}
+		fetchProjectPuzzles().then((list) => {
+			let count = 0
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].certificate != null) count++
+			}
+			userPuzzleCount.value = count
+		}).catch((_err) => {
+			userPuzzleCount.value = 0
+		})
+	}
+
+	const handleAvatarError = () => {
+		avatarUrl.value = ''
+	}
+
+	/** 我的页「微信登录」：仅用户点按钮时授权，不自动拉起 */
+	const handleWechatLogin = () => {
+		startWechatLogin(false)
+	}
+
+	const openAgreement = (name: string) => {
+		const type = name.indexOf('隐私') >= 0 ? 'privacy' : 'agreement'
+		uni.navigateTo({ url: '/pages/mine/legal?type=' + type })
+	}
+
+	const onWechatLoginSuccess = () => {
+		refreshUserInfo()
+	}
+
+	const requireLoginThenGo = (url: string) => {
+		if (isLoggedIn.value) {
+			uni.navigateTo({ url: url })
+			return
+		}
+		uni.showToast({ title: '请先登录', icon: 'none' })
+	}
+
+	const goMyCoupons = () => {
+		requireLoginThenGo('/pages/mine/my-coupons')
+	}
+
+	const goMyPuzzle = () => {
+		requireLoginThenGo('/pages/mine/my-puzzle')
+	}
+
+	const handleLogout = () => {
+		uni.removeStorageSync(StorageKeys.authToken)
+		clearOrderCounts()
+		refreshUserInfo()
+		uni.showToast({ title: '已退出登录', icon: 'none' })
+	}
+
+	const goTravelers = () => {
+		requireLoginThenGo('/pages/mine/travelers-list')
+	}
+
+	const goMyOrders = (status: string) => {
+		requireLoginThenGo('/pages/mine/my-orders?status=' + status)
+	}
+
+	const handleAction = (name: string) => {
+		if (name === '电子发票') {
+			requireLoginThenGo('/pages/mine/invoice')
+			return
+		}
+		if (name === '联系客服') {
+			uni.navigateTo({ url: '/pages/mine/customer-service' })
+			return
+		}
+		if (name === '反馈与建议') {
+			uni.navigateTo({ url: '/pages/mine/feedback' })
+			return
+		}
+		uni.showToast({ title: name + '功能开发中', icon: 'none' })
+	}
+
+	const goSettings = () => {
+		uni.navigateTo({ url: '/pages/mine/settings' })
+	}
+
+	const goDriver = () => {
+		requireLoginThenGo('/pages/commerce/driver-home')
+	}
+
+	const refreshDriverAccess = () => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token == null || token.toString().length === 0) {
+			showDriverEntry.value = false
+			driverBadge.value = ''
+			return
+		}
+		fetchCommerceAccess().then((res) => {
+			const isDriver = hasDriverAccess(res)
+			showDriverEntry.value = isDriver
+			if (isDriver && res.roles != null) {
+				let label = '司机'
+				for (let i = 0; i < res.roles.length; i++) {
+					if (res.roles[i].type === 'driver') {
+						label = res.roles[i].label
+						break
+					}
+				}
+				driverBadge.value = label
+			} else {
+				driverBadge.value = ''
+			}
+		}).catch((_e) => {
+			showDriverEntry.value = false
+			driverBadge.value = ''
+		})
+	}
+
+	const goUserProfile = () => {
+		if (!isLoggedIn.value) {
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/mine/user-profile' })
+	}
+
+	onLoad(() => {
+		uni.$on('wechatLoginSuccess', onWechatLoginSuccess)
+	})
+
+	onUnload(() => {
+		uni.$off('wechatLoginSuccess', onWechatLoginSuccess)
+	})
+
+	onShow(() => {
+		ensureNativeTabBarHidden()
+		refreshUserInfo()
+		// 订单角标独立刷新，避免等资料接口
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token != null && token.toString().length > 0) {
+			refreshOrderCounts()
+			refreshDriverAccess()
+		} else {
+			clearOrderCounts()
+			showDriverEntry.value = false
+			driverBadge.value = ''
+		}
+	})
+</script>
+
+<style>
+	.page-container {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		height: 100%;
+		width: 100%;
+		position: relative;
+		background-color: #F5F7FB;
+	}
+	.main-scroll {
+		flex: 1;
+		width: 100%;
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		z-index: 1;
+		background-color: transparent;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+	}
+	.profile-hero-shell {
+		position: relative;
+		margin: 16px 16px 20px 16px;
+		overflow: visible;
+		background-color: transparent;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	.profile-hero-glass {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 14px;
+		background-color: rgba(255, 255, 255, 0.96);
+		overflow: visible;
+		z-index: 0;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.profile-hero-line {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 14px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		z-index: 1;
+		pointer-events: none;
+	}
+	.profile-hero-accent {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		height: 3px;
+		background-color: #1A73E8;
+		z-index: 2;
+	}
+
+
+	.profile-hero {
+		position: relative;
+		z-index: 2;
+		padding: 20px 18px 18px 18px;
+		border-radius: 14px;
+		background-color: transparent;
+		background-image: none;
+		overflow: hidden;
+		box-shadow: none;
+	}
+
+	.profile-flock { display: none; }
+	.profile-flock-img { display: none; }
+	.profile-row {
+		flex-direction: row;
+		align-items: center;
+		padding-top: 8px;
+		position: relative;
+		z-index: 1;
+	}
+	.user-avatar {
+		width: 60px;
+		height: 60px;
+		border-radius: 30px;
+		background-image: linear-gradient(135deg, #374151 0%, #6B7280 100%);
+		align-items: center;
+		justify-content: center;
+		border: 1px solid #E5E7EB;
+	}
+	.user-avatar-text {
+		font-size: 24px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+	.user-avatar-img {
+		width: 60px;
+		height: 60px;
+		border-radius: 30px;
+	}
+	.user-info {
+		margin-left: 14px;
+		flex-direction: column;
+		flex: 1;
+	}
+	.user-name {
+		font-size: 18px;
+		font-weight: 600;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+		letter-spacing: 0;
+	}
+	.user-desc {
+		font-size: 13px;
+		color: #374151;
+	}
+	.profile-chevron {
+		font-size: 22px;
+		color: #9CA3AF;
+	}
+	.auth-block {
+		flex-direction: column;
+		width: 100%;
+		margin-top: 20px;
+		flex-shrink: 0;
+		position: relative;
+		z-index: 1;
+	}
+	.auth-agree-row {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		margin-top: 10px;
+		flex-shrink: 0;
+	}
+	.auth-agree-text {
+		font-size: 11px;
+		color: #9CA3AF;
+		line-height: 16px;
+	}
+	.auth-agree-link {
+		font-size: 11px;
+		color: #1A73E8;
+		line-height: 16px;
+	}
+	.auth-btn {
+		width: 100%;
+		height: 44px;
+		flex-shrink: 0;
+		border-radius: 22px;
+		align-items: center;
+		justify-content: center;
+	}
+	.auth-btn-primary {
+		background-color: #1A73E8;
+		margin-right: 0;
+	}
+	.auth-btn-secondary {
+		background-color: #F3F4F6;
+		border: 1px solid #E5E7EB;
+	}
+	.auth-btn-text-light {
+		font-size: 15px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+	.auth-btn-text-dark {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1A1A1A;
+	}
+	.logout-row {
+		margin-top: 24px;
+		align-items: center;
+		padding-bottom: 4px;
+	}
+	.logout-text {
+		font-size: 14px;
+		color: #6B7280;
+		font-weight: 500;
+	}
+	/* 资产数据区域样式 */
+	.profile-stats {
+		margin-top: 18px;
+		padding-top: 14px;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+		justify-content: space-around;
+		align-items: center;
+		position: relative;
+		z-index: 1;
+	}
+	.stat-item {
+		align-items: center;
+		flex: 1;
+	}
+	.stat-value {
+		font-size: 18px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+	}
+	.stat-label {
+		font-size: 12px;
+		color: #6B7280;
+	}
+	.stat-divider {
+		width: 1px;
+		height: 20px;
+		background-color: #E5E7EB;
+	}
+	.mine-card {
+		position: relative;
+		margin: 0 16px 20px 16px;
+		overflow: visible;
+		background-color: transparent;
+	}
+	.mine-card-glass {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		overflow: visible;
+		z-index: 0;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.mine-card-line {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 16px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		z-index: 1;
+		pointer-events: none;
+	}
+	.ios-group {
+		position: relative;
+		z-index: 2;
+		margin: 0;
+		background-color: transparent;
+		border-radius: 16px;
+		overflow: hidden;
+	}
+	.ios-cell {
+		flex-direction: row;
+		align-items: center;
+		padding: 14px 16px;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #E5E7EB;
+	}
+	.ios-cell-single {
+		border-bottom-width: 0;
+	}
+	.ios-cell-header {
+		border-bottom-width: 0.5px;
+		border-bottom-color: #E5E7EB;
+		padding-bottom: 12px;
+	}
+	.cell-icon-wrap {
+		width: 32px;
+		height: 32px;
+		border-radius: 8px;
+		align-items: center;
+		justify-content: center;
+		margin-right: 12px;
+		background-color: transparent; /* 背景透明 */
+	}
+	/* 移除所有背景色定义 */
+	.cell-icon-blue { background-color: transparent; }
+	.cell-icon-cyan { background-color: transparent; }
+	.cell-icon-orange { background-color: transparent; }
+	.cell-icon-green { background-color: transparent; }
+	.cell-icon-purple { background-color: transparent; }
+	.cell-icon-gray { background-color: transparent; }
+	.cell-icon-text {
+		font-size: 16px;
+	}
+	.cell-icon-img {
+		width: 18px;
+		height: 18px;
+	}
+	.cell-title {
+		font-size: 17px;
+		color: #1A1A1A;
+		flex: 1;
+	}
+	.cell-title-bold {
+		font-weight: 600;
+	}
+	.cell-chevron {
+		font-size: 20px;
+		color: #9CA3AF;
+		font-weight: 300;
+	}
+	.cell-link {
+		font-size: 15px;
+		color: #1A73E8;
+		flex-shrink: 0;
+	}
+	.cell-badge {
+		font-size: 12px;
+		font-weight: 600;
+		color: #1A73E8;
+		background-color: #EFF6FF;
+		padding: 2px 8px;
+		border-radius: 10px;
+		margin-right: 6px;
+	}
+	/* 订单区单独布局，避免套用 ios-cell 图标+flex 把标题挤没 */
+	.order-group {
+		overflow: visible;
+	}
+	.order-header {
+		flex-direction: row;
+		align-items: center;
+		padding: 14px 16px 10px 16px;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #E5E7EB;
+	}
+	.order-header-title {
+		font-size: 17px;
+		font-weight: 600;
+		color: #1A1A1A;
+		flex-shrink: 0;
+	}
+	.order-header-grow {
+		flex: 1;
+		height: 1px;
+	}
+	.order-chip-row {
+		flex-direction: row;
+		padding: 14px 12px 16px 12px;
+		justify-content: space-between;
+		overflow: visible;
+	}
+	.order-chip {
+		flex: 1;
+		align-items: center;
+		overflow: visible;
+	}
+	/* stage 比图标略大，给角标留边，避免被父级裁切 */
+	.order-chip-stage {
+		width: 52px;
+		height: 48px;
+		margin-bottom: 4px;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+		overflow: visible;
+	}
+	.order-chip-icon-wrap {
+		width: 44px;
+		height: 44px;
+		border-radius: 12px;
+		background-color: #F3F4F6;
+		align-items: center;
+		justify-content: center;
+	}
+	.order-chip-icon-img {
+		width: 20px;
+		height: 20px;
+	}
+	.order-chip-badge {
+		position: absolute;
+		top: 0;
+		right: 0;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: 8px;
+		background-color: #EF4444;
+		border-width: 1.5px;
+		border-style: solid;
+		border-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		z-index: 2;
+	}
+	.order-chip-badge-text {
+		color: #FFFFFF;
+		font-size: 9px;
+		font-weight: 800;
+		line-height: 12px;
+	}
+	.order-chip-label {
+		font-size: 12px;
+		color: #4B5563;
+		font-weight: 500;
+		text-align: center;
+	}
+	.bottom-spacer {
+		height: 120px;
+	}
+</style>

@@ -1,0 +1,471 @@
+import { ApiEndpoints } from './api-endpoints.uts'
+import { getApi, postApi } from './api-client.uts'
+import { parseBodyTags, stripBodyExtras, stripHtml } from './html-content.uts'
+
+export type CommunityPost = {
+	id: string
+	title: string
+	content: string
+	coverUrl: string
+	images: string[]
+	videoUrl: string
+	channel: string
+	type: string
+	category: string
+	projectId: string
+	projectTitle: string
+	authorId: string
+	authorName: string
+	authorAvatar: string
+	likeCount: number
+	commentCount: number
+	liked: boolean
+	isOfficial: boolean
+	time: string
+	timestamp: number
+	tags: string[]
+	status: string
+	isOwner: boolean
+}
+
+export type CommunityComment = {
+	id: string
+	content: string
+	authorName: string
+	authorAvatar: string
+	time: string
+}
+
+export type CommunityPostDetail = {
+	id: string
+	title: string
+	content: string
+	coverUrl: string
+	images: string[]
+	videoUrl: string
+	channel: string
+	type: string
+	category: string
+	projectId: string
+	projectTitle: string
+	authorId: string
+	authorName: string
+	authorAvatar: string
+	likeCount: number
+	commentCount: number
+	liked: boolean
+	isOfficial: boolean
+	time: string
+	timestamp: number
+	paragraphs: string[]
+	comments: CommunityComment[]
+	tags: string[]
+	status: string
+	isOwner: boolean
+}
+
+export type CommunityLikeResult = {
+	liked: boolean
+	likeCount: number
+}
+
+function asString(v: any): string {
+	if (v == null) return ''
+	return v.toString()
+}
+
+function asNumber(v: any): number {
+	if (v == null) return 0
+	const n = Number(v)
+	if (n != n) return 0
+	return n
+}
+
+function asBool(v: any): boolean {
+	if (v === true) return true
+	return false
+}
+
+function asStringList(v: any): string[] {
+	const out: string[] = []
+	if (v == null) return out
+	if (Array.isArray(v)) {
+		for (let i = 0; i < v.length; i++) {
+			const s = asString(v[i])
+			if (s.length > 0) out.push(s)
+		}
+	}
+	return out
+}
+
+const COVER_TPL_PREFIX = 'tpl:'
+
+export type CoverTplOption = {
+	id: string
+	name: string
+}
+
+export function listCoverTemplates(): CoverTplOption[] {
+	const list: CoverTplOption[] = []
+	list.push({ id: 'sticky', name: '便签' })
+	list.push({ id: 'quote', name: '引用' })
+	list.push({ id: 'mint', name: '薄荷' })
+	list.push({ id: 'peach', name: '蜜桃' })
+	list.push({ id: 'sky', name: '晴空' })
+	list.push({ id: 'lined', name: '横线' })
+	list.push({ id: 'letter', name: '信笺' })
+	list.push({ id: 'dusk', name: '暖橙' })
+	list.push({ id: 'forest', name: '林绿' })
+	return list
+}
+
+function normalizeCoverTplId(id: string): string {
+	const safe = id.trim()
+	if (safe === 'kraft') return 'dusk'
+	if (safe === 'sticky' || safe === 'quote' || safe === 'mint' || safe === 'peach' || safe === 'sky' || safe === 'lined' || safe === 'letter' || safe === 'dusk' || safe === 'forest') {
+		return safe
+	}
+	return 'sticky'
+}
+
+export function isCoverTemplateUrl(url: string): boolean {
+	return url.indexOf(COVER_TPL_PREFIX) === 0
+}
+
+function coverTplPayload(url: string): string {
+	if (!isCoverTemplateUrl(url)) return ''
+	return url.substring(COVER_TPL_PREFIX.length).trim()
+}
+
+export function coverTplUrl(id: string, hl: string = ''): string {
+	const safe = normalizeCoverTplId(id)
+	const mark = hl.trim()
+	if (mark.length === 0) return COVER_TPL_PREFIX + safe
+	return COVER_TPL_PREFIX + safe + '|hl=' + encodeURIComponent(mark)
+}
+
+export function isHttpCoverUrl(url: string): boolean {
+	if (url.length === 0) return false
+	if (isCoverTemplateUrl(url)) return false
+	if (url.indexOf('http://') === 0 || url.indexOf('https://') === 0) return true
+	return false
+}
+
+export function coverTplIdOf(url: string): string {
+	const raw = coverTplPayload(url)
+	if (raw.length === 0) return 'sticky'
+	let id = raw
+	const pipe = raw.indexOf('|')
+	if (pipe >= 0) id = raw.substring(0, pipe)
+	return normalizeCoverTplId(id)
+}
+
+export function coverTplHlOf(url: string): string {
+	const raw = coverTplPayload(url)
+	if (raw.length === 0) return ''
+	const pipe = raw.indexOf('|')
+	if (pipe < 0) return ''
+	const rest = raw.substring(pipe + 1)
+	if (rest.indexOf('hl=') !== 0) return ''
+	const enc = rest.substring(3)
+	if (enc.length === 0) return ''
+	return decodeURIComponent(enc)
+}
+
+export function parseCommunityPost(raw: any): CommunityPost {
+	const images = asStringList(raw != null ? raw['images'] : null)
+	let cover = asString(raw != null ? raw['coverUrl'] : '')
+	if (cover.length === 0 && images.length > 0 && isHttpCoverUrl(images[0])) cover = images[0]
+	if (cover.length === 0) cover = coverTplUrl('sticky')
+	const item: CommunityPost = {
+		id: asString(raw != null ? raw['id'] : ''),
+		title: asString(raw != null ? raw['title'] : ''),
+		content: asString(raw != null ? raw['content'] : ''),
+		coverUrl: cover,
+		images: images,
+		videoUrl: asString(raw != null ? raw['videoUrl'] : ''),
+		channel: asString(raw != null ? raw['channel'] : ''),
+		type: asString(raw != null ? raw['type'] : ''),
+		category: asString(raw != null ? raw['category'] : ''),
+		projectId: asString(raw != null ? raw['projectId'] : ''),
+		projectTitle: asString(raw != null ? raw['projectTitle'] : ''),
+		authorId: asString(raw != null ? raw['authorId'] : ''),
+		authorName: asString(raw != null ? raw['authorName'] : '研学学员'),
+		authorAvatar: asString(raw != null ? raw['authorAvatar'] : ''),
+		likeCount: asNumber(raw != null ? raw['likeCount'] : 0),
+		commentCount: asNumber(raw != null ? raw['commentCount'] : 0),
+		liked: asBool(raw != null ? raw['liked'] : false),
+		isOfficial: asBool(raw != null ? raw['isOfficial'] : false),
+		time: asString(raw != null ? raw['time'] : ''),
+		timestamp: asNumber(raw != null ? raw['timestamp'] : 0),
+		tags: [],
+		status: asString(raw != null ? raw['status'] : 'published'),
+		isOwner: asBool(raw != null ? raw['isOwner'] : false)
+	}
+	item.tags = collectPostTags(raw, item.content, item.channel, item.type)
+	if (item.category.length === 0) item.category = '测试分类'
+	return item
+}
+
+export const ARTICLE_TAG_LIMIT = 4
+
+export function normalizeArticleTag(raw: string): string {
+	let s = raw.trim()
+	while (s.length > 0 && s.charAt(0) === '#') {
+		s = s.substring(1).trim()
+	}
+	s = s.split(' ').join('')
+	s = s.split('#').join('')
+	s = s.split(',').join('')
+	s = s.split('，').join('')
+	if (s.length > 8) s = s.substring(0, 8)
+	return s
+}
+
+export function listSuggestedArticleTags(): string[] {
+	const list: string[] = []
+	list.push('感受')
+	list.push('宣传')
+	list.push('研学')
+	list.push('亲子')
+	list.push('攻略')
+	list.push('路线')
+	return list
+}
+
+function pushUniqueTag(out: string[], raw: string): void {
+	const t = normalizeArticleTag(raw)
+	if (t.length === 0) return
+	if (out.length >= ARTICLE_TAG_LIMIT) return
+	for (let i = 0; i < out.length; i++) {
+		if (out[i] === t) return
+	}
+	out.push(t)
+}
+
+function collectPostTags(raw: any, content: string, channel: string, type: string): string[] {
+	const out: string[] = []
+	if (raw != null) {
+		const fromField = raw['tags'] != null ? raw['tags'] : raw['topics']
+		if (fromField != null) {
+			if (Array.isArray(fromField)) {
+				for (let i = 0; i < fromField.length; i++) pushUniqueTag(out, asString(fromField[i]))
+			} else {
+				const text = asString(fromField)
+				const parts = text.split('|')
+				for (let i = 0; i < parts.length; i++) pushUniqueTag(out, parts[i])
+			}
+		}
+	}
+	const packed = parseBodyTags(content)
+	for (let i = 0; i < packed.length; i++) pushUniqueTag(out, packed[i])
+	if (out.length === 0) {
+		const fallback = getChannelLabel(channel, type)
+		if (fallback.length > 0) pushUniqueTag(out, fallback)
+	}
+	return out
+}
+
+export function postDisplayTags(post: CommunityPost): string[] {
+	if (post.tags.length > 0) return post.tags
+	const label = getChannelLabel(post.channel, post.type)
+	if (label.length > 0) {
+		const one: string[] = []
+		one.push(label)
+		return one
+	}
+	return []
+}
+
+export function getChannelTagColor(channel: string): string {
+	if (channel === 'official') return '#1A1A1A'
+	if (channel === 'video') return '#C45C26'
+	return '#1A73E8'
+}
+
+export function getPostTagColor(tag: string): string {
+	if (tag === '官方') return '#1A1A1A'
+	if (tag === '宣传' || tag === '视频') return '#C45C26'
+	if (tag === '感受' || tag === '体验') return '#1A73E8'
+	if (tag === '研学' || tag === '路线') return '#1A73E8'
+	if (tag === '亲子') return '#C45C26'
+	if (tag === '攻略') return '#1A73E8'
+	return '#374151'
+}
+
+export function getChannelLabel(channel: string, type: string): string {
+	if (channel === 'official') return type.length > 0 ? type : '官方'
+	if (channel === 'video' || type === '视频') return '宣传'
+	if (type === '宣传') return '宣传'
+	if (type === '感受' || type === '研学体验' || type === '体验') return '感受'
+	if (channel === 'experience') return '文章'
+	if (type.length > 0) return type
+	return '文章'
+}
+
+function cleanPostParagraphs(rawParas: string[], content: string): string[] {
+	const src: string[] = []
+	if (rawParas.length > 0) {
+		for (let i = 0; i < rawParas.length; i++) src.push(rawParas[i])
+	} else {
+		const cleaned = stripBodyExtras(content)
+		const parts = cleaned.split('\n')
+		for (let i = 0; i < parts.length; i++) src.push(parts[i])
+	}
+	const out: string[] = []
+	for (let i = 0; i < src.length; i++) {
+		let line = stripBodyExtras(src[i]).trim()
+		if (line.indexOf('[[tags:') >= 0) continue
+		if (line.indexOf('<p') >= 0 || line.indexOf('<div') >= 0) line = stripHtml(line)
+		if (line.length === 0) continue
+		out.push(line)
+	}
+	return out
+}
+
+export function fetchCommunityPosts(channel: string, keyword: string): Promise<CommunityPost[]> {
+	const isTest = channel === 'test' || channel === '测试分类'
+	const apiChannel = isTest ? 'all' : (channel.length > 0 ? channel : 'all')
+	let url = ApiEndpoints.communityPosts + '?channel=' + encodeURIComponent(apiChannel)
+	if (keyword.trim().length > 0) {
+		url = url + '&keyword=' + encodeURIComponent(keyword.trim())
+	}
+	return getApi<any[]>(url, false).then((list) => {
+		const out: CommunityPost[] = []
+		if (list == null) return out
+		for (let i = 0; i < list.length; i++) out.push(parseCommunityPost(list[i]))
+		if (isTest) {
+			const filtered: CommunityPost[] = []
+			for (let i = 0; i < out.length; i++) {
+				if (out[i].category === '测试分类') filtered.push(out[i])
+			}
+			return filtered
+		}
+		return out
+	})
+}
+
+export function fetchCommunityPostDetail(id: string): Promise<CommunityPostDetail> {
+	return getApi<any>(ApiEndpoints.communityPostDetail.replace('{id}', encodeURIComponent(id)), true).then((raw) => {
+		const base = parseCommunityPost(raw)
+		const paragraphs = cleanPostParagraphs(asStringList(raw != null ? raw['paragraphs'] : null), base.content)
+		const commentsRaw = raw != null ? raw['comments'] : null
+		const comments: CommunityComment[] = []
+		if (commentsRaw != null && Array.isArray(commentsRaw)) {
+			for (let i = 0; i < commentsRaw.length; i++) {
+				const c = commentsRaw[i]
+				comments.push({
+					id: asString(c != null ? c['id'] : ''),
+					content: asString(c != null ? c['content'] : ''),
+					authorName: asString(c != null ? c['authorName'] : '研学学员'),
+					authorAvatar: asString(c != null ? c['authorAvatar'] : ''),
+					time: asString(c != null ? c['time'] : '')
+				})
+			}
+		}
+		const detail: CommunityPostDetail = {
+			id: base.id,
+			title: base.title,
+			content: base.content,
+			coverUrl: base.coverUrl,
+			images: base.images,
+			videoUrl: base.videoUrl,
+			channel: base.channel,
+			type: base.type,
+			category: base.category,
+			projectId: base.projectId,
+			projectTitle: base.projectTitle,
+			authorId: base.authorId,
+			authorName: base.authorName,
+			authorAvatar: base.authorAvatar,
+			likeCount: base.likeCount,
+			commentCount: base.commentCount,
+			liked: base.liked,
+			isOfficial: base.isOfficial,
+			time: base.time,
+			timestamp: base.timestamp,
+			paragraphs: paragraphs,
+			comments: comments,
+			tags: base.tags,
+			status: base.status,
+			isOwner: base.isOwner
+		}
+		return detail
+	})
+}
+
+export function createCommunityPost(data: any): Promise<CommunityPost> {
+	return postApi<any>(ApiEndpoints.communityPosts, data, true).then((raw) => parseCommunityPost(raw))
+}
+
+export function updateCommunityPost(id: string, data: any): Promise<CommunityPost> {
+	return postApi<any>(ApiEndpoints.communityPostUpdate.replace('{id}', encodeURIComponent(id)), data, true).then((raw) => parseCommunityPost(raw))
+}
+
+export function deleteCommunityPost(id: string): Promise<void> {
+	return postApi<any>(ApiEndpoints.communityPostDelete.replace('{id}', encodeURIComponent(id)), {}, true).then((_raw) => {
+		return
+	})
+}
+
+export function privateCommunityPost(id: string): Promise<CommunityPost> {
+	return postApi<any>(ApiEndpoints.communityPostPrivate.replace('{id}', encodeURIComponent(id)), {}, true).then((raw) => parseCommunityPost(raw))
+}
+
+export function submitCommunityPost(id: string): Promise<CommunityPost> {
+	return postApi<any>(ApiEndpoints.communityPostSubmit.replace('{id}', encodeURIComponent(id)), {}, true).then((raw) => parseCommunityPost(raw))
+}
+
+export function fetchMyCommunityPosts(tab: string): Promise<CommunityPost[]> {
+	const scope = tab.length > 0 ? tab : 'mine'
+	return getApi<any[]>(ApiEndpoints.communityPostsMine + '?tab=' + encodeURIComponent(scope), true).then((list) => {
+		const out: CommunityPost[] = []
+		if (list == null) return out
+		for (let i = 0; i < list.length; i++) out.push(parseCommunityPost(list[i]))
+		return out
+	})
+}
+
+export function postStatusLabel(status: string): string {
+	if (status === 'draft') return '草稿'
+	if (status === 'pending') return '待审核'
+	if (status === 'private') return '私密'
+	if (status === 'published') return '已发布'
+	return '文章'
+}
+
+export function postStatusColor(status: string): string {
+	if (status === 'draft') return '#374151'
+	if (status === 'pending') return '#C45C26'
+	if (status === 'private') return '#374151'
+	return '#1A73E8'
+}
+
+export function likeCommunityPost(id: string): Promise<CommunityLikeResult> {
+	return postApi<any>(ApiEndpoints.communityPostLike.replace('{id}', encodeURIComponent(id)), {}, true).then((raw) => {
+		const r: CommunityLikeResult = {
+			liked: asBool(raw != null ? raw['liked'] : false),
+			likeCount: asNumber(raw != null ? raw['likeCount'] : 0)
+		}
+		return r
+	})
+}
+
+export function addCommunityComment(id: string, content: string): Promise<CommunityComment[]> {
+	const body: any = { content: content }
+	return postApi<any[]>(ApiEndpoints.communityPostComments.replace('{id}', encodeURIComponent(id)), body, true).then((list) => {
+		const comments: CommunityComment[] = []
+		if (list == null) return comments
+		for (let i = 0; i < list.length; i++) {
+			const c = list[i]
+			comments.push({
+				id: asString(c != null ? c['id'] : ''),
+				content: asString(c != null ? c['content'] : ''),
+				authorName: asString(c != null ? c['authorName'] : '研学学员'),
+				authorAvatar: asString(c != null ? c['authorAvatar'] : ''),
+				time: asString(c != null ? c['time'] : '')
+			})
+		}
+		return comments
+	})
+}

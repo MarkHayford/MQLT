@@ -1,0 +1,123 @@
+import { API_BASE_URL, API_TIMEOUT, type ApiEnvelope, isApiSuccess } from './api-config.uts'
+import { StorageKeys } from './storage-keys.uts'
+
+export type ApiRequestOptions = {
+	method: string
+	url: string
+	data: any | null
+	requireAuth: boolean
+	timeoutMs: number
+}
+
+export function getAuthToken(): string {
+	const token = uni.getStorageSync(StorageKeys.authToken)
+	if (token == null) return ''
+	return token.toString()
+}
+
+export function buildApiUrl(path: string): string {
+	if (path.indexOf('http://') === 0 || path.indexOf('https://') === 0) return path
+	return API_BASE_URL + path
+}
+
+export function requestApi<T>(options: ApiRequestOptions): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const headers: any = {
+			'Content-Type': 'application/json'
+		}
+		if (options.requireAuth) {
+			const token = getAuthToken()
+			if (token.length > 0) {
+				headers['Authorization'] = 'Bearer ' + token
+			}
+		}
+
+		uni.request({
+			url: buildApiUrl(options.url),
+			method: options.method as any,
+			data: options.data,
+			header: headers,
+			timeout: options.timeoutMs > 0 ? options.timeoutMs : API_TIMEOUT,
+			success: (res) => {
+				const statusCode = res.statusCode
+				const body = res.data as ApiEnvelope<T>
+				if (!isApiSuccess(statusCode)) {
+					if (body != null && body.message != null && body.message.toString().length > 0) {
+						reject(new Error(body.message.toString()))
+					} else {
+						reject(new Error('HTTP ' + statusCode.toString()))
+					}
+					return
+				}
+				if (body != null && body.data != null) {
+					resolve(body.data)
+				} else {
+					resolve(res.data as T)
+				}
+			},
+			fail: (err) => {
+				const message = err != null && err.errMsg != null ? err.errMsg.toString() : 'uploadFile:fail'
+				reject(new Error(message))
+			}
+		})
+	})
+}
+
+export function getApi<T>(url: string, requireAuth: boolean = false): Promise<T> {
+	return requestApi<T>({ method: 'GET', url, data: null, requireAuth, timeoutMs: 0 })
+}
+
+export function postApi<T>(url: string, data: any, requireAuth: boolean = false): Promise<T> {
+	return requestApi<T>({ method: 'POST', url, data, requireAuth, timeoutMs: 0 })
+}
+
+export function putApi<T>(url: string, data: any, requireAuth: boolean = false): Promise<T> {
+	return requestApi<T>({ method: 'PUT', url, data, requireAuth, timeoutMs: 0 })
+}
+
+export function deleteApi<T>(url: string, requireAuth: boolean = false): Promise<T> {
+	return requestApi<T>({ method: 'DELETE', url, data: null, requireAuth, timeoutMs: 0 })
+}
+
+export function uploadFileApi<T>(url: string, filePath: string, name: string = 'file', requireAuth: boolean = false): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const headers: any = {}
+		if (requireAuth) {
+			const token = getAuthToken()
+			if (token.length > 0) {
+				headers['Authorization'] = 'Bearer ' + token
+			}
+		}
+		uni.uploadFile({
+			url: buildApiUrl(url),
+			filePath,
+			name,
+			header: headers,
+			success: (res) => {
+				const statusCode = res.statusCode
+				let body: any = null
+				try {
+					body = JSON.parse(res.data)
+				} catch (_err) {
+					body = null
+				}
+				if (!isApiSuccess(statusCode)) {
+					if (body != null && body.message != null && body.message.toString().length > 0) {
+						reject(new Error(body.message.toString()))
+					} else {
+						reject(new Error('HTTP ' + statusCode.toString()))
+					}
+					return
+				}
+				if (body != null && body.data != null) {
+					resolve(body.data as T)
+				} else {
+					resolve(body as T)
+				}
+			},
+			fail: (err) => {
+				reject(err)
+			}
+		})
+	})
+}

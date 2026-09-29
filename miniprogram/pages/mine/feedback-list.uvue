@@ -1,0 +1,370 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">我的反馈</text>
+		</view>
+
+		<view class="filter-bar uni-row">
+			<view
+				v-for="(f, i) in filters"
+				:key="i"
+				:class="currentFilter === f.value ? 'f-chip f-chip-on' : 'f-chip'"
+				@click="switchFilter(f.value)"
+			>
+				<text :class="currentFilter === f.value ? 'f-chip-text f-chip-text-on' : 'f-chip-text'">{{ f.label }}</text>
+			</view>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view v-for="(item, index) in filteredList" :key="item.id" class="card uni-column">
+				<view class="card-top uni-row">
+					<text class="type-text">{{ item.typeLabel }}</text>
+					<text :class="statusClass(item.status)">{{ getStatusLabel(item.status) }}</text>
+				</view>
+				<text class="content">{{ item.content }}</text>
+				<view v-if="item.reply.length > 0" class="reply uni-column">
+					<text class="reply-label">回复</text>
+					<text class="reply-text">{{ item.reply }}</text>
+				</view>
+				<view class="card-foot uni-row">
+					<text class="time">{{ item.createTime }}</text>
+					<text v-if="item.status === 'submitted'" class="withdraw" @click="handleDelete(index)">撤回</text>
+				</view>
+			</view>
+
+			<view v-if="filteredList.length === 0" class="empty uni-column">
+				<text class="empty-t">暂无反馈</text>
+				<view class="empty-btn" @click="goSubmit">
+					<text class="empty-btn-text">去反馈</text>
+				</view>
+			</view>
+			<view class="pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { deleteFeedback, fetchMyFeedback } from '../../utils/user-services.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+
+	type FeedbackRecord = {
+		id: string
+		type: string
+		typeLabel: string
+		content: string
+		tags: string[]
+		contactPhone: string
+		contactEmail: string
+		status: string
+		createTime: string
+		reply: string
+	}
+
+	type FilterItem = {
+		label: string
+		value: string
+	}
+
+	const filters = ref<FilterItem[]>([
+		{ label: '全部', value: 'all' },
+		{ label: '处理中', value: 'open' },
+		{ label: '已解决', value: 'resolved' }
+	])
+
+	const currentFilter = ref('all')
+	const allList = ref<FeedbackRecord[]>([])
+
+	const filteredList = computed((): FeedbackRecord[] => {
+		if (currentFilter.value === 'all') return allList.value
+		if (currentFilter.value === 'open') {
+			return allList.value.filter((item) => item.status === 'submitted' || item.status === 'processing')
+		}
+		return allList.value.filter((item) => item.status === currentFilter.value)
+	})
+
+	const switchFilter = (value: string) => {
+		currentFilter.value = value
+	}
+
+	const getStatusLabel = (status: string): string => {
+		if (status === 'submitted') return '已提交'
+		if (status === 'processing') return '处理中'
+		if (status === 'resolved') return '已解决'
+		if (status === 'withdrawn') return '已撤回'
+		return status
+	}
+
+	const statusClass = (status: string): string => {
+		if (status === 'resolved') return 'st st-ok'
+		if (status === 'withdrawn') return 'st st-mute'
+		return 'st'
+	}
+
+	const typeLabels: FilterItem[] = [
+		{ value: 'bug', label: '功能异常' },
+		{ value: 'experience', label: '体验建议' },
+		{ value: 'content', label: '内容问题' },
+		{ value: 'service', label: '客服服务' },
+		{ value: 'feature', label: '功能建议' },
+		{ value: 'other', label: '其他' }
+	]
+
+	const formatTime = (value: string): string => {
+		if (value == null || value.length === 0) return ''
+		const text = value.replace('T', ' ')
+		if (text.length >= 16) return text.substring(0, 16)
+		return text
+	}
+
+	const loadList = () => {
+		fetchMyFeedback<any>().then((list) => {
+			const mapped: FeedbackRecord[] = []
+			for (let i = 0; i < list.length; i++) {
+				const item = list[i]
+				const type = item['type'] as string
+				let typeLabel = type
+				for (let j = 0; j < typeLabels.length; j++) {
+					if (typeLabels[j].value === type) {
+						typeLabel = typeLabels[j].label
+						break
+					}
+				}
+				mapped.push({
+					id: item['id'] as string,
+					type: type,
+					typeLabel: typeLabel,
+					content: item['content'] as string,
+					tags: item['tags'] as string[],
+					contactPhone: item['contactPhone'] != null ? (item['contactPhone'] as string) : '',
+					contactEmail: item['contactEmail'] != null ? (item['contactEmail'] as string) : '',
+					status: item['status'] as string,
+					createTime: formatTime(item['createdAt'].toString()),
+					reply: item['reply'] != null ? (item['reply'] as string) : ''
+				})
+			}
+			allList.value = mapped
+		}).catch((_err) => {
+			allList.value = []
+			uni.showToast({ title: '加载失败', icon: 'none' })
+		})
+	}
+
+	const handleDelete = (index: number) => {
+		const item = filteredList.value[index]
+		if (item == null) return
+		uni.showModal({
+			title: '撤回反馈',
+			content: '确定撤回这条反馈？',
+			confirmText: '撤回',
+			confirmColor: '#DC2626',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) {
+					deleteFeedback(item.id).then((_res) => {
+						loadList()
+						uni.showToast({ title: '已撤回', icon: 'success' })
+					}).catch((_err) => {
+						uni.showToast({ title: '撤回失败', icon: 'none' })
+					})
+				}
+			}
+		})
+	}
+
+	const goSubmit = () => {
+		uni.redirectTo({ url: '/pages/mine/feedback' })
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	onShow(() => {
+		loadList()
+	})
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 48px;
+		padding: 0 16px;
+		flex-direction: row;
+		align-items: center;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.filter-bar {
+		margin: 0 16px 12px 16px;
+		height: 36px;
+		padding: 3px;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		align-items: center;
+	}
+	.f-chip {
+		flex: 1;
+		height: 30px;
+		border-radius: 9px;
+		background-color: transparent;
+		align-items: center;
+		justify-content: center;
+		border-width: 0;
+	}
+	.f-chip-on {
+		background-color: #1A73E8;
+		border-width: 0;
+	}
+	.f-chip-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.f-chip-text-on{
+		color: #FFFFFF;
+	}
+	.body {
+		flex: 1;
+		padding: 0 16px;
+	}
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 14px 16px;
+		margin-bottom: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.card-top {
+		align-items: center;
+		margin-bottom: 8px;
+	}
+	.type-text {
+		flex: 1;
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.st {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1A73E8;
+	}
+	.st-ok {
+		color: #1A1A1A;
+	}
+	.st-mute {
+		color: #374151;
+	}
+	.content {
+		font-size: 14px;
+		color: #374151;
+		line-height: 22px;
+	}
+	.reply {
+		margin-top: 10px;
+		padding: 10px 12px;
+		background-color: #FFFFFF;
+		border-radius: 10px;
+	}
+	.reply-label {
+		font-size: 12px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+	}
+	.reply-text {
+		font-size: 13px;
+		color: #374151;
+		line-height: 20px;
+	}
+	.card-foot {
+		margin-top: 10px;
+		align-items: center;
+	}
+	.time {
+		flex: 1;
+		font-size: 12px;
+		color: #374151;
+	}
+	.withdraw {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1A73E8;
+	}
+	.empty {
+		padding: 64px 16px;
+		align-items: center;
+	}
+	.empty-t {
+		font-size: 15px;
+		color: #374151;
+		margin-bottom: 16px;
+	}
+	.empty-btn {
+		height: 40px;
+		padding: 0 22px;
+		border-radius: 20px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.empty-btn-text{
+		font-size: 14px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.pad {
+		height: 24px;
+	}
+</style>

@@ -1,0 +1,179 @@
+import { ApiEndpoints, puzzlePieceEndpoint, puzzleProjectBackpackEndpoint } from './api-endpoints.uts'
+import { getApi } from './api-client.uts'
+
+export type PuzzlePiece = {
+	id: string
+	name: string
+	icon: string
+	collected: boolean
+}
+
+export type StudyCertificate = {
+	id: string
+	certificateNo: string
+	holderName: string
+	projectTitle: string
+	summary: string
+	issuedAt: string
+	issuedDate: string
+	bodyHtml: string
+	bgUrl: string
+	sealUrl: string
+	templateId: string
+}
+
+/** 导览 explore-session 拼图块（源图矩形切分） */
+export type TourPuzzlePiece = {
+	id: string
+	routePointId: string
+	title: string
+	collected: boolean
+	imageUrl: string
+	rect: TourPuzzleRect | null
+}
+
+export type TourPuzzleRect = {
+	col: number
+	row: number
+	cols: number
+	rows: number
+	xPct: number
+	yPct: number
+	wPct: number
+	hPct: number
+}
+
+export type TourPointsSummary = {
+	totalPoints: number
+	spentPoints: number
+	availablePoints: number
+	stationPoints: number
+}
+
+export type TourMallGate = {
+	enabled: boolean
+	title: string
+	hint: string
+	windowOpen: boolean
+	graduated: boolean
+	mallRedeemUnlocked: boolean
+	canEnter: boolean
+	canRedeem: boolean
+	totalPoints: number
+	spentPoints: number
+	availablePoints: number
+	skuCount: number
+	message: string
+}
+
+export type ProjectPuzzle = {
+	id: string
+	title: string
+	subtitle: string
+	status: string
+	gradientStart: string
+	gradientEnd: string
+	gridCols: number
+	gridRows: number
+	certificate: StudyCertificate | null
+	pieces: PuzzlePiece[]
+}
+
+export type StudyBackpackPiece = {
+	id: string
+	name: string
+	icon: string
+	collected: boolean
+	collectedAt: string | null
+	routePointId: string
+	routePointTitle: string
+}
+
+export type StudyBackpackPrize = {
+	id: string
+	productId: string
+	name: string
+	desc: string
+	icon: string
+	imageUrl: string
+	quantity: number
+	acquired: boolean
+	acquiredText: string
+	grantedAt: string
+	grantedByName: string
+}
+
+export type StudyProjectBackpack = {
+	projectId: string
+	projectTitle: string
+	subtitle: string
+	gradientStart: string
+	gradientEnd: string
+	gridCols: number
+	gridRows: number
+	collectedCount: number
+	totalCount: number
+	completed: boolean
+	certificate: StudyCertificate | null
+	pieces: StudyBackpackPiece[]
+	prizes: StudyBackpackPrize[]
+}
+
+export type ProjectAchievement = {
+	projectId: string
+	projectTitle: string
+	gradientStart: string
+	gradientEnd: string
+	badgeIcon: string
+	completedDate: string
+	certificateNo: string
+	holderName: string
+	issuedAt: string
+	summary: string
+	highlights: string[]
+	rewards: string[]
+}
+
+export type PuzzlePieceDetail = {
+	projectId: string
+	pieceId: string
+	projectTitle: string
+	pieceName: string
+	icon: string
+	gradientStart: string
+	gradientEnd: string
+	collected: boolean
+	collectedTime: string
+	checkLocation: string
+	intro: string[]
+	unlockTip: string
+	rewardTip: string
+}
+
+export function getProjectCollected(project: ProjectPuzzle): number {
+	let count = 0
+	for (let i = 0; i < project.pieces.length; i++) {
+		if (project.pieces[i].collected) count++
+	}
+	return count
+}
+
+export function getGridLabel(project: ProjectPuzzle): string {
+	return project.gridCols + '×' + project.gridRows
+}
+
+export function fetchProjectPuzzles(): Promise<ProjectPuzzle[]> {
+	return getApi<ProjectPuzzle[]>(ApiEndpoints.puzzleProjects, true)
+}
+
+export function fetchStudyProjectBackpack(projectId: string): Promise<StudyProjectBackpack | null> {
+	return getApi<StudyProjectBackpack>(puzzleProjectBackpackEndpoint(projectId), true)
+}
+
+export function fetchPuzzlePieceDetail(projectId: string, pieceId: string): Promise<PuzzlePieceDetail | null> {
+	return getApi<PuzzlePieceDetail>(puzzlePieceEndpoint(projectId, pieceId), true)
+}
+
+export function fetchPuzzleAchievements(): Promise<ProjectAchievement[]> {
+	return getApi<ProjectAchievement[]>(ApiEndpoints.puzzleAchievements, true)
+}

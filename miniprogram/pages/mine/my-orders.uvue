@@ -1,0 +1,1095 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">我的订单</text>
+		</view>
+
+		<view class="tabs uni-row">
+			<view
+				v-for="tab in tabs"
+				:key="tab.key"
+				:class="['tab', currentTab === tab.key ? 'tab-on' : '']"
+				@click="switchTab(tab.key)"
+			>
+				<text :class="['tab-text', currentTab === tab.key ? 'tab-text-on' : '']">{{ tab.label }}</text>
+			</view>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view v-for="item in visibleItems" :key="item.uid" class="card uni-column" @click="openItem(item)">
+				<view class="card-top uni-row">
+					<view :class="item.kind === 'study' ? 'kind kind-study' : (item.kind === 'rental' ? 'kind kind-rental' : 'kind kind-mall')">
+						<text :class="item.kind === 'study' ? 'kind-text kind-text-study' : (item.kind === 'rental' ? 'kind-text kind-text-rental' : 'kind-text kind-text-mall')">{{ item.kind === 'study' ? '研学' : (item.kind === 'rental' ? '租车' : '商城') }}</text>
+					</view>
+					<text class="time">{{ item.timeText }}</text>
+					<view :class="statusChipClass(item.bucket)">
+						<text :class="statusChipTextClass(item.bucket)">{{ item.statusLabel }}</text>
+					</view>
+				</view>
+
+				<view class="card-body uni-row">
+					<image
+						v-if="item.imageUrl.length > 0"
+						:src="item.imageUrl"
+						class="cover"
+						mode="aspectFill"
+					></image>
+					<view v-else class="cover cover-fallback" :style="item.coverStyle">
+						<text class="cover-fallback-text">{{ item.kind === 'study' ? '研' : (item.kind === 'rental' ? '租' : '购') }}</text>
+					</view>
+					<view class="info uni-column">
+						<text class="title">{{ item.title }}</text>
+						<text class="sub">{{ item.subtitle }}</text>
+						<text class="price">{{ item.priceText }}</text>
+					</view>
+				</view>
+
+				<view class="actions uni-row" v-if="item.showPay || item.showCancel || item.showDetail || item.showTour || item.showComplete || item.showDelete || item.showReview || item.showInvoice">
+					<view v-if="item.showDelete" class="btn btn-ghost" @click.stop="handleDelete(item)">
+						<text class="btn-text btn-text-danger">删除</text>
+					</view>
+					<view v-if="item.showCancel" class="btn btn-ghost" @click.stop="handleCancel(item)">
+						<text class="btn-text">取消</text>
+					</view>
+					<view v-if="item.showInvoice" class="btn btn-ghost" @click.stop="goInvoice(item)">
+						<text class="btn-text">开发票</text>
+					</view>
+					<view v-if="item.showDetail" class="btn btn-ghost" @click.stop="openDetail(item)">
+						<text class="btn-text">详情</text>
+					</view>
+					<view v-if="item.showReview" class="btn btn-ghost" @click.stop="handleReview(item)">
+						<text class="btn-text">评价</text>
+					</view>
+					<view v-if="item.showComplete" class="btn btn-main" @click.stop="handleCompleteMall(item)">
+						<text class="btn-text btn-text-main">确认收货</text>
+					</view>
+					<view v-if="item.showTour" class="btn btn-main" @click.stop="openTour(item)">
+						<text class="btn-text btn-text-main">研学</text>
+					</view>
+					<view v-if="item.showPay" class="btn btn-main" @click.stop="handlePay(item)">
+						<text class="btn-text btn-text-main">去支付</text>
+					</view>
+				</view>
+			</view>
+
+			<view v-if="visibleItems.length === 0" class="empty uni-column">
+				<text class="empty-t">暂无订单</text>
+				<text class="empty-d">研学、租车与商城订单都会显示在这里</text>
+			</view>
+			<view class="pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { goMineTab } from '../../utils/app-nav.uts'
+	import { resolveMallProductImageUrl } from './utils/mall-product-image.uts'
+	import { checkStudyProjectInProgress, isStudyBookingPendingStatus, isStudyBookingUnpaidStatus, syncStudyBookingsFromApi } from '../../utils/study-booking.uts'
+	import { cancelStudyBooking, deleteStudyBooking, fetchStudyBookings, payStudyBooking, type StudyBookingRecord } from '../../utils/study-projects.uts'
+	import { cancelMallOrder, completeMallOrder, deleteMallOrder, fetchMallOrders } from '../../utils/user-services.uts'
+	import { getApi, postApi } from '../../utils/api-client.uts'
+	import { ApiEndpoints, endpointWithId } from '../../utils/api-endpoints.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+
+	type OrderTab = {
+		key: string
+		label: string
+	}
+
+	/** 统一列表项：研学预约 + 商城订单 */
+	type UnifiedOrder = {
+		uid: string
+		kind: string
+		rawId: string
+		projectId: string
+		orderNo: string
+		title: string
+		subtitle: string
+		priceText: string
+		timeText: string
+		imageUrl: string
+		coverStyle: string
+		/** unpaid | active | completed | cancelled */
+		bucket: string
+		statusLabel: string
+		isBooker: boolean
+		showPay: boolean
+		showCancel: boolean
+		showDetail: boolean
+		showTour: boolean
+		showComplete: boolean
+		showDelete: boolean
+		showReview: boolean
+		showInvoice: boolean
+		productId: string
+		mallRemark: string
+	}
+
+	const tabs: OrderTab[] = [
+		{ key: 'all', label: '全部' },
+		{ key: 'unpaid', label: '待支付' },
+		{ key: 'active', label: '进行中' },
+		{ key: 'completed', label: '已完成' },
+		{ key: 'cancelled', label: '已取消' }
+	]
+
+	const currentTab = ref('all')
+	const items = ref<UnifiedOrder[]>([])
+	let loading = false
+
+	const visibleItems = computed((): UnifiedOrder[] => {
+		const key = currentTab.value
+		if (key === 'all') return items.value
+		const out: UnifiedOrder[] = []
+		const list = items.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].bucket === key) out.push(list[i])
+		}
+		return out
+	})
+
+	const statusChipClass = (bucket: string): string => {
+		if (bucket === 'unpaid') return 'st-chip st-unpaid'
+		if (bucket === 'active') return 'st-chip st-active'
+		if (bucket === 'completed') return 'st-chip st-done'
+		return 'st-chip st-mute'
+	}
+
+	const statusChipTextClass = (bucket: string): string => {
+		if (bucket === 'unpaid') return 'st-chip-text st-chip-text-unpaid'
+		if (bucket === 'active') return 'st-chip-text st-chip-text-active'
+		if (bucket === 'completed') return 'st-chip-text st-chip-text-done'
+		return 'st-chip-text st-chip-text-mute'
+	}
+
+	const goBack = () => {
+		uni.navigateBack({
+			fail: () => {
+				goMineTab()
+			}
+		})
+	}
+
+	const formatTime = (value: string): string => {
+		if (value == null || value.length === 0) return ''
+		const text = value.replace('T', ' ')
+		if (text.length >= 16) return text.substring(0, 16)
+		return text
+	}
+
+	const formatDayKey = (key: string): string => {
+		const parts = key.split('-')
+		if (parts.length < 3) return key
+		const mo = parseInt(parts[1])
+		const d = parseInt(parts[2])
+		return mo.toString() + '月' + d.toString() + '日'
+	}
+
+	const formatTripDates = (tripPlan: any): string => {
+		if (tripPlan == null) return ''
+		const keys: string[] = []
+		const rawKeys = tripPlan['dayKeys']
+		if (rawKeys != null) {
+			const arr = rawKeys as string[]
+			for (let i = 0; i < arr.length; i++) {
+				const k = arr[i] != null ? arr[i].toString() : ''
+				if (k.length >= 8 && k.indexOf('-') >= 0) keys.push(k)
+			}
+		}
+		if (keys.length === 0) {
+			const days = tripPlan['days']
+			if (days != null) {
+				const arr = days as any[]
+				for (let j = 0; j < arr.length; j++) {
+					const k = arr[j] != null && arr[j]['dayKey'] != null ? arr[j]['dayKey'].toString() : ''
+					if (k.length >= 8 && k.indexOf('-') >= 0) keys.push(k)
+				}
+			}
+		}
+		if (keys.length === 0) return ''
+		keys.sort()
+		if (keys.length === 1) return formatDayKey(keys[0])
+		if (keys.length === 2) return formatDayKey(keys[0]) + '、' + formatDayKey(keys[1])
+		return formatDayKey(keys[0]) + ' 等' + keys.length.toString() + '天'
+	}
+
+	const textValue = (value: any): string => {
+		if (value == null) return ''
+		return value.toString()
+	}
+
+	const firstMediaUrl = (mediaColors: string[]): string => {
+		if (mediaColors == null || mediaColors.length === 0) return ''
+		const raw = mediaColors[0]
+		if (raw == null) return ''
+		const s = raw.toString()
+		if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) return s
+		// background css form — leave empty, use gradient fallback
+		if (s.indexOf('linear-gradient') >= 0 || s.indexOf('url(') >= 0) return ''
+		return s
+	}
+
+
+	/** 入场核销后：不可取消，列表只留详情+研学 */
+	const isStudyEntranceCheckedIn = (booking: StudyBookingRecord): boolean => {
+		if (booking.entranceCheckedIn === true) return true
+		if (booking.checkedInAt != null && String(booking.checkedInAt).length > 0) return true
+		const plan = booking.tripPlan
+		if (plan != null && plan.tour != null) {
+			const tour = plan.tour
+			const ts = tour.status != null ? String(tour.status) : ''
+			if (ts === 'entered' || ts === 'touring' || ts === 'paused') return true
+		}
+		return false
+	}
+
+	
+	function chinaDateKeyNow(): string {
+		const now = new Date()
+		const utc = now.getTime() + now.getTimezoneOffset() * 60000
+		const china = new Date(utc + 8 * 3600000)
+		const y = china.getFullYear()
+		const m = china.getMonth() + 1
+		const d = china.getDate()
+		const ms = m < 10 ? '0' + m.toString() : m.toString()
+		const ds = d < 10 ? '0' + d.toString() : d.toString()
+		return y.toString() + '-' + ms + '-' + ds
+	}
+
+	function bookingTripDayKeys(booking: StudyBookingRecord): string[] {
+		const keys: string[] = []
+		const plan = booking.tripPlan
+		if (plan != null && plan.dayKeys != null) {
+			const arr = plan.dayKeys as any[]
+			for (let i = 0; i < arr.length; i++) {
+				const k = arr[i] != null ? String(arr[i]) : ''
+				if (k.length >= 8 && keys.indexOf(k) < 0) keys.push(k)
+			}
+		}
+		if (plan != null && plan.days != null) {
+			const days = plan.days as any[]
+			for (let j = 0; j < days.length; j++) {
+				const k = days[j] != null && days[j]['dayKey'] != null ? String(days[j]['dayKey']) : ''
+				if (k.length >= 8 && keys.indexOf(k) < 0) keys.push(k)
+			}
+		}
+		keys.sort()
+		return keys
+	}
+
+	function isBookingTourOpenToday(booking: StudyBookingRecord): boolean {
+		const tour = booking.tripPlan != null ? booking.tripPlan.tour : null
+		if (tour != null && tour.earlyExit === true) return false
+		if (tour != null && String(tour.status) === 'early_exit') return false
+		const st = booking.status.trim().toLowerCase()
+		if (st === 'completed' || st === 'cancelled' || st === 'canceled') return false
+		const today = chinaDateKeyNow()
+		const keys = bookingTripDayKeys(booking)
+		if (keys.length === 0) return true
+		return keys.indexOf(today) >= 0
+	}
+
+const mapStudy = (booking: StudyBookingRecord): UnifiedOrder => {
+		const p = booking.project
+		const st = booking.status.trim().toLowerCase()
+		const inProgress = checkStudyProjectInProgress(p.status)
+		const media = firstMediaUrl(p.mediaColors)
+		const coverStyle = 'background-image: linear-gradient(135deg, ' + p.gradientStart + ' 0%, ' + p.gradientEnd + ' 100%);'
+		const orderNo = booking.bookingGroupId != null && booking.bookingGroupId.length > 0 ? booking.bookingGroupId : booking.id
+		const people = booking.participantCount > 0 ? booking.participantCount : 1
+
+		let bucket = 'active'
+		let statusLabel = '待出行'
+		let showPay = false
+		let showCancel = false
+		let showDetail = true
+		let showDelete = false
+
+		if (isStudyBookingPendingStatus(st) || isStudyBookingUnpaidStatus(st)) {
+			bucket = 'unpaid'
+			statusLabel = '待支付'
+			showPay = booking.isBooker
+			showCancel = booking.isBooker
+			showDetail = true
+		} else if (st === 'cancelled' || st === 'canceled') {
+			bucket = 'cancelled'
+			statusLabel = '已取消'
+			showDelete = true
+			showDetail = true
+		} else if (st === 'completed') {
+			bucket = 'completed'
+			statusLabel = '已完成'
+			showDelete = true
+			showDetail = true
+		} else if (inProgress) {
+			bucket = 'active'
+			statusLabel = '研学中'
+			showDetail = true
+			showCancel = false
+		} else {
+			bucket = 'active'
+			statusLabel = '待出行'
+			showCancel = booking.isBooker
+			showDetail = true
+		}
+
+		let showTour = false
+		const checkedIn = isStudyEntranceCheckedIn(booking)
+		if (checkedIn && bucket === 'active' && isBookingTourOpenToday(booking)) {
+			showCancel = false
+			showTour = true
+			if (statusLabel === '待出行') statusLabel = '已核销'
+		}
+		// 已完成：列表仅「详情」，结算在订单详情页展示，不再进导览
+
+		const subtitleParts: string[] = []
+		const tripDates = formatTripDates(booking.tripPlan)
+		if (tripDates.length > 0) subtitleParts.push(tripDates)
+		subtitleParts.push(people.toString() + ' 人')
+		if (p.location != null && p.location.length > 0) subtitleParts.push(p.location)
+
+		return {
+			uid: 'study-' + booking.id,
+			kind: 'study',
+			rawId: booking.id,
+			projectId: p.id,
+			orderNo: orderNo.length > 12 ? orderNo.substring(0, 12) + '…' : orderNo,
+			title: p.title,
+			subtitle: subtitleParts.join(' · '),
+			priceText: '¥' + booking.amount,
+			timeText: formatTime(booking.createdAt != null ? booking.createdAt.toString() : ''),
+			imageUrl: media,
+			coverStyle: coverStyle,
+			bucket: bucket,
+			statusLabel: statusLabel,
+			isBooker: booking.isBooker,
+			showPay: showPay,
+			showCancel: showCancel,
+			showDetail: showDetail,
+			showTour: showTour,
+			showComplete: false,
+			showDelete: showDelete,
+			showReview: false,
+			showInvoice: bucket === 'active' || bucket === 'completed',
+			productId: '',
+			mallRemark: ''
+		}
+	}
+
+	const mapMall = (raw: any): UnifiedOrder => {
+		const orderItems = raw['items'] as any[]
+		let title = '商城订单'
+		let imageUrl = ''
+		let productId = ''
+		if (orderItems != null && orderItems.length > 0) {
+			const first = orderItems[0]
+			const product = first['product'] as any
+			if (product != null) {
+				title = product['name'] as string
+				if (orderItems.length > 1) title = title + ' 等' + orderItems.length.toString() + '件'
+				if (product['imageUrl'] != null) imageUrl = resolveMallProductImageUrl(product['imageUrl'])
+				productId = textValue(product['id'])
+			}
+		}
+		const status = textValue(raw['status']).trim().toLowerCase()
+		const id = textValue(raw['id'])
+		const orderNo = raw['orderNo'] != null ? textValue(raw['orderNo']) : id
+		const remark = textValue(raw['remark'])
+
+		let bucket = 'active'
+		let statusLabel = '处理中'
+		let showPay = false
+		let showCancel = false
+		let showComplete = false
+		let showDelete = false
+		let showReview = false
+
+		if (status === 'unpaid') {
+			bucket = 'unpaid'
+			statusLabel = '待支付'
+			showPay = true
+			showCancel = remark.indexOf('研学奖品发放：') !== 0
+		} else if (status === 'cancelled' || status === 'canceled') {
+			bucket = 'cancelled'
+			statusLabel = '已取消'
+			showDelete = true
+		} else if (status === 'completed') {
+			bucket = 'completed'
+			statusLabel = '已完成'
+			showDelete = true
+			showReview = productId.length > 0
+		} else if (status === 'paid') {
+			bucket = 'active'
+			statusLabel = '待发货'
+		} else if (status === 'unreceived') {
+			bucket = 'active'
+			statusLabel = '待收货'
+			showComplete = true
+		} else if (status === 'unused') {
+			bucket = 'active'
+			statusLabel = '待使用'
+		} else if (status === 'refunded') {
+			bucket = 'cancelled'
+			statusLabel = '已退款'
+			showDelete = true
+		} else {
+			bucket = 'active'
+			statusLabel = '进行中'
+		}
+
+		return {
+			uid: 'mall-' + id,
+			kind: 'mall',
+			rawId: id,
+			projectId: '',
+			orderNo: orderNo,
+			title: title,
+			subtitle: '文创商城',
+			priceText: '¥' + textValue(raw['amount']),
+			timeText: formatTime(textValue(raw['createdAt'])),
+			imageUrl: imageUrl,
+			coverStyle: 'background-color:#E2E8F0;',
+			bucket: bucket,
+			statusLabel: statusLabel,
+			isBooker: true,
+			showPay: showPay,
+			showCancel: showCancel,
+			showDetail: true,
+			showTour: false,
+			showComplete: showComplete,
+			showDelete: showDelete,
+			showReview: showReview,
+			showInvoice: bucket === 'active' || bucket === 'completed',
+			productId: productId,
+			mallRemark: remark
+		}
+	}
+
+
+	const mapRental = (raw: any): UnifiedOrder => {
+		const id = raw != null && raw.id != null ? raw.id.toString() : ''
+		const status = raw != null && raw.status != null ? raw.status.toString().toUpperCase() : ''
+		let bucket = 'active'
+		let statusLabel = raw != null && raw.statusLabel != null ? raw.statusLabel.toString() : status
+		let showPay = false
+		let showCancel = false
+		let showDelete = false
+		if (status === 'PRICE_CONFIRMED') {
+			bucket = 'unpaid'
+			statusLabel = '待支付'
+			showPay = true
+			showCancel = true
+		} else if (status === 'OPEN' || status === 'NEGOTIATING' || status === 'PAID' || status === 'EN_ROUTE' || status === 'ARRIVED' || status === 'IN_TRIP') {
+			bucket = 'active'
+			showCancel = (status === 'OPEN' || status === 'NEGOTIATING')
+		} else if (status === 'COMPLETED') {
+			bucket = 'completed'
+			showDelete = true
+		} else if (status === 'CANCELLED') {
+			bucket = 'cancelled'
+			showDelete = true
+		}
+		const priceText = raw != null && raw.agreedPriceText != null && raw.agreedPriceText.toString().length > 0
+			? raw.agreedPriceText.toString()
+			: (raw != null && raw.offeredPriceText != null ? raw.offeredPriceText.toString() : '')
+		const title = raw != null && raw.projectTitle != null && raw.projectTitle.toString().length > 0
+			? raw.projectTitle.toString()
+			: '租车订单'
+		const travel = raw != null && raw.travelDateText != null ? raw.travelDateText.toString() : ''
+		const pickup = raw != null && raw.pickupAddress != null ? raw.pickupAddress.toString() : ''
+		const subtitle = (travel.length > 0 ? travel : '') + (pickup.length > 0 ? (' · ' + pickup) : '')
+		const timeText = raw != null && raw.timeText != null ? raw.timeText.toString() : formatTime(raw != null && raw.createdAt != null ? raw.createdAt.toString() : '')
+		return {
+			uid: 'rental-' + id,
+			kind: 'rental',
+			rawId: id,
+			projectId: raw != null && raw.projectId != null ? raw.projectId.toString() : '',
+			orderNo: raw != null && raw.orderNo != null ? raw.orderNo.toString() : '',
+			title: title,
+			subtitle: subtitle,
+			priceText: priceText.length > 0 ? priceText : '议价中',
+			timeText: timeText,
+			imageUrl: '',
+			coverStyle: 'background-color:#1A73E8',
+			bucket: bucket,
+			statusLabel: statusLabel,
+			isBooker: true,
+			showPay: showPay,
+			showCancel: showCancel,
+			showDetail: true,
+			showTour: false,
+			showComplete: false,
+			showDelete: showDelete,
+			showReview: false,
+			showInvoice: bucket === 'active' || bucket === 'completed',
+			productId: '',
+			mallRemark: ''
+		}
+	}
+
+	const sortUnified = (list: UnifiedOrder[]): UnifiedOrder[] => {
+		// unpaid first, then active, completed, cancelled; within group by time desc (already roughly)
+		const rank = (b: string): number => {
+			if (b === 'unpaid') return 0
+			if (b === 'active') return 1
+			if (b === 'completed') return 2
+			return 3
+		}
+		const copy: UnifiedOrder[] = []
+		for (let i = 0; i < list.length; i++) copy.push(list[i])
+		copy.sort((a, b) => {
+			const ra = rank(a.bucket)
+			const rb = rank(b.bucket)
+			if (ra !== rb) return ra - rb
+			return 0
+		})
+		return copy
+	}
+
+	const loadAll = () => {
+		if (loading) return
+		loading = true
+		const next: UnifiedOrder[] = []
+		let pending = 3
+		const done = () => {
+			pending--
+			if (pending > 0) return
+			loading = false
+			items.value = sortUnified(next)
+		}
+
+		fetchStudyBookings().then((list) => {
+			for (let i = 0; i < list.length; i++) next.push(mapStudy(list[i]))
+			syncStudyBookingsFromApi().catch((_e) => {})
+			done()
+		}).catch((_err) => {
+			done()
+		})
+
+		fetchMallOrders<any>('all').then((list) => {
+			for (let i = 0; i < list.length; i++) next.push(mapMall(list[i]))
+			done()
+		}).catch((_err) => {
+			done()
+		})
+
+		getApi<any>(ApiEndpoints.studyRentalOrders, true).then((data) => {
+			const list = data != null && data.items != null ? data.items as any[] : []
+			for (let i = 0; i < list.length; i++) {
+				const st = list[i] != null && list[i].status != null ? list[i].status.toString().toUpperCase() : ''
+				// 我的订单：待支付/已支付/履约/取消；派单中与协商中也可看
+				next.push(mapRental(list[i]))
+			}
+			done()
+		}).catch((_err) => {
+			done()
+		})
+	}
+
+	const switchTab = (key: string) => {
+		currentTab.value = key
+	}
+
+
+	function goInvoice(item: UnifiedOrder) {
+		let source = 'MALL_ORDER'
+		if (item.kind === 'study') source = 'STUDY_BOOKING'
+		else if (item.kind === 'rental') source = 'RENTAL_ORDER'
+		uni.navigateTo({ url: '/pages/mine/invoice-apply?preselect=' + encodeURIComponent(source + ':' + item.rawId) })
+	}
+
+	const openDetail = (item: UnifiedOrder) => {
+		if (item.kind === 'study') {
+			uni.navigateTo({ url: '/pages/appointment/booking-detail?id=' + item.rawId })
+			return
+		}
+		if (item.kind === 'rental') {
+			if (item.bucket === 'unpaid' || item.statusLabel === '协商中' || item.statusLabel === '待支付' || item.statusLabel === '已支付') {
+				uni.navigateTo({ url: '/pages/appointment/rental-negotiate?id=' + item.rawId + '&role=user' })
+			} else {
+				uni.navigateTo({ url: '/pages/appointment/rental-detail?id=' + item.rawId })
+			}
+			return
+		}
+		uni.navigateTo({ url: '/pages/mine/order-detail?id=' + encodeURIComponent(item.rawId) })
+	}
+
+	const openTour = (item: UnifiedOrder) => {
+		if (item.kind !== 'study') {
+			openDetail(item)
+			return
+		}
+		// 已完成 / 结算态：进订单详情，禁止重进导览
+		if (item.bucket === 'completed') {
+			openDetail(item)
+			return
+		}
+		const pid = item.projectId != null ? item.projectId : ''
+		uni.navigateTo({
+			url: '/pages/appointment/tour-live?projectId=' + encodeURIComponent(pid) + '&bookingId=' + encodeURIComponent(item.rawId)
+		})
+	}
+
+	const openItem = (item: UnifiedOrder) => {
+		openDetail(item)
+	}
+
+	const handleReview = (item: UnifiedOrder) => {
+		if (item.productId.length === 0) {
+			openDetail(item)
+			return
+		}
+		uni.navigateTo({ url: '/pages/products/product-detail?id=' + encodeURIComponent(item.productId) + '&review=1' })
+	}
+
+	const handlePay = (item: UnifiedOrder) => {
+		if (item.kind === 'study') {
+			if (!item.isBooker) {
+				uni.showToast({ title: '请联系预约发起人完成支付', icon: 'none' })
+				return
+			}
+			uni.showModal({
+				title: '确认支付',
+				content: '当前为模拟支付，确认后完成研学预约并占用名额。',
+				confirmText: '确认支付',
+				success: (res) => {
+					if (!res.confirm) return
+					payStudyBooking(item.rawId).then((_b) => {
+						uni.showToast({ title: '支付成功', icon: 'success' })
+						switchTab('active')
+						loadAll()
+					}).catch((err) => {
+						const msg = err != null && err.message != null ? err.message.toString() : '支付失败'
+						uni.showToast({ title: msg, icon: 'none' })
+					})
+				}
+			})
+			return
+		}
+		if (item.kind === 'rental') {
+			uni.showModal({
+				title: '确认支付',
+				content: '当前为模拟支付，确认后租车订单变为已支付。',
+				confirmText: '确认支付',
+				success: (res) => {
+					if (!res.confirm) return
+					const url = endpointWithId(ApiEndpoints.studyRentalOrderPay, item.rawId)
+					postApi<any>(url, {}, true).then((_b) => {
+						uni.showToast({ title: '支付成功', icon: 'success' })
+						switchTab('active')
+						loadAll()
+					}).catch((err) => {
+						const msg = err != null && err.message != null ? err.message.toString() : '支付失败'
+						uni.showToast({ title: msg, icon: 'none' })
+					})
+				}
+			})
+			return
+		}
+		// mall unpaid → detail to pay
+		uni.navigateTo({ url: '/pages/mine/order-detail?id=' + encodeURIComponent(item.rawId) })
+	}
+
+	const handleCancel = (item: UnifiedOrder) => {
+		if (item.kind === 'study') {
+			uni.showModal({
+				title: '取消订单',
+				content: '取消后整组研学订单将同步取消，是否继续？',
+				confirmText: '确认取消',
+				success: (res) => {
+					if (!res.confirm) return
+					cancelStudyBooking(item.rawId).then((_b) => {
+						uni.showToast({ title: '已取消', icon: 'success' })
+						switchTab('cancelled')
+						loadAll()
+					}).catch((err) => {
+						const msg = err != null && err.message != null ? err.message.toString() : '取消失败'
+						uni.showToast({ title: msg, icon: 'none' })
+					})
+				}
+			})
+			return
+		}
+		if (item.kind === 'rental') {
+			uni.showModal({
+				title: '取消租车单',
+				content: '取消后不可恢复，是否继续？',
+				confirmText: '确认取消',
+				success: (res) => {
+					if (!res.confirm) return
+					const url = endpointWithId(ApiEndpoints.studyRentalOrderCancel, item.rawId)
+					postApi<any>(url, { reason: '用户取消' }, true).then((_b) => {
+						uni.showToast({ title: '已取消', icon: 'success' })
+						switchTab('cancelled')
+						loadAll()
+					}).catch((err) => {
+						const msg = err != null && err.message != null ? err.message.toString() : '取消失败'
+						uni.showToast({ title: msg, icon: 'none' })
+					})
+				}
+			})
+			return
+		}
+		uni.showModal({
+			title: '取消订单',
+			content: '取消后卡券将退回账户（如已使用），是否继续？',
+			confirmText: '取消订单',
+			confirmColor: '#1A73E8',
+			success: (res) => {
+				if (!res.confirm) return
+				cancelMallOrder<any>(item.rawId).then((_r) => {
+					uni.showToast({ title: '订单已取消', icon: 'success' })
+					switchTab('cancelled')
+					loadAll()
+				}).catch((err) => {
+					const msg = err != null && err.message != null ? err.message.toString() : '取消失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const handleCompleteMall = (item: UnifiedOrder) => {
+		uni.showModal({
+			title: '确认收货',
+			content: '确认已收到该订单商品吗？',
+			confirmText: '确认收货',
+			success: (res) => {
+				if (!res.confirm) return
+				completeMallOrder<any>(item.rawId).then((_r) => {
+					uni.showToast({ title: '已确认收货', icon: 'success' })
+					switchTab('completed')
+					loadAll()
+				}).catch((err) => {
+					const msg = err != null && err.message != null ? err.message.toString() : '确认收货失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const handleDelete = (item: UnifiedOrder) => {
+		uni.showModal({
+			title: '删除订单',
+			content: '删除后该订单将不再显示，是否继续？',
+			confirmText: '删除',
+			confirmColor: '#1A73E8',
+			success: (res) => {
+				if (!res.confirm) return
+				if (item.kind === 'study') {
+					deleteStudyBooking(item.rawId).then((_r) => {
+						uni.showToast({ title: '已移除', icon: 'success' })
+						loadAll()
+					}).catch((err) => {
+						const msg = err != null && err.message != null ? err.message.toString() : '删除失败'
+						uni.showToast({ title: msg, icon: 'none' })
+					})
+					return
+				}
+				deleteMallOrder(item.rawId).then((_r) => {
+					uni.showToast({ title: '已移除', icon: 'success' })
+					loadAll()
+				}).catch((err) => {
+					const msg = err != null && err.message != null ? err.message.toString() : '删除失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const status = options['status']
+		if (status != null) {
+			const s = status.toString()
+			// 统一桶 + 旧商城/研学状态兼容
+			if (s === 'unpaid' || s === 'pending' || s === 'pending_review') {
+				switchTab(s === 'pending_review' ? 'completed' : 'unpaid')
+			} else if (s === 'paid' || s === 'unreceived' || s === 'unused' || s === 'booked' || s === 'inProgress' || s === 'active') {
+				switchTab('active')
+			} else if (s === 'completed' || s === 'cancelled' || s === 'all') {
+				switchTab(s)
+			}
+		}
+		loadAll()
+	})
+
+	onShow(() => {
+		loadAll()
+	})
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 48px;
+		padding: 0 16px;
+		flex-direction: row;
+		align-items: center;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.tabs {
+		margin: 0 16px 12px 16px;
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 4px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.tab {
+		flex: 1;
+		height: 32px;
+		border-radius: 10px;
+		align-items: center;
+		justify-content: center;
+	}
+	.tab-on {
+		background-color: #1A73E8;
+	}
+	.tab-text {
+		font-size: 12px;
+		font-weight: 700;
+		color: #4B5563;
+	}
+	.tab-text-on {
+		color: #FFFFFF;
+	}
+	.body {
+		flex: 1;
+		padding: 0 16px;
+	}
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 14px 14px 12px 14px;
+		margin-bottom: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	
+		box-shadow: none;
+	}
+	.card-top {
+		align-items: center;
+		margin-bottom: 12px;
+	}
+	.kind {
+		padding: 2px 8px;
+		border-radius: 8px;
+		flex-shrink: 0;
+	}
+	.kind-study {
+		background-color: #1A73E8;
+	}
+	.kind-rental {
+		background-color: rgba(26,26,26, 0.12);
+	}
+	.kind-text-rental {
+		color: #1A1A1A;
+		font-weight: 700;
+	}
+	.kind-mall {
+		background-color: rgba(255,255,255,0.96);
+	}
+	.kind-text {
+		font-size: 11px;
+		font-weight: 800;
+	}
+	.kind-text-study {
+		color: #1A73E8;
+	}
+	.kind-text-mall {
+		color: #1A1A1A;
+	}
+	.time {
+		flex: 1;
+		font-size: 12px;
+		color: #4B5563;
+		margin-left: 8px;
+		margin-right: 8px;
+	}
+	.st-chip {
+		padding: 3px 8px;
+		border-radius: 8px;
+		background-color: rgba(255,255,255,0.96);
+		flex-shrink: 0;
+	}
+	.st-unpaid {
+		background-color: #F4E0D4;
+	}
+	.st-active {
+		background-color: #1A73E8;
+	}
+	.st-done {
+		background-color: #1A73E8;
+	}
+	.st-mute {
+		background-color: rgba(255,255,255,0.96);
+	}
+	.st-chip-text {
+		font-size: 11px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.st-chip-text-unpaid {
+		color: #1A73E8;
+	}
+	.st-chip-text-active {
+		color: #1A1A1A;
+	}
+	.st-chip-text-done {
+		color: #1A73E8;
+	}
+	.st-chip-text-mute {
+		color: #4B5563;
+	}
+	.card-body {
+		align-items: flex-start;
+	}
+	.cover {
+		width: 72px;
+		height: 72px;
+		border-radius: 12px;
+		background-color: rgba(255,255,255,0.96);
+		flex-shrink: 0;
+		margin-right: 12px;
+	}
+	.cover-fallback {
+		align-items: center;
+		justify-content: center;
+	}
+	.cover-fallback-text {
+		font-size: 22px;
+		font-weight: 800;
+		color: rgba(255, 255, 255, 0.92);
+	}
+	.info {
+		flex: 1;
+		min-width: 0;
+	}
+	.title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1A1A;
+		lines: 2;
+		margin-bottom: 4px;
+	}
+	.sub {
+		font-size: 12px;
+		color: #4B5563;
+		lines: 1;
+		margin-bottom: 8px;
+	}
+	.price {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A73E8;
+	}
+	.actions {
+		margin-top: 12px;
+		padding-top: 10px;
+		border-top-width: 0.5px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+		justify-content: flex-end;
+		flex-wrap: wrap;
+	}
+	.btn {
+		height: 30px;
+		padding: 0 12px;
+		border-radius: 15px;
+		align-items: center;
+		justify-content: center;
+		margin-left: 8px;
+	}
+	.btn-ghost {
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.btn-main {
+		background-color: #1A73E8;
+	}
+	.btn-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.btn-text-main {
+		color: #1A73E8;
+	}
+	.btn-text-danger {
+		color: #1A73E8;
+	}
+	.empty {
+		padding: 36px 16px;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		align-items: center;
+	}
+	.empty-t {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+	}
+	.empty-d {
+		font-size: 12px;
+		color: #4B5563;
+		text-align: center;
+	}
+	.pad {
+		height: 40px;
+	}
+</style>

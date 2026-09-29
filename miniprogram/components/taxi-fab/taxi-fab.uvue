@@ -1,0 +1,141 @@
+<template>
+	<view
+		class="taxi-pin"
+		:style="taxiStyle"
+		@touchstart="onTaxiStart"
+		@touchmove="onTaxiMove"
+		@touchend="onTaxiEnd"
+		@click="openRentalCreate"
+	>
+		<image class="taxi-fab-img" src="/static/icon-taxi-fab.svg" mode="aspectFit"></image>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { getAuthToken } from '../../utils/api-client.uts'
+
+	const props = defineProps({
+		projectId: {
+			type: String,
+			default: ''
+		}
+	})
+
+	const taxiX = ref(300)
+	const taxiY = ref(420)
+	const taxiFabW = 56
+	let screenW = 375
+	let screenH = 700
+	let originX = 0
+	let originY = 0
+	let touchX = 0
+	let touchY = 0
+	let moved = false
+	let skipClick = false
+
+	const taxiStyle = computed((): string => {
+		return 'left:' + taxiX.value.toString() + 'px;top:' + taxiY.value.toString() + 'px;'
+	})
+
+	const clampY = (y: number): number => {
+		const minY = 88
+		const maxY = screenH - 150
+		if (y < minY) return minY
+		if (y > maxY) return maxY
+		return y
+	}
+
+	const initTaxiPos = () => {
+		try {
+			const sys = uni.getSystemInfoSync()
+			screenW = sys.windowWidth != null ? sys.windowWidth : 375
+			screenH = sys.windowHeight != null ? sys.windowHeight : 700
+			let y = screenH - 220
+			const savedY = uni.getStorageSync('mqlt_taxi_y')
+			if (savedY != null && savedY.toString().length > 0) {
+				const n = parseFloat(savedY.toString())
+				if (!isNaN(n)) y = n
+			}
+			taxiX.value = screenW - taxiFabW - 8
+			taxiY.value = clampY(y)
+		} catch (_e) {
+			taxiX.value = 300
+			taxiY.value = 420
+		}
+	}
+
+	const readPoint = (e: any): number[] => {
+		let t: any = null
+		if (e != null && e.touches != null && e.touches.length > 0) t = e.touches[0]
+		else if (e != null && e.changedTouches != null && e.changedTouches.length > 0) t = e.changedTouches[0]
+		if (t == null) return [0, 0]
+		const x = t.clientX != null ? t.clientX : (t.pageX != null ? t.pageX : 0)
+		const y = t.clientY != null ? t.clientY : (t.pageY != null ? t.pageY : 0)
+		return [x as number, y as number]
+	}
+
+	const onTaxiStart = (e: any) => {
+		const p = readPoint(e)
+		touchX = p[0]
+		touchY = p[1]
+		originX = taxiX.value
+		originY = taxiY.value
+		moved = false
+	}
+
+	const onTaxiMove = (e: any) => {
+		const p = readPoint(e)
+		const dx = p[0] - touchX
+		const dy = p[1] - touchY
+		if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true
+		let nx = originX + dx
+		if (nx < 0) nx = 0
+		if (nx > screenW - taxiFabW) nx = screenW - taxiFabW
+		taxiX.value = nx
+		taxiY.value = clampY(originY + dy)
+	}
+
+	const onTaxiEnd = () => {
+		if (moved) skipClick = true
+		const mid = screenW / 2
+		const onLeft = taxiX.value + taxiFabW / 2 < mid
+		taxiX.value = onLeft ? 8 : screenW - taxiFabW - 8
+		try { uni.setStorageSync('mqlt_taxi_y', taxiY.value.toString()) } catch (_e) {}
+	}
+
+	const openRentalCreate = () => {
+		if (skipClick) {
+			skipClick = false
+			return
+		}
+		const token = getAuthToken()
+		if (token.length === 0) {
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			return
+		}
+		let url = '/pages/appointment/rental-create'
+		const pid = props.projectId
+		if (pid != null && pid.length > 0) {
+			url = url + '?projectId=' + encodeURIComponent(pid)
+		}
+		uni.navigateTo({ url: url })
+	}
+
+	initTaxiPos()
+</script>
+
+<style>
+	.taxi-pin {
+		position: fixed;
+		width: 56px;
+		height: 56px;
+		z-index: 900;
+		align-items: center;
+		justify-content: center;
+	}
+	.taxi-fab-img {
+		width: 52px;
+		height: 52px;
+	}
+</style>

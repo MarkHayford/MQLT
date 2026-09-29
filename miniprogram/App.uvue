@@ -1,0 +1,108 @@
+<script setup lang="uts">
+	// #ifdef APP-ANDROID || APP-HARMONY
+	let firstBackTime = 0
+	// #endif
+
+	import { ensureNativeTabBarHidden } from './utils/tab-bar.uts'
+
+	onLaunch(() => {
+		console.log('App Launch')
+		ensureNativeTabBarHidden()
+	})
+
+	onAppShow(() => {
+		console.log('App Show')
+	})
+
+	onAppHide(() => {
+		console.log('App Hide')
+	})
+
+	// #ifdef APP-ANDROID || APP-HARMONY
+	onLastPageBackPress(() => {
+		console.log('App LastPageBackPress')
+		if (firstBackTime == 0) {
+			uni.showToast({
+				title: '再按一次退出应用',
+				position: 'bottom',
+			})
+			firstBackTime = Date.now()
+			setTimeout(() => {
+				firstBackTime = 0
+			}, 2000)
+		} else if (Date.now() - firstBackTime < 2000) {
+			firstBackTime = Date.now()
+			uni.exit()
+		}
+	})
+
+	onExit(() => {
+		console.log('App Exit')
+	})
+	// #endif
+</script>
+
+<style>
+	/*Scheme F page base — polish */
+	page {
+		height: 100%;
+		background-color: #F5F7FB;
+		color: #1A1A1A;
+	}
+	/* Skyline: single box-shadow only (no multi-layer / PNG halo) */
+	.mqlt-glass-card {
+		background-color: #FFFFFF;
+		border: 1px solid #E5E7EB;
+		border-radius: 14px;
+		overflow: visible;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.mqlt-btn-primary {
+		background-color: #1A73E8;
+		color: #FFFFFF;
+		border-radius: 14px;
+	}
+	.mqlt-btn-secondary {
+		background-color: #FFFFFF;
+		color: #1A1A1A;
+		border: 1px solid #E5E7EB;
+		border-radius: 14px;
+	}
+	.mqlt-link {
+		color: #1A73E8;
+	}
+	/*每个页面公共css */
+	.uni-row {
+		flex-direction: row;
+	}
+
+	.uni-column {
+		flex-direction: column;
+	}
+
+	.empty-emoji,
+	.empty-icon {
+		width: 56px;
+		height: 56px;
+		margin-bottom: 12px;
+		opacity: 0.45;
+	}
+
+	.info-icon,
+	.tip-icon,
+	.reply-icon,
+	.action-cell-icon,
+	.action-btn-icon,
+	.qr-tip-icon,
+	.in-progress-icon {
+		width: 20px;
+		height: 20px;
+	}
+
+	.check-mark,
+	.checkbox-icon,
+	.agreement-check-mark {
+		width: 14px;
+		height: 14px;
+	}
+</style>

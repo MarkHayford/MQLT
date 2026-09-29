@@ -1,0 +1,13 @@
+export const API_BASE_URL = 'http://127.0.0.1:3000'
+export const API_TIMEOUT = 15000
+
+export type ApiEnvelope<T> = {
+	code: number
+	message: string
+	data: T
+	requestId: string
+}
+
+export function isApiSuccess(code: number): boolean {
+	return code >= 200 && code < 300
+}

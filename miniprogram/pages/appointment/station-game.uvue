@@ -1,0 +1,78 @@
+<template>
+	<web-view :src="gameUrl" @message="onMessage"></web-view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+
+	const gameUrl = ref('')
+	const stepId = ref('')
+
+	function pickResult(item: any): any {
+		if (item == null) return null
+		const t = String(item.type || '')
+		let event = String(item.event || '')
+		if (event === 'win' || event === 'success') event = 'complete'
+		if (item.complete === true && event.length === 0) event = 'complete'
+		if (event.length === 0 && t === 'complete') event = 'complete'
+		if (event.length === 0 && t === 'mqlt-game-complete' && item.passed !== false) event = 'complete'
+		if (event !== 'fail' && event !== 'progress' && event !== 'complete') return null
+		return {
+			stepId: stepId.value,
+			event: event,
+			score: item.score,
+			passed: item.passed,
+			durationMs: item.durationMs,
+			payload: item.payload,
+			complete: event === 'complete' && item.passed !== false
+		}
+	}
+
+	function storeResult(result: any) {
+		if (result == null) return
+		try {
+			uni.setStorageSync('mqlt_game_result', JSON.stringify(result))
+		} catch (_e) {}
+		if (result.complete === true || String(result.event) === 'complete') {
+			uni.setStorageSync('mqlt_game_complete', stepId.value)
+		}
+	}
+
+	function onMessage(e: any) {
+		let result: any = null
+		const detail = e != null ? e.detail : null
+		const data = detail != null ? detail.data : null
+		if (data != null) {
+			const arr = data as any[]
+			if (arr != null && arr.length > 0) {
+				for (let i = 0; i < arr.length; i++) {
+					const hit = pickResult(arr[i])
+					if (hit != null) result = hit
+				}
+			} else {
+				result = pickResult(data)
+			}
+		}
+		storeResult(result)
+	}
+
+	onLoad((query: any) => {
+		stepId.value = query != null && query.stepId != null ? String(query.stepId) : ''
+		const stored = uni.getStorageSync('mqlt_game_url')
+		gameUrl.value = stored != null ? stored.toString() : ''
+		if (query != null && query.url != null && String(query.url).length > 0) {
+			gameUrl.value = decodeURIComponent(String(query.url))
+		}
+		// Phase5: optional maxRetries/skippable/scoreTiers hints from tour-point (does not alter H5 SDK URL)
+		try {
+			const metaRaw = uni.getStorageSync('mqlt_game_meta')
+			if (metaRaw != null && String(metaRaw).length > 0) {
+				const meta = JSON.parse(String(metaRaw))
+				if (meta != null && meta.stepId != null && String(meta.stepId).length > 0 && stepId.value.length === 0) {
+					stepId.value = String(meta.stepId)
+				}
+			}
+		} catch (_e) {}
+	})
+</script>

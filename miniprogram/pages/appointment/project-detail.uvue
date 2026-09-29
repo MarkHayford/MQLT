@@ -1,0 +1,2309 @@
+<template>
+	<view class="page-container uni-column">
+		<view class="page-nav" :style="navPadStyle">
+			<view class="nav-header uni-row">
+				<view class="nav-back-white uni-row" @click="goBack">
+					<image src="/static/auth-back.svg" class="back-icon" mode="aspectFit"></image>
+					<text class="back-text-white">返回</text>
+				</view>
+			</view>
+		</view>
+		<scroll-view class="main-scroll-body" scroll-y="true" :show-scrollbar="false" :bounces="true" :scroll-into-view="scrollToId">
+			<view class="project-board" :style="boardPadStyle">
+				<view class="ticket-card-shell">
+					<view class="ticket-card uni-column">
+						<view class="ticket-gold-edge"></view>
+					<view class="immersive-hero">
+						<swiper
+							class="hero-swiper"
+							circular="true"
+							:autoplay="true"
+							:interval="5000"
+							:duration="500"
+							@change="onSwiperChange"
+						>
+							<swiper-item v-for="(media, mIdx) in projectMedia" :key="mIdx">
+								<view class="media-slide" :style="'background-image:' + media">
+									<view class="media-overlay"></view>
+								</view>
+							</swiper-item>
+						</swiper>
+						<view class="swiper-dots uni-row" v-if="projectMedia.length > 1">
+							<view
+								v-for="(_m, dIdx) in projectMedia"
+								:key="'dot-'+dIdx"
+								:class="['dot-item', currentMediaIndex === dIdx ? 'dot-active' : '']"
+							></view>
+						</view>
+					</view>
+					<view class="ticket-rip">
+						<view class="ticket-cut ticket-cut-left"></view>
+						<view class="ticket-rip-line"></view>
+						<view class="ticket-hole-row uni-row">
+							<view v-for="(mark, markIdx) in ticketHoleMarks" :key="'top-h-'+markIdx" class="ticket-hole"></view>
+						</view>
+						<view class="ticket-cut ticket-cut-right"></view>
+					</view>
+
+					<view class="ticket-band uni-row">
+						<view class="ticket-band-copy uni-column">
+							<text class="ticket-brand-en">STUDY PASS</text>
+							<text class="ticket-brand-cn">蒙企链探 · 研学通票</text>
+						</view>
+						<view class="ticket-band-copy ticket-band-copy-end uni-column">
+							<text class="ticket-serial-label">TICKET NO.</text>
+							<text class="ticket-serial">{{ ticketSerial }}</text>
+						</view>
+					</view>
+
+					<view class="ticket-pass uni-column">
+						<text class="ticket-watermark">PASS</text>
+						<text class="ticket-title">{{ project != null ? project.title : '' }}</text>
+						<text v-if="project != null && project.subtitle != null && project.subtitle.length > 0" class="ticket-subtitle">{{ project.subtitle }}</text>
+
+						<view class="ticket-meta-grid uni-row">
+							<view class="ticket-meta-cell uni-column">
+								<text class="ticket-meta-label">HOST 隶属企业</text>
+								<text class="ticket-meta-value">{{ enterpriseName.length > 0 ? enterpriseName : '待公布' }}</text>
+							</view>
+							<view class="ticket-meta-cell uni-column">
+								<text class="ticket-meta-label">GATE 地点</text>
+								<text class="ticket-meta-value">{{ locationName.length > 0 ? locationName : '待公布' }}</text>
+							</view>
+						</view>
+						<view class="ticket-meta-grid uni-row">
+							<view class="ticket-meta-cell uni-column">
+								<text class="ticket-meta-label">SEAT 名额</text>
+								<text class="ticket-meta-value">{{ capacityText }}</text>
+							</view>
+							<view class="ticket-meta-cell uni-column">
+								<text class="ticket-meta-label">CLASS 分类</text>
+								<text class="ticket-meta-value">{{ projectCategory.length > 0 ? projectCategory : '研学' }}</text>
+							</view>
+						</view>
+
+						<view class="ticket-tags uni-row" v-if="projectTags.length > 0">
+							<view v-for="(tag, tIdx) in projectTags" :key="'tg-'+tIdx" class="ticket-tag">
+								<text class="ticket-tag-text">{{ tag }}</text>
+							</view>
+						</view>
+
+						<view class="ticket-seat-bar uni-column" v-if="project != null && project.maxCapacity > 0">
+							<view class="ticket-seat-track">
+								<view class="ticket-seat-fill" :style="capacityBarStyle"></view>
+							</view>
+							<text class="ticket-seat-hint">{{ capacityHint }}</text>
+						</view>
+
+						<view class="ticket-main uni-row">
+							<view class="ticket-price-wrap uni-row">
+								<text class="p-sym">¥</text>
+								<text class="p-num">{{ project != null ? project.price : '' }}</text>
+								<text class="p-unit">/人起</text>
+							</view>
+							<view :class="['study-book-btn', isBookDisabled ? 'btn-disabled' : '']" :style="getBtnStyle()" @click="handleFinalBook">
+								<text class="study-book-btn-text">{{ bookBtnText }}</text>
+							</view>
+						</view>
+					</view>
+
+					<view class="ticket-rule"></view>
+
+					<view class="ticket-section uni-column">
+						<view class="ticket-section-head uni-row">
+							<text class="ticket-section-kicker">BULLETIN</text>
+							<text class="ticket-section-title">相关动态</text>
+							<text class="ticket-news-more" @click="goNoticeList">查看更多</text>
+						</view>
+						<view
+							v-for="notice in projectRelatedNotices"
+							:key="notice.id"
+							class="ticket-news-item"
+							@click="goNoticeDetail(notice.id)"
+						>
+							<view class="ticket-news-meta uni-row">
+								<view class="news-type-tag" :style="'background-color:' + getNoticeTagColor(notice.type)">
+									<text class="news-type-txt">{{ notice.type }}</text>
+								</view>
+								<text class="news-item-time">{{ notice.time }}</text>
+							</view>
+							<text class="ticket-news-item-title">{{ notice.title }}</text>
+						</view>
+						<view v-if="projectRelatedNotices.length === 0" class="ticket-news-empty">
+							<text class="ticket-news-empty-txt">暂无相关动态</text>
+						</view>
+					</view>
+
+					<view class="ticket-rule"></view>
+
+					<view class="ticket-section uni-column">
+						<view class="ticket-section-head uni-row">
+							<text class="ticket-section-kicker">SOUVENIR</text>
+							<text class="ticket-section-title">文创商城</text>
+							<text class="ticket-news-more" @click="goProjectShop">查看更多</text>
+						</view>
+						<text class="ticket-shop-hint">本研学项目专属周边，与其他项目商品互不混入</text>
+						<view v-if="previewProducts.length > 0" class="ticket-shop-row uni-row">
+							<view
+								v-for="item in previewProducts"
+								:key="item.id"
+								class="ticket-shop-item"
+								@click="goProductDetail(item.id)"
+							>
+								<view class="ticket-shop-frame">
+									<image :src="resolveMallProductImageUrl(item.imageUrl)" class="ticket-shop-img" mode="aspectFill"></image>
+								</view>
+								<text class="ticket-shop-name">{{ item.name }}</text>
+								<view class="ticket-shop-foot uni-row">
+									<text class="ticket-shop-price">¥{{ item.price }}</text>
+									<view class="ticket-shop-go">
+										<text class="ticket-shop-go-txt">选购</text>
+									</view>
+								</view>
+							</view>
+						</view>
+						<view v-else class="ticket-shop-empty uni-column">
+							<text class="ticket-shop-empty-title">暂无本项目文创</text>
+							<text class="ticket-news-empty-txt">上架后会出现在这里</text>
+						</view>
+					</view>
+
+					<view class="ticket-rule"></view>
+
+					<view id="location" class="ticket-section uni-column">
+						<view class="ticket-section-head uni-row">
+							<image src="/static/project-location.svg" class="ticket-section-icon" mode="aspectFit"></image>
+							<text class="ticket-section-kicker">GATE</text>
+							<text class="ticket-section-title">研学地点</text>
+						</view>
+						<text class="location-name">{{ locationName }}</text>
+						<text class="location-desc">{{ locationDesc }}</text>
+						<view class="map-preview uni-row" @click="goRouteAnchor">
+							<text class="map-txt">查看路线导航</text>
+							<text class="arrow-s">›</text>
+						</view>
+					</view>
+
+					<view class="ticket-rule"></view>
+
+					<view id="route" class="ticket-section uni-column">
+						<view class="ticket-section-head uni-row">
+							<text class="ticket-section-kicker">ITINERARY</text>
+							<text class="ticket-section-title">研学路径</text>
+							<text class="ticket-news-more" @click="goRouteList">查看更多</text>
+						</view>
+						<view class="route-zone-row uni-row">
+							<view
+								v-for="z in routeZoneFilters"
+								:key="z.key"
+								:class="['route-zone-chip', routeZoneKey === z.key ? 'route-zone-chip-on' : '']"
+								@click="selectRouteZone(z.key)"
+							>
+								<text :class="['route-zone-chip-text', routeZoneKey === z.key ? 'route-zone-chip-text-on' : '']">{{ z.label }}</text>
+							</view>
+						</view>
+						<view v-if="filteredRouteSpots.length === 0" class="notice-empty">
+							<text class="notice-empty-txt">该分区暂无路线区域</text>
+						</view>
+						<view
+							v-for="(spot, sIdx) in visibleRouteSpots"
+							:key="spot.id"
+							class="route-zone-item uni-row"
+							@click="openRouteSpotDetail(spot)"
+						>
+							<view class="route-stop-no">
+								<text class="route-stop-no-text">{{ padStopNo(sIdx) }}</text>
+							</view>
+							<view class="route-zone-item-body uni-column">
+								<view class="route-zone-item-title-row uni-row">
+									<text class="route-zone-item-title">{{ spot.title }}</text>
+									<view class="route-zone-tag">
+										<text class="route-zone-tag-text">{{ spot.zoneLabel }}</text>
+									</view>
+								</view>
+								<text class="route-zone-item-desc">{{ spot.desc }}</text>
+								<text class="route-zone-item-duration">预计 {{ spot.durationText }}</text>
+							</view>
+							<view class="route-zone-detail-btn" @click.stop="openRouteSpotDetail(spot)">
+								<text class="route-zone-detail-btn-text">详情</text>
+							</view>
+						</view>
+					</view>
+
+					<view class="ticket-rule"></view>
+
+					<view v-if="audiencePlans.length > 0" class="ticket-section uni-column">
+						<view class="ticket-section-head uni-row">
+							<text class="ticket-section-kicker">AUDIENCE</text>
+							<text class="ticket-section-title">分层点位</text>
+							<text class="ticket-news-more" @click="goAudiencePlans">查看全部</text>
+						</view>
+						<view
+							v-for="tpl in audiencePlanPreview"
+							:key="tpl.id"
+							class="aud-plan-row uni-column"
+							@click="goAudiencePlans"
+						>
+							<view class="aud-plan-top uni-row">
+								<view class="aud-plan-tag">
+									<text class="aud-plan-tag-txt">{{ audiencePlanLabel(tpl) }}</text>
+								</view>
+								<text class="aud-plan-meta">{{ tpl.spotIds.length.toString() }} 个点位</text>
+							</view>
+							<text class="aud-plan-name">{{ tpl.name }}</text>
+							<text v-if="tpl.description.length > 0" class="aud-plan-desc">{{ tpl.description }}</text>
+						</view>
+					</view>
+
+					<view class="ticket-rule"></view>
+
+					<view id="contact" class="ticket-section uni-column">
+						<view class="ticket-section-head uni-row">
+							<image src="/static/project-contact.svg" class="ticket-section-icon" mode="aspectFit"></image>
+							<text class="ticket-section-kicker">SERVICE</text>
+							<text class="ticket-section-title">联系方式</text>
+						</view>
+						<view v-if="studyContacts.length > 0" class="owners-block uni-column">
+							<text class="owners-title">研学联系人</text>
+							<view v-for="c in studyContacts" :key="c.id" class="owner-row uni-row" @click="callOwnerPhone(c.phone)">
+								<view class="owner-main uni-column">
+									<view class="owner-name-row uni-row">
+										<text class="owner-name">{{ c.name }}</text>
+										<text class="owner-role">{{ c.role }}</text>
+									</view>
+									<text class="owner-phone" v-if="c.phone.length > 0">{{ c.phone }}</text>
+									<text class="owner-wechat" v-if="c.wechat.length > 0">微信 {{ c.wechat }}</text>
+								</view>
+								<text class="owner-call" v-if="c.phone.length > 0">拨打</text>
+							</view>
+						</view>
+						<view class="contact-row uni-row" v-if="contactPhone.length > 0" @click="callContactPhone">
+							<text class="c-label">官方热线</text>
+							<text class="c-value">{{ contactPhoneDisplay }}</text>
+						</view>
+						<view class="contact-row uni-row">
+							<view class="c-consult-copy uni-column">
+								<text class="c-consult-title">在线咨询</text>
+								<text class="c-hours">工作日 09:00–18:00</text>
+							</view>
+							<!-- #ifdef MP-WEIXIN -->
+							<button
+								class="consult-btn consult-contact"
+								open-type="contact"
+								session-from="project-detail"
+								show-message-card="false"
+							>
+								<text class="consult-btn-txt">去咨询</text>
+							</button>
+							<!-- #endif -->
+							<!-- #ifndef MP-WEIXIN -->
+							<view class="consult-btn" @click="goOnlineConsult">
+								<text class="consult-btn-txt">去咨询</text>
+							</view>
+							<!-- #endif -->
+						</view>
+					</view>
+
+					<view class="ticket-rip">
+						<view class="ticket-cut ticket-cut-left"></view>
+						<view class="ticket-rip-line"></view>
+						<view class="ticket-hole-row uni-row">
+							<view v-for="(mark, markIdx) in ticketHoleMarks" :key="'btm-h-'+markIdx" class="ticket-hole"></view>
+						</view>
+						<view class="ticket-cut ticket-cut-right"></view>
+					</view>
+
+					<view class="ticket-stub-end uni-column">
+						<view class="ticket-barcode uni-row">
+							<view
+								v-for="(bw, bIdx) in ticketBarMarks"
+								:key="'bb-'+bIdx"
+								class="ticket-bar"
+								:style="barStyleAt(bw)"
+							></view>
+						</view>
+						<view class="ticket-stub-meta uni-row">
+							<text class="ticket-admit">ADMIT ONE · 一票通行</text>
+							<text class="ticket-serial-sm">{{ ticketSerial }}</text>
+						</view>
+					</view>
+					<view class="bottom-safe-spacer"></view>
+				</view>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- 租车浮动入口 -->
+		<taxi-fab :projectId="taxiProjectId" />
+
+		<!-- 路线区域详情弹窗 -->
+		<view v-if="showRouteSpotDetail" class="route-detail-mask" @click="closeRouteSpotDetail" @touchmove.stop.prevent="onRouteDetailMaskTouchMove"></view>
+		<view v-if="showRouteSpotDetail && routeDetailSpot != null" class="route-detail-sheet uni-column" @touchmove.stop="onRouteDetailSheetTouchMove">
+			<view class="route-detail-handle"></view>
+			<view class="route-detail-top uni-row">
+				<view class="route-detail-titles uni-column">
+					<text class="route-detail-title">{{ routeDetailSpot.title }}</text>
+					<text class="route-detail-zone">{{ routeDetailSpot.zoneLabel }} · 预计 {{ routeDetailSpot.durationText }}</text>
+				</view>
+				<view class="route-detail-close" @click="closeRouteSpotDetail">
+					<text class="route-detail-close-text">关闭</text>
+				</view>
+			</view>
+			<scroll-view
+				class="route-detail-scroll"
+				scroll-y="true"
+				:show-scrollbar="true"
+				:enhanced="true"
+				:bounces="true"
+				:enable-flex="true"
+			>
+				<view class="route-detail-inner">
+					<view class="route-photo-card" :style="routeDetailSpot.coverStyle">
+						<text class="route-photo-caption">{{ routeDetailSpot.photoCaption }}</text>
+					</view>
+					<view v-for="sec in routeDetailSpot.sections" :key="sec.key">
+						<view v-if="sectionHasBody(sec.html)" class="route-detail-section uni-column">
+							<text class="route-detail-sec-title">{{ sec.title }}</text>
+							<rich-text v-if="sectionIsHtml(sec.html)" class="route-detail-rich" :nodes="sec.html"></rich-text>
+							<text v-else class="route-detail-sec-body">{{ sec.html }}</text>
+						</view>
+					</view>
+					<view class="route-detail-scroll-pad"></view>
+				</view>
+			</scroll-view>
+			<view class="route-detail-footer uni-row">
+				<view class="route-detail-primary" @click="closeRouteSpotDetail">
+					<text class="route-detail-primary-text">我知道了</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+	import { checkStudyBookDisabled, getStudyBookBtnText, getStudyStatusDisplay, checkStudyProjectBooked, checkStudyProjectEnded, addProjectBooking, subscribeStudyBookingChanged, unsubscribeStudyBookingChanged, syncStudyBookingsFromApi, isStudyBookingPendingStatus, isStudyBookingUnpaidStatus } from '../../utils/study-booking.uts'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { fetchStudyNotices, getNoticeTagColor, sortNoticesByTime, type StudyNotice } from './utils/study-notices.uts'
+	import { fetchStudyBookings, fetchStudyProjectAdminAccess, fetchStudyProjectDetail, payStudyBooking, redeemStudyCheckIn, type AudienceSpotTemplate, type StudyBookingRecord, type StudyProjectContact, type StudyProjectMeta } from '../../utils/study-projects.uts'
+	import { getAuthToken } from '../../utils/api-client.uts'
+	import { promptLoginThenGoMine } from '../../utils/app-nav.uts'
+	import { resolveStudyProjectMediaBackground } from '../../utils/study-project-media.uts'
+	import { fetchMallProducts, mallProductDetailUrl, mallShopUrl, type MallProduct } from './utils/mall-products.uts'
+	import { resolveMallProductImageUrl } from './utils/mall-product-image.uts'
+	import {
+		buildRouteZoneFilters,
+		parseRouteZoneFilters,
+		parseStudyRouteSpots,
+		routeSectionHasBody,
+		type StudyRouteZoneFilter,
+		type StudyRouteZoneSpot
+	} from './utils/study-route-zones.uts'
+	import { isHtmlContent } from '../../utils/html-content.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const boardTopPad = statusBarHeight + 52
+	const navPadStyle = 'padding-top:' + statusBarHeight.toString() + 'px;'
+	const boardPadStyle = 'padding-top:' + boardTopPad.toString() + 'px;'
+	const ticketHoleMarks: number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+	const ticketBarMarks: number[] = [2, 5, 2, 2, 7, 2, 4, 2, 2, 8, 2, 3, 2, 6, 2, 2, 5, 2, 9, 2, 3, 2, 6, 2, 2, 4, 2, 7, 2, 3, 2, 5, 2, 8, 2, 2, 4, 2, 6]
+	const previewProducts = ref<MallProduct[]>([])
+	const NOTICE_LIST_PREVIEW = 3
+	const SHOP_LIST_PREVIEW = 2
+
+	type Project = StudyProjectMeta
+
+	const project = ref<Project | null>(null)
+	const taxiProjectId = computed((): string => {
+		const p = project.value
+		return p != null ? p.id : ''
+	})
+	const studyNotices = ref<StudyNotice[]>([])
+	const currentBooking = ref<StudyBookingRecord | null>(null)
+	const bookRefreshTick = ref(0)
+	const isProjectAdmin = ref(false)
+
+	const refreshBookUi = () => {
+		bookRefreshTick.value++
+	}
+
+	const isNotOpen = computed((): boolean => {
+		const p = project.value
+		if (p == null) return false
+		return p.status === '暂未开放'
+	})
+
+	const isEnded = computed((): boolean => {
+		const p = project.value
+		if (p == null) return false
+		return checkStudyProjectEnded(p.status)
+	})
+
+
+	function chinaDateKeyNow(): string {
+		const now = new Date()
+		const utc = now.getTime() + now.getTimezoneOffset() * 60000
+		const china = new Date(utc + 8 * 3600000)
+		const y = china.getFullYear()
+		const m = china.getMonth() + 1
+		const d = china.getDate()
+		const ms = m < 10 ? '0' + m.toString() : m.toString()
+		const ds = d < 10 ? '0' + d.toString() : d.toString()
+		return y.toString() + '-' + ms + '-' + ds
+	}
+
+	function allTripDayKeys(b: StudyBookingRecord): string[] {
+		const keys: string[] = []
+		const plan = b.tripPlan
+		if (plan != null && plan.dayKeys != null) {
+			const arr = plan.dayKeys as any[]
+			for (let i = 0; i < arr.length; i++) {
+				const k = arr[i] != null ? String(arr[i]) : ''
+				if (k.length >= 8 && keys.indexOf(k) < 0) keys.push(k)
+			}
+		}
+		if (plan != null && plan.days != null) {
+			const days = plan.days as any[]
+			for (let i = 0; i < days.length; i++) {
+				const k = days[i] != null && days[i].dayKey != null ? String(days[i].dayKey) : ''
+				if (k.length >= 8 && keys.indexOf(k) < 0) keys.push(k)
+			}
+		}
+		keys.sort()
+		return keys
+	}
+
+	function firstTripDayKey(b: StudyBookingRecord): string {
+		const keys = allTripDayKeys(b)
+		if (keys.length > 0) return keys[0]
+		if (b.project != null && b.project.date != null && String(b.project.date).length >= 8) {
+			return String(b.project.date).substring(0, 10)
+		}
+		return chinaDateKeyNow()
+	}
+
+	function lastTripDayKey(b: StudyBookingRecord): string {
+		const keys = allTripDayKeys(b)
+		if (keys.length > 0) return keys[keys.length - 1]
+		return firstTripDayKey(b)
+	}
+
+	function isTodayInTripDays(b: StudyBookingRecord): boolean {
+		const keys = allTripDayKeys(b)
+		const today = chinaDateKeyNow()
+		if (keys.length === 0) return today === firstTripDayKey(b)
+		return keys.indexOf(today) >= 0
+	}
+
+	function tourMetaOf(b: StudyBookingRecord): any {
+		if (b.tripPlan != null && b.tripPlan.tour != null) return b.tripPlan.tour
+		return null
+	}
+
+	/** 与 booking-detail / my-orders 一致：仅预约日可进导览 */
+	const projectTourCtaMode = computed((): string => {
+		const b = currentBooking.value
+		if (b == null) return 'none'
+		const s = b.status.trim().toLowerCase()
+		const tour = tourMetaOf(b)
+		const tourStatus = tour != null && tour.status != null ? String(tour.status) : ''
+		const early = (tour != null && tour.earlyExit === true) || tourStatus === 'early_exit'
+		if (s === 'completed' || early) return 'done'
+		if (s !== 'booked') return 'none'
+		const today = chinaDateKeyNow()
+		const firstDay = firstTripDayKey(b)
+		const lastDay = lastTripDayKey(b)
+		if (today < firstDay) return 'locked'
+		if (today > lastDay) return 'expired'
+		if (!isTodayInTripDays(b)) return 'locked'
+		const entered = b.checkedInAt != null && String(b.checkedInAt).length > 0
+		if (entered || tourStatus === 'entered' || tourStatus === 'touring' || tourStatus === 'paused') return 'resume'
+		return 'start'
+	})
+
+	const projectTourDoneLabel = computed((): string => {
+		const b = currentBooking.value
+		if (b == null) return '研学已结束'
+		const tour = tourMetaOf(b)
+		if (tour != null && (tour.earlyExit === true || String(tour.status) === 'early_exit')) return '已提前结束'
+		return '研学已完成'
+	})
+
+	const isBookDisabled = computed((): boolean => {
+		const _tick = bookRefreshTick.value
+		const p = project.value
+		if (p == null) return true
+		const booking = currentBooking.value
+		if (isProjectAdmin.value) return false
+		if (booking != null && isStudyBookingPendingStatus(booking.status)) return false
+		if (booking != null && isStudyBookingUnpaidStatus(booking.status)) return !booking.isBooker
+		// 已预约：预约日可点「开始研学」；未到日可点进订单；过期/已结束不可再进
+		if (booking != null && isStudyBookingBookedStatus(booking.status)) {
+			const mode = projectTourCtaMode.value
+			// 已完成仍可点进订单详情；仅「预约日已过」禁用
+			if (mode === 'expired') return true
+			return false
+		}
+		if (checkStudyProjectBooked(p.id)) return false
+		return checkStudyBookDisabled(p.id, p.status, p.enrolled, p.maxCapacity)
+	})
+
+	const isStudyBookingBookedStatus = (status: string | null): boolean => {
+		if (status == null) return false
+		const s = status.trim().toLowerCase()
+		// 已完成也算「已有订单」，用于展示结业态 / 进详情，避免误走重新预约
+		return s === 'booked' || s === 'completed'
+	}
+
+	const bookBtnText = computed((): string => {
+		const _tick = bookRefreshTick.value
+		const p = project.value
+		if (p == null) return ''
+		const booking = currentBooking.value
+		if (booking != null && isStudyBookingPendingStatus(booking.status)) return booking.isBooker ? '去支付' : '已代约'
+		if (booking != null && isStudyBookingUnpaidStatus(booking.status)) return booking.isBooker ? '去支付' : '待发起人支付'
+		if (booking != null && isStudyBookingBookedStatus(booking.status)) {
+			const mode = projectTourCtaMode.value
+			if (mode === 'start') return '开始研学'
+			if (mode === 'resume') return '继续研学'
+			if (mode === 'expired') return '预约日已过'
+			if (mode === 'done') return '结算'
+			return '已预约'
+		}
+		if (checkStudyProjectBooked(p.id)) return '已预约'
+		if (isNotOpen.value) return '暂未开放'
+		if (isEnded.value) return '已结束'
+		return getStudyBookBtnText(p.id, p.status, p.enrolled, p.maxCapacity, '立即预约', '预约已满')
+	})
+
+	const ticketSerial = computed((): string => {
+		const p = project.value
+		if (p == null) return 'MQLT-000000'
+		let raw = p.id
+		if (raw.length > 6) {
+			raw = raw.substring(raw.length - 6, raw.length)
+		}
+		return 'MQLT-' + raw.toUpperCase()
+	})
+
+	const projectCategory = computed((): string => {
+		const p = project.value
+		if (p == null) return ''
+		return p.category
+	})
+
+	const enterpriseName = computed((): string => {
+		const p = project.value
+		if (p == null) return ''
+		if (p.enterpriseName != null && p.enterpriseName.length > 0) return p.enterpriseName
+		return ''
+	})
+
+	const projectTags = computed((): string[] => {
+		const p = project.value
+		if (p == null) return []
+		const max = p.tags.length < 4 ? p.tags.length : 4
+		const out: string[] = []
+		for (let i = 0; i < max; i++) out.push(p.tags[i])
+		return out
+	})
+
+	const capacityText = computed((): string => {
+		const p = project.value
+		if (p == null) return '—'
+		if (p.maxCapacity <= 0) return p.enrolled.toString() + '人'
+		return p.enrolled.toString() + '/' + p.maxCapacity.toString() + '人'
+	})
+
+	const capacityHint = computed((): string => {
+		const p = project.value
+		if (p == null) return ''
+		if (p.maxCapacity <= 0) return '已报名 ' + p.enrolled.toString() + ' 人'
+		return '已报名 ' + p.enrolled.toString() + ' / 限 ' + p.maxCapacity.toString() + ' 人'
+	})
+
+	const capacityBarStyle = computed((): string => {
+		const p = project.value
+		if (p == null || p.maxCapacity <= 0) return 'width: 8%;'
+		let pct = Math.floor((p.enrolled * 100) / p.maxCapacity)
+		if (pct > 100) pct = 100
+		if (pct < 8) pct = 8
+		return 'width: ' + pct.toString() + '%;'
+	})
+
+	const padStopNo = (index: number): string => {
+		const n = index + 1
+		if (n < 10) return '0' + n.toString()
+		return n.toString()
+	}
+
+	const barStyleAt = (w: number): string => {
+		return 'width:' + w.toString() + 'px;'
+	}
+
+	const projectNoticesAll = computed((): StudyNotice[] => {
+		const p = project.value
+		if (p == null) return []
+		return getNoticesForProjectFromList(p.id)
+	})
+
+	const projectRelatedNotices = computed((): StudyNotice[] => {
+		const list = projectNoticesAll.value
+		if (list.length <= NOTICE_LIST_PREVIEW) return list
+		const sliced: StudyNotice[] = []
+		for (let i = 0; i < NOTICE_LIST_PREVIEW; i++) sliced.push(list[i])
+		return sliced
+	})
+
+
+
+	const getNoticesForProjectFromList = (projectId: string): StudyNotice[] => {
+		const matched: StudyNotice[] = []
+		const list = studyNotices.value
+		for (let i = 0; i < list.length; i++) {
+			const n = list[i]
+			if (n.projectId === projectId) matched.push(n)
+		}
+		return sortNoticesByTime(matched, true)
+	}
+	const scrollToId = ref('')
+	const currentMediaIndex = ref(0)
+	const isHeroCollapsed = ref(false)
+	let lastScrollTop = 0
+
+	const projectMedia = computed((): string[] => {
+		const p = project.value
+		if (p == null) return []
+		const media: string[] = []
+		for (let i = 0; i < p.mediaColors.length; i++) {
+			const bg = resolveStudyProjectMediaBackground(p.mediaColors[i])
+			if (bg.length > 0) media.push(bg)
+		}
+		return media
+	})
+
+	const locationName = ref('')
+	const locationDesc = ref('')
+	const routeSpots = ref<StudyRouteZoneSpot[]>([])
+	const routeZoneKey = ref('all')
+	const routeZoneFilters = ref<StudyRouteZoneFilter[]>(buildRouteZoneFilters([] as StudyRouteZoneSpot[], [] as StudyRouteZoneFilter[]))
+	const showRouteSpotDetail = ref(false)
+	const routeDetailSpot = ref<StudyRouteZoneSpot | null>(null)
+	const contactPhone = ref('')
+	const studyContacts = ref<StudyProjectContact[]>([])
+	const contactPhoneDisplay = computed((): string => {
+		const raw = contactPhone.value.split('-').join('').split(' ').join('')
+		if (raw === '19931708002') return '199-3170-8002'
+		return contactPhone.value
+	})
+
+	const filteredRouteSpots = computed((): StudyRouteZoneSpot[] => {
+		const list = routeSpots.value
+		const zone = routeZoneKey.value
+		if (zone === 'all') return list
+		const out: StudyRouteZoneSpot[] = []
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].zoneKey === zone) out.push(list[i])
+		}
+		return out
+	})
+
+	const ROUTE_LIST_PREVIEW = 3
+	const visibleRouteSpots = computed((): StudyRouteZoneSpot[] => {
+		const list = filteredRouteSpots.value
+		if (list.length <= ROUTE_LIST_PREVIEW) return list
+		const out: StudyRouteZoneSpot[] = []
+		for (let i = 0; i < ROUTE_LIST_PREVIEW; i++) out.push(list[i])
+		return out
+	})
+
+	const selectRouteZone = (key: string) => {
+		routeZoneKey.value = key
+	}
+
+	const audiencePlans = computed((): AudienceSpotTemplate[] => {
+	const p = project.value
+	if (p == null) return [] as AudienceSpotTemplate[]
+	const src = p.audienceTemplates
+	if (src == null) return [] as AudienceSpotTemplate[]
+	const out: AudienceSpotTemplate[] = []
+	for (let i = 0; i < src.length; i++) {
+		if (src[i].enabled !== false) out.push(src[i])
+	}
+	return out
+})
+const audiencePlanPreview = computed((): AudienceSpotTemplate[] => {
+	const list = audiencePlans.value
+	if (list.length <= 3) return list
+	const out: AudienceSpotTemplate[] = []
+	for (let i = 0; i < 3; i++) out.push(list[i])
+	return out
+})
+const audiencePlanLabel = (tpl: AudienceSpotTemplate): string => {
+	if (tpl.audience === 'family') return '亲子'
+	if (tpl.audience === 'college') return '高校'
+	if (tpl.audience === 'business') return '商务'
+	const label = tpl.audienceLabel != null ? tpl.audienceLabel : ''
+	if (label.length > 0 && label !== '自定义') return label
+	const n = tpl.name != null ? tpl.name : ''
+	if (n.length > 0 && n !== '自定义') return n
+	return '自定义'
+}
+const goAudiencePlans = () => {
+	const p = project.value
+	if (p == null) return
+	uni.navigateTo({ url: '/pages/appointment/audience-plans?projectId=' + p.id })
+}
+
+const goRouteList = () => {
+		const p = project.value
+		if (p == null) return
+		let url = '/pages/appointment/route-list?projectId=' + p.id
+		if (routeZoneKey.value.length > 0 && routeZoneKey.value !== 'all') {
+			url = url + '&zone=' + routeZoneKey.value
+		}
+		uni.navigateTo({ url: url })
+	}
+
+	const sectionHasBody = (html: string): boolean => {
+		return routeSectionHasBody(html)
+	}
+	const sectionIsHtml = (html: string): boolean => {
+		return isHtmlContent(html)
+	}
+
+	const openRouteSpotDetail = (spot: StudyRouteZoneSpot) => {
+		routeDetailSpot.value = spot
+		showRouteSpotDetail.value = true
+	}
+
+	const closeRouteSpotDetail = () => {
+		showRouteSpotDetail.value = false
+	}
+
+	const onRouteDetailMaskTouchMove = () => {}
+	const onRouteDetailSheetTouchMove = () => {}
+
+	const getProjectLocationName = (proj: Project): string => {
+		const location = proj.location != null ? proj.location.trim() : ''
+		return location.length > 0 ? location : '研学地点待公布'
+	}
+
+	const applyProjectContent = (proj: Project) => {
+		locationName.value = getProjectLocationName(proj)
+		locationDesc.value = proj.location != null && proj.location.trim().length > 0 ? '具体集合信息以项目通知和现场组织安排为准。' : '请关注后续通知获取具体集合信息。'
+		const spots = parseStudyRouteSpots(proj.routePoints)
+		routeSpots.value = spots
+		routeZoneFilters.value = buildRouteZoneFilters(spots, parseRouteZoneFilters(proj.routeZones))
+		routeZoneKey.value = 'all'
+		let phone = proj.contactPhone != null ? proj.contactPhone.trim() : ''
+		if (phone.length === 0) phone = '19931708002'
+		contactPhone.value = phone
+		const rawContacts = (proj as any).contacts
+		const nextContacts: StudyProjectContact[] = []
+		if (rawContacts != null && Array.isArray(rawContacts)) {
+			for (let i = 0; i < rawContacts.length; i++) {
+				const row = rawContacts[i]
+				const name = row != null && row.name != null ? ('' + row.name).trim() : ''
+				const role = row != null && row.role != null ? ('' + row.role).trim() : ''
+				const p = row != null && row.phone != null ? ('' + row.phone).trim() : ''
+				const wx = row != null && row.wechat != null ? ('' + row.wechat).trim() : ''
+				const id = row != null && row.id != null ? ('' + row.id) : ('c' + i.toString())
+				if (name.length > 0 || p.length > 0) {
+					nextContacts.push({ id: id, name: name.length > 0 ? name : p, phone: p, wechat: wx, role: role, sort: i })
+				}
+			}
+		}
+		studyContacts.value = nextContacts
+	}
+
+	const goRouteAnchor = () => {
+		const p = project.value
+		if (p == null) return
+		const location = locationName.value.length > 0 ? locationName.value : '研学地点待公布'
+		const lat = p.locationLatitude != null ? Number(p.locationLatitude) : 0
+		const lng = p.locationLongitude != null ? Number(p.locationLongitude) : 0
+		if (lat === 0 || lng === 0) {
+			uni.showToast({ title: '地点坐标未设置', icon: 'none' })
+			return
+		}
+		uni.openLocation({
+			latitude: lat,
+			longitude: lng,
+			name: location,
+			address: location,
+			scale: 16,
+			fail: (err) => {
+				console.error('open study location failed', err)
+				uni.showToast({ title: '导航打开失败，请稍后再试', icon: 'none' })
+			}
+		})
+	}
+
+	const goBookingDetail = (bookingId: string) => {
+		uni.navigateTo({ url: '/pages/appointment/booking-detail?id=' + bookingId })
+	}
+
+	const loadNoticeData = (projectId: string) => {
+		if (projectId.length === 0) {
+			studyNotices.value = []
+			return
+		}
+		fetchStudyNotices(projectId).then((list) => {
+			const only: StudyNotice[] = []
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].projectId === projectId) only.push(list[i])
+			}
+			studyNotices.value = only
+		}).catch((_err) => {
+			studyNotices.value = []
+		})
+	}
+
+	const loadProject = (id: string) => {
+		fetchStudyProjectDetail(id).then((found) => {
+			if (found == null) {
+				project.value = null
+				uni.showToast({ title: '项目不存在或已下架', icon: 'none' })
+				return
+			}
+			project.value = found
+			try {
+				applyProjectContent(found)
+			} catch (err) {
+				console.error('project detail render extras failed', err)
+			}
+			loadProjectAdminAccess(found.id)
+			loadCurrentBooking(found.id)
+			loadProjectShop(found.id)
+			loadNoticeData(found.id)
+		}).catch((err) => {
+			project.value = null
+			const message = err != null && err.message != null ? err.message.toString() : ''
+			console.error('study project detail api failed', id, err)
+			uni.showToast({ title: message.length > 0 ? message : '研学项目加载失败', icon: 'none' })
+		})
+	}
+
+	const loadProjectAdminAccess = (projectId: string) => {
+		if (!hasToken()) {
+			isProjectAdmin.value = false
+			return
+		}
+		fetchStudyProjectAdminAccess(projectId).then((access) => {
+			isProjectAdmin.value = access.isProjectAdmin === true
+			refreshBookUi()
+		}).catch((_err) => {
+			isProjectAdmin.value = false
+			refreshBookUi()
+		})
+	}
+
+	const loadCurrentBooking = (projectId: string) => {
+		fetchStudyBookings().then((list) => {
+			let matched: StudyBookingRecord | null = null
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].projectId === projectId) {
+					matched = list[i]
+					break
+				}
+			}
+			currentBooking.value = matched
+			refreshBookUi()
+		}).catch((_err) => {
+			currentBooking.value = null
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		subscribeStudyBookingChanged(refreshBookUi)
+		refreshBookUi()
+		syncStudyBookingsFromApi().then((_ids) => {
+			refreshBookUi()
+		}).catch((_err) => {})
+
+		const idParam = options['id']
+		const id = idParam != null ? idParam.toString() : ''
+		if (id.length > 0) {
+			loadProject(id)
+		} else {
+			uni.showToast({ title: '缺少项目ID', icon: 'none' })
+		}
+
+		const anchorParam = options['anchor']
+		if (anchorParam != null) {
+			const anchor = anchorParam.toString()
+			if (anchor.length > 0) {
+				// 导航到锚点时，自动收起顶部卡片
+				isHeroCollapsed.value = true
+				setTimeout(() => {
+					scrollToId.value = anchor
+				}, 300)
+			}
+		}
+	})
+
+	onUnload(() => {
+		unsubscribeStudyBookingChanged(refreshBookUi)
+	})
+
+	onShow(() => {
+		const p = project.value
+		if (p != null) {
+			loadCurrentBooking(p.id)
+		}
+	})
+
+	const onSwiperChange = (e : UniSwiperChangeEvent) => {
+		currentMediaIndex.value = e.detail.current
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const goNoticeDetail = (noticeId: string) => {
+		uni.navigateTo({ url: '/pages/index/notice-detail?id=' + noticeId })
+	}
+
+	const goNoticeList = () => {
+		const p = project.value
+		if (p == null) {
+			uni.navigateTo({ url: '/pages/index/notice-list' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/index/notice-list?projectId=' + p.id })
+	}
+
+	const getHeroStyle = (): string => {
+		const p = project.value
+		if (p == null) return ''
+		return 'background-image: linear-gradient(135deg, ' + p.gradientStart + ' 0%, ' + p.gradientEnd + ' 100%);'
+	}
+
+	const getBtnStyle = (): string => {
+		if (isBookDisabled.value) return 'background-color: #C7C7CC; box-shadow: none;'
+		return 'background-color: #1A73E8;'
+	}
+
+	const goProjectShop = () => {
+		const p = project.value
+		uni.navigateTo({ url: mallShopUrl(p != null ? p.id : '') })
+	}
+
+	const goProductDetail = (id: string) => {
+		const p = project.value
+		uni.navigateTo({ url: mallProductDetailUrl(id, p != null ? p.id : '') })
+	}
+
+	const loadProjectShop = (projectId: string) => {
+		fetchMallProducts(projectId).then((mall) => {
+			const bound: MallProduct[] = []
+			for (let i = 0; i < mall.length; i++) {
+				const item = mall[i]
+				if (item.id.length === 0) continue
+				if (item.category === '奖品') continue
+				const pid = item.projectId != null ? item.projectId.toString() : ''
+				if (pid !== projectId) continue
+				bound.push(item)
+			}
+			const preview: MallProduct[] = []
+			const limit = bound.length < SHOP_LIST_PREVIEW ? bound.length : SHOP_LIST_PREVIEW
+			for (let j = 0; j < limit; j++) preview.push(bound[j])
+			previewProducts.value = preview
+		}).catch((_err) => {
+			previewProducts.value = []
+		})
+	}
+
+	const hasToken = (): boolean => {
+		return getAuthToken().length > 0
+	}
+
+	const callContactPhone = () => {
+		if (contactPhone.value.length === 0) return
+		uni.makePhoneCall({ phoneNumber: contactPhone.value.split('-').join('').split(' ').join('') })
+	}
+	const callOwnerPhone = (phone: string) => {
+		const raw = phone.split('-').join('').split(' ').join('')
+		if (raw.length === 0) return
+		uni.makePhoneCall({ phoneNumber: raw })
+	}
+
+	const goOnlineConsult = () => {
+		uni.navigateTo({ url: '/pages/mine/customer-service' })
+	}
+
+	const scanRedeemCode = () => {
+		uni.scanCode({
+			onlyFromCamera: false,
+			success: (res) => {
+				const raw = res.result != null ? res.result.toString() : ''
+				if (raw.length === 0) {
+					uni.showToast({ title: '未识别到核销码', icon: 'none' })
+					return
+				}
+				uni.showLoading({ title: '核销中', mask: true })
+				redeemStudyCheckIn(raw).then((detail) => {
+					uni.hideLoading()
+					const st = detail != null && detail.status != null ? detail.status.toString().toLowerCase() : ''
+					uni.showToast({ title: st === 'completed' ? '核销完成，订单已完成' : '当日已核销', icon: 'success' })
+				}).catch((err) => {
+					uni.hideLoading()
+					const msg = err != null && err.message != null ? err.message.toString() : '核销失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			},
+			fail: (_err) => {
+				uni.showToast({ title: '已取消扫码', icon: 'none' })
+			}
+		})
+	}
+
+	const confirmPayBooking = (booking: StudyBookingRecord) => {
+		if (!booking.isBooker) {
+			uni.showToast({ title: '请联系预约发起人完成支付', icon: 'none' })
+			return
+		}
+		uni.showModal({
+			title: '确认支付',
+			content: '当前为模拟支付流程，确认后将完成研学预约并占用名额。',
+			confirmText: '确认支付',
+			cancelText: '稍后支付',
+			success: (res) => {
+				if (!res.confirm) {
+					refreshBookUi()
+					uni.showToast({ title: '可在我的订单-待支付继续支付', icon: 'none' })
+					return
+				}
+				payStudyBooking(booking.id).then((paid) => {
+					currentBooking.value = paid
+					if (paid.project != null) {
+						project.value = paid.project
+						applyProjectContent(paid.project)
+					}
+					addProjectBooking(paid.projectId)
+					syncStudyBookingsFromApi().then((_ids) => {
+						refreshBookUi()
+					}).catch((_err) => {
+						refreshBookUi()
+					})
+					uni.showToast({ title: '支付成功，预约已完成', icon: 'success' })
+				}).catch((err) => {
+					const msg = err != null && err.message != null ? err.message.toString() : '支付失败，请稍后重试'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	const startProjectTour = (booking: StudyBookingRecord) => {
+		uni.navigateTo({
+			url: '/pages/appointment/tour-live?projectId=' + encodeURIComponent(booking.projectId) + '&bookingId=' + encodeURIComponent(booking.id)
+		})
+	}
+
+	const handleFinalBook = () => {
+		const p = project.value
+		if (p == null) return
+
+		if (isNotOpen.value) {
+			uni.showToast({ title: '该项目暂未开放，敬请期待', icon: 'none' })
+			return
+		}
+		if (isEnded.value) {
+			uni.showToast({ title: '该项目已结束，请关注后续活动', icon: 'none' })
+			return
+		}
+		const booking = currentBooking.value
+		if (booking != null && isStudyBookingBookedStatus(booking.status)) {
+			const mode = projectTourCtaMode.value
+			if (mode === 'start' || mode === 'resume') {
+				startProjectTour(booking)
+				return
+			}
+			if (mode === 'expired') {
+				uni.showToast({ title: '预约日已过，无法进入', icon: 'none' })
+				return
+			}
+			if (mode === 'done') {
+				// 已完成：进入订单详情查看结业态（不再只 toast）
+				goBookingDetail(booking.id)
+				return
+			}
+			// 预约日未到 / 非预约日：保持进订单详情
+			goBookingDetail(booking.id)
+			return
+		}
+		if (checkStudyProjectBooked(p.id) && booking != null) {
+			goBookingDetail(booking.id)
+			return
+		}
+		if (checkStudyProjectBooked(p.id)) {
+			uni.showToast({ title: '已预约该项目', icon: 'none' })
+			return
+		}
+		if (booking != null && isStudyBookingPendingStatus(booking.status)) {
+			goBookingDetail(booking.id)
+			return
+		}
+		if (booking != null && isStudyBookingUnpaidStatus(booking.status)) {
+			if (!booking.isBooker) {
+				uni.showToast({ title: '请联系预约发起人完成支付', icon: 'none' })
+				return
+			}
+			confirmPayBooking(booking)
+			return
+		}
+		if (checkStudyBookDisabled(p.id, p.status, p.enrolled, p.maxCapacity)) {
+			if (isNotOpen.value) {
+				uni.showToast({ title: '该项目暂未开放，敬请期待', icon: 'none' })
+				return
+			}
+			uni.showToast({ title: '抱歉，名额已满，请预约其他项目', icon: 'none' })
+			return
+		}
+		if (!hasToken()) {
+			promptLoginThenGoMine('请先登录后预约')
+			return
+		}
+
+		uni.navigateTo({ url: '/pages/appointment/booking-create?id=' + p.id })
+	}
+
+	const onScroll = (e : UniScrollEvent) => {
+		const scrollTop = e.detail.scrollTop
+		const delta = scrollTop - lastScrollTop
+
+		// 1. 顶部强制展开
+		if (scrollTop < 10) {
+			isHeroCollapsed.value = false
+			lastScrollTop = scrollTop
+			return
+		}
+
+		// 2. 底部锁定
+		const scrollHeight = e.detail.scrollHeight
+		const isNearBottom = (scrollTop + 900) > scrollHeight
+
+		if (!isNearBottom) {
+			if (delta > 5) {
+				isHeroCollapsed.value = true
+			} else if (delta < -5) {
+				isHeroCollapsed.value = false
+			}
+		}
+
+		lastScrollTop = scrollTop
+	}
+</script>
+
+<style>
+	.page-container {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #F5F7FB;
+	}
+	.project-board {
+		width: 100%;
+		background-color: #F5F7FB;
+		padding-bottom: 28px;
+	}
+	.immersive-hero {
+		width: 100%;
+		height: 220px;
+		position: relative;
+		overflow: hidden;
+	}
+	.ticket-card-shell {
+		border-radius: 16px;
+		position: relative;
+		margin-left: 10px;
+		margin-right: 10px;
+		overflow: visible;
+		background-color: transparent;
+		box-shadow: none;
+	}
+
+
+	.ticket-card {
+		background-color: #FFFFFF;
+		position: relative;
+		z-index: 1;
+		overflow: hidden;
+		border-top-left-radius: 16px;
+		border-top-right-radius: 16px;
+		border-bottom-left-radius: 16px;
+		border-bottom-right-radius: 16px;
+		border: 1px solid #E5E7EB;
+	}
+
+	.ticket-gold-edge {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 4px;
+		width: 100%;
+		background-image: linear-gradient(90deg, #1A73E8 0%, #1A73E8 48%, #1A73E8 100%);
+	}
+	.ticket-rip {
+		height: 22px;
+		position: relative;
+		align-items: center;
+		justify-content: center;
+		background-color: #FFFFFF;
+	}
+	.ticket-rip-line {
+		position: absolute;
+		left: 22px;
+		right: 22px;
+		top: 11px;
+		height: 1px;
+		background-color: rgba(55,65,81, 0.18);
+	}
+	.ticket-cut {
+		position: absolute;
+		top: 1px;
+		width: 20px;
+		height: 20px;
+		border-radius: 10px;
+		background-color: #F5F7FB;
+		z-index: 3;
+	}
+	.ticket-cut-left { left: -10px; }
+	.ticket-cut-right { right: -10px; }
+	.ticket-hole-row {
+		flex: 1;
+		margin: 0 24px;
+		height: 22px;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.ticket-hole {
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		background-color: #F5F7FB;
+		flex-shrink: 0;
+	}
+	.ticket-band {
+		background-color: #1A73E8;
+		padding: 12px 20px;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.ticket-band-copy { flex: 1; min-width: 0; }
+	.ticket-band-copy-end { align-items: flex-end; }
+	.ticket-brand-en {
+		font-size: 10px;
+		font-weight: 800;
+		color: #FFFFFF;
+		letter-spacing: 2px;
+		margin-bottom: 2px;
+	}
+	.ticket-brand-cn {
+		font-size: 13px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+	.ticket-serial-label {
+		font-size: 9px;
+		font-weight: 700;
+		color: rgba(255, 255, 255, 0.85);
+		letter-spacing: 1px;
+		margin-bottom: 2px;
+	}
+	.ticket-serial {
+		font-size: 13px;
+		font-weight: 800;
+		color: #FFFFFF;
+		letter-spacing: 1px;
+	}
+	.ticket-pass {
+		padding: 16px 20px 8px 20px;
+		position: relative;
+	}
+	.ticket-watermark {
+		position: absolute;
+		right: 8px;
+		top: 36px;
+		font-size: 72px;
+		font-weight: 800;
+		color: rgba(26,26,26, 0.06);
+		letter-spacing: 2px;
+		pointer-events: none;
+		z-index: 0;
+	}
+	.ticket-date { font-size: 12px; font-weight: 700; color: #4B5563; }
+	.ticket-title {
+		font-size: 24px;
+		font-weight: 800;
+		color: #1A1A1A;
+		line-height: 32px;
+		margin-bottom: 6px;
+		z-index: 1;
+	}
+	.ticket-subtitle {
+		font-size: 13px;
+		color: #4B5563;
+		line-height: 20px;
+		margin-bottom: 10px;
+		z-index: 1;
+	}
+	.ticket-host {
+		align-items: center;
+		margin-bottom: 12px;
+		z-index: 1;
+	}
+	.ticket-host-label {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1px;
+		margin-right: 10px;
+		flex-shrink: 0;
+	}
+	.ticket-host-name {
+		flex: 1;
+		font-size: 14px;
+		font-weight: 800;
+		color: #1A1A1A;
+		lines: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.ticket-meta-grid {
+		margin-bottom: 8px;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+	}
+	.ticket-meta-cell {
+		flex: 1;
+		min-width: 0;
+		padding: 10px 10px 8px 0;
+	}
+	.ticket-meta-label {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1px;
+		margin-bottom: 4px;
+	}
+	.ticket-meta-value {
+		font-size: 14px;
+		font-weight: 700;
+		color: #1A1A1A;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.ticket-tags {
+		flex-wrap: wrap;
+		margin-bottom: 12px;
+	}
+	.ticket-tag {
+		padding: 4px 10px;
+		border-radius: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		margin-right: 8px;
+		margin-bottom: 6px;
+		background-color: #F3F4F6;
+	}
+	.ticket-tag-text {
+		font-size: 11px;
+		font-weight: 700;
+		color: #4B5563;
+	}
+	.ticket-seat-bar { margin-bottom: 14px; }
+	.ticket-seat-track {
+		width: 100%;
+		height: 6px;
+		border-radius: 3px;
+		background-color: #E5E7EB;
+		overflow: hidden;
+		margin-bottom: 6px;
+	}
+	.ticket-seat-fill {
+		height: 6px;
+		border-radius: 3px;
+		background-image: linear-gradient(90deg, #1A73E8 0%, #1A73E8 100%);
+	}
+	.ticket-seat-hint {
+		font-size: 11px;
+		font-weight: 600;
+		color: #4B5563;
+	}
+	.ticket-main {
+		align-items: center;
+		justify-content: space-between;
+		padding-top: 6px;
+		padding-bottom: 8px;
+	}
+	.ticket-price-wrap { align-items: flex-end; flex: 1; min-width: 0; padding-right: 12px; }
+	.p-sym { font-size: 15px; font-weight: 700; color: #1A73E8; margin-bottom: 3px; margin-right: 2px; }
+	.p-num { font-size: 30px; font-weight: 800; color: #1A73E8; line-height: 32px; }
+	.p-unit { font-size: 11px; font-weight: 600; color: #9CA3AF; margin-bottom: 4px; margin-left: 3px; }
+	.study-book-btn {
+		height: 46px;
+		padding: 0 18px;
+		border-radius: 23px;
+		justify-content: center;
+		align-items: center;
+		flex-shrink: 0;
+		min-width: 108px;
+	}
+	.study-book-btn-text { font-size: 15px; font-weight: 700; color: #FFFFFF; }
+	.btn-disabled { opacity: 0.7; }
+	.ticket-rule {
+		height: 1px;
+		margin: 4px 20px;
+		background-color: #E5E7EB;
+	}
+	.ticket-section { padding: 14px 20px 8px 20px; }
+	.ticket-section-head {
+		align-items: center;
+		margin-bottom: 10px;
+	}
+	.ticket-section-icon {
+		width: 22px;
+		height: 22px;
+		margin-right: 8px;
+		flex-shrink: 0;
+	}
+	.ticket-section-kicker {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1px;
+		margin-right: 8px;
+		flex-shrink: 0;
+	}
+	.ticket-section-title {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+		flex: 1;
+		min-width: 0;
+	}
+	.ticket-news-more { font-size: 13px; font-weight: 600; color: #1A73E8; flex-shrink: 0; }
+.aud-plan-row {
+	padding: 12px 0;
+	border-bottom-width: 0.5px;
+	border-bottom-color: #E5E7EB;
+}
+.aud-plan-top { align-items: center; margin-bottom: 4px; }
+.aud-plan-tag {
+	padding: 2px 8px;
+	border-radius: 8px;
+	background-color: #E8EEF8;
+	margin-right: 8px;
+}
+.aud-plan-tag-txt { font-size: 10px; font-weight: 800; color: #1A73E8; }
+.aud-plan-meta { font-size: 12px; font-weight: 700; color: #6B7280; }
+.aud-plan-name { font-size: 15px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px; }
+.aud-plan-desc { font-size: 12px; color: #4B5563; lines: 2; }
+	.ticket-news-item {
+		padding: 10px 0 10px 10px;
+		border-left-width: 3px;
+		border-left-style: solid;
+		border-left-color: #1A73E8;
+		margin-bottom: 6px;
+	}
+	.ticket-news-meta { align-items: center; justify-content: space-between; margin-bottom: 6px; }
+	.news-type-tag { padding: 2px 8px; border-radius: 10px; }
+	.news-type-txt { color: #FFFFFF; font-size: 11px; font-weight: 700; }
+	.news-item-time { font-size: 12px; color: #9CA3AF; }
+	.ticket-news-item-title {
+		font-size: 14px;
+		font-weight: 700;
+		color: #1E293B;
+		line-height: 20px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.ticket-news-empty { padding: 10px 0 4px 0; }
+	.ticket-news-empty-txt { font-size: 13px; color: #9CA3AF; }
+	.ticket-shop-hint {
+		font-size: 12px;
+		color: #4B5563;
+		line-height: 18px;
+		margin-bottom: 12px;
+	}
+	.ticket-shop-row { justify-content: space-between; flex-wrap: nowrap; }
+	.ticket-shop-item { width: 48%; flex-direction: column; flex-shrink: 0; }
+	.ticket-shop-frame {
+		width: 100%;
+		height: 118px;
+		border-radius: 12px;
+		overflow: hidden;
+		margin-bottom: 8px;
+		position: relative;
+		border-width: 1px;
+		border-style: dashed;
+		border-color: #E5E7EB;
+		background-color: #F3F4F6;
+	}
+	.ticket-shop-img {
+		width: 100%;
+		height: 118px;
+		background-color: #F3F4F6;
+	}
+	.ticket-shop-name {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+		line-height: 18px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		height: 36px;
+		margin-bottom: 6px;
+	}
+	.ticket-shop-foot {
+		align-items: center;
+		justify-content: space-between;
+	}
+	.ticket-shop-price { font-size: 15px; font-weight: 800; color: #1A73E8; }
+	.ticket-shop-go {
+		height: 22px;
+		padding: 0 8px;
+		border-radius: 11px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.ticket-shop-go-txt { font-size: 10px; font-weight: 800; color: #FFFFFF; }
+	.ticket-shop-empty {
+		padding: 16px 12px;
+		border-width: 1px;
+		border-style: dashed;
+		border-color: #E5E7EB;
+		border-radius: 12px;
+		background-color: #F3F4F6;
+		align-items: center;
+	}
+	.ticket-shop-empty-title {
+		font-size: 14px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+	}
+	.ticket-stub-end {
+		padding: 8px 20px 6px 20px;
+		align-items: center;
+	}
+	.ticket-barcode {
+		height: 36px;
+		align-items: stretch;
+		justify-content: center;
+		margin-bottom: 8px;
+	}
+	.ticket-bar {
+		height: 36px;
+		background-color: #1A73E8;
+		margin-right: 1px;
+		flex-shrink: 0;
+	}
+	.ticket-stub-meta {
+		width: 100%;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.ticket-admit {
+		font-size: 11px;
+		font-weight: 800;
+		color: #1A1A1A;
+		letter-spacing: 1px;
+	}
+	.ticket-serial-sm {
+		font-size: 11px;
+		font-weight: 700;
+		color: #1A73E8;
+		letter-spacing: 1px;
+	}
+
+	/* 1. Hero 头部 - 轮播图升级 */
+	.hero-section {
+		width: 100%;
+		height: 292px;
+		position: relative;
+		overflow: hidden;
+	}
+	.hero-swiper {
+		width: 100%;
+		height: 100%;
+	}
+	.media-slide {
+		width: 100%;
+		height: 100%;
+		position: relative;
+		background-size: cover;
+		background-position: center;
+		background-repeat: no-repeat;
+	}
+	.media-overlay {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-image: linear-gradient(to top, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 42%);
+	}
+
+	/* 轮播指示器：底部居中横排 */
+	.swiper-dots {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 12px;
+		z-index: 10;
+		justify-content: center;
+		align-items: center;
+		pointer-events: none;
+	}
+	.dot-item {
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		background-color: rgba(255, 255, 255, 0.5);
+		margin: 0 3px;
+	}
+	.dot-active {
+		width: 16px;
+		background-color: #FFFFFF;
+	}
+
+	.page-nav {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 200;
+		pointer-events: none;
+	}
+	.nav-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		align-items: center;
+		padding: 0 16px;
+		justify-content: space-between;
+		pointer-events: none;
+	}
+
+	.nav-back-white {
+		flex-direction: row;
+		align-items: center;
+		padding: 6px 12px 6px 8px;
+		background-color: #FFFFFF;
+		border-radius: 20px;
+		pointer-events: auto;
+		z-index: 10;
+	}
+	.back-text-white {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 600;
+		margin-left: 2px;
+	}
+	.back-icon {
+		width: 18px;
+		height: 18px;
+	}
+	.nav-title-white {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		color: #FFFFFF;
+		font-size: 17px; /* 统一标准 */
+		font-weight: 700;
+		text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+		z-index: 1;
+		pointer-events: none;
+	}
+
+	.hero-content {
+		display: none;
+	}
+	.hero-title {
+		display: none;
+	}
+	.hero-subtitle {
+		font-size: 15px;
+		color: rgba(255, 255, 255, 0.95);
+		line-height: 22px;
+		margin-bottom: 20px;
+		text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+	}
+
+	.hero-info-row {
+		align-items: center;
+		justify-content: space-between;
+	}
+	.h-price-box {
+		align-items: flex-end;
+	}
+	.h-price-label {
+		color: #FFFFFF;
+		font-size: 16px;
+		font-weight: 700;
+		margin-bottom: 4px;
+	}
+	.h-price-val {
+		color: #FFFFFF;
+		font-size: 32px;
+		font-weight: 800;
+		margin: 0 4px;
+	}
+	.h-price-unit {
+		color: rgba(255, 255, 255, 0.8);
+		font-size: 13px;
+		margin-bottom: 6px;
+	}
+	.h-capacity-tag {
+		padding: 6px 14px;
+		border-radius: 12px;
+		background-color: rgba(255, 255, 255, 0.2);
+	}
+	.h-capacity-txt {
+		color: #FFFFFF;
+		font-size: 13px;
+		font-weight: 700;
+	}
+
+	/* 2. 详情卡片列表 */
+	.main-scroll-body {
+		flex: 1;
+		width: 100%;
+		height: 100%;
+	}
+	.detail-cards-container {
+		padding: 0;
+		background-color: transparent;
+	}
+
+	/* 进行中提醒横幅 */
+	.in-progress-banner {
+		margin-bottom: 16px;
+		padding: 14px 16px;
+		background-image: linear-gradient(135deg, #E8F0FE 0%, #F5F7FB 100%);
+		border-radius: 16px;
+		border: 1px solid rgba(26, 115, 232, 0.28);
+		align-items: center;
+	}
+	.in-progress-icon-wrap {
+		width: 36px;
+		height: 36px;
+		border-radius: 18px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		margin-right: 12px;
+	}
+	.in-progress-icon {
+		font-size: 18px;
+	}
+	.in-progress-info {
+		flex: 1;
+	}
+	.in-progress-title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #B45309;
+		margin-bottom: 2px;
+	}
+	.in-progress-desc {
+		font-size: 12px;
+		color: #92400E;
+		line-height: 18px;
+	}
+	.in-progress-action {
+		padding: 8px 14px;
+		background-color: #B45309;
+		border-radius: 14px;
+		flex-shrink: 0;
+		margin-left: 10px;
+	}
+	.in-progress-action-text {
+		font-size: 12px;
+		color: #FFFFFF;
+		font-weight: 700;
+	}
+
+	.detail-card {
+		background-color: transparent;
+		border-radius: 0;
+		padding: 0;
+		margin-bottom: 0;
+		border-width: 0;
+	}
+
+	.card-head {
+		align-items: center;
+		margin-bottom: 20px;
+	}
+	.icon-wrap-bg {
+		width: 38px;
+		height: 38px;
+		border-radius: 11px;
+		align-items: center;
+		justify-content: center;
+		margin-right: 12px;
+		overflow: hidden;
+	}
+	.bg-soft-blue { background-color: transparent; }
+	.bg-soft-green { background-color: transparent; }
+	.bg-soft-orange { background-color: transparent; }
+	.bg-soft-purple { background-color: transparent; }
+	.bg-soft-teal {
+		background-image: linear-gradient(135deg, #E8F0FE 0%, #F5F7FB 100%);
+		border-width: 1px;
+		border-color: rgba(26, 115, 232, 0.18);
+	}
+
+	.card-more-link {
+		margin-left: auto;
+		font-size: 14px;
+		color: #1A73E8;
+		font-weight: 500;
+	}
+
+	.card-icon {
+		width: 38px;
+		height: 38px;
+		border-radius: 11px;
+	}
+	.card-name {
+		font-size: 18px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.card-body {
+		flex-direction: column;
+	}
+
+	.location-name {
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 8px;
+	}
+	.location-desc {
+		font-size: 14px;
+		color: #4B5563;
+		line-height: 22px;
+	}
+	.map-preview {
+		margin-top: 14px;
+		padding: 12px 16px;
+		background-color: rgba(255,255,255,0.96);
+		border-radius: 10px;
+		align-items: center;
+		justify-content: space-between;
+		border-width: 1px;
+		border-style: dashed;
+		border-color: #E5E7EB;
+	}
+	.map-txt {
+		font-size: 14px;
+		color: #1A73E8;
+		font-weight: 600;
+	}
+	.arrow-s {
+		font-size: 18px;
+		color: #1A73E8;
+	}
+
+	.route-zone-row {
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-bottom: 12px;
+	}
+	.route-zone-chip {
+		padding: 7px 12px;
+		border-radius: 16px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		margin-right: 8px;
+		margin-bottom: 6px;
+	}
+	.route-zone-chip-on {
+		background-color: #1A73E8;
+		border-color: #1A73E8;
+	}
+	.route-zone-chip-text {
+		font-size: 12px;
+		font-weight: 700;
+		color: #475569;
+	}
+	.route-zone-chip-text-on {
+		color: #FFFFFF;
+	}
+	.route-stop-no {
+		width: 28px;
+		height: 28px;
+		border-radius: 6px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		margin-right: 10px;
+		flex-shrink: 0;
+	}
+	.route-stop-no-text{
+		font-size: 11px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.route-zone-item {
+		align-items: center;
+		padding: 12px 0;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #E5E7EB;
+	}
+	.route-zone-item-body {
+		flex: 1;
+		min-width: 0;
+	}
+	.route-zone-item-title-row {
+		align-items: center;
+		margin-bottom: 4px;
+	}
+	.route-zone-item-title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #0F172A;
+		flex: 1;
+		min-width: 0;
+	}
+	.route-zone-tag {
+		padding: 2px 6px;
+		border-radius: 6px;
+		background-color: #E8EEF8;
+		margin-left: 6px;
+		flex-shrink: 0;
+	}
+	.route-zone-tag-text {
+		font-size: 10px;
+		font-weight: 700;
+		color: #4B5563;
+	}
+	.route-zone-item-desc {
+		font-size: 12px;
+		color: #4B5563;
+		lines: 2;
+		margin-bottom: 4px;
+	}
+	.route-zone-item-duration {
+		font-size: 11px;
+		color: #9CA3AF;
+		font-weight: 600;
+	}
+	.route-zone-detail-btn {
+		padding: 8px 12px;
+		border-radius: 14px;
+		background-color: rgba(255,255,255,0.96);
+		flex-shrink: 0;
+		margin-left: 10px;
+	}
+	.route-zone-detail-btn-text {
+		font-size: 12px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+
+
+
+	.route-detail-mask {
+		position: fixed;
+		left: 0; right: 0; top: 0; bottom: 0;
+		background-color: rgba(15, 23, 42, 0.45);
+		z-index: 920;
+	}
+	.route-detail-sheet {
+		position: fixed;
+		left: 0; right: 0; bottom: 0;
+		height: 78%;
+		max-height: 78%;
+		background-color: #FFFFFF;
+		border-top-left-radius: 20px;
+		border-top-right-radius: 20px;
+		z-index: 921;
+		overflow: hidden;
+	}
+	.route-detail-handle {
+		width: 36px; height: 4px; border-radius: 2px;
+		background-color: #E2E8F0; align-self: center;
+		margin-top: 10px; margin-bottom: 8px;
+		flex-shrink: 0;
+	}
+	.route-detail-top {
+		align-items: flex-start;
+		padding: 4px 16px 12px 16px;
+		flex-shrink: 0;
+	}
+	.route-detail-titles { flex: 1; min-width: 0; }
+	.route-detail-title {
+		font-size: 18px; font-weight: 800; color: #0F172A; margin-bottom: 4px;
+	}
+	.route-detail-zone {
+		font-size: 12px; color: #4B5563; font-weight: 600;
+	}
+	.route-detail-close {
+		padding: 6px 12px; border-radius: 14px; background-color: rgba(255,255,255,0.96);
+		flex-shrink: 0; margin-left: 10px;
+	}
+	.route-detail-close-text { font-size: 12px; font-weight: 700; color: #475569; }
+	.route-detail-scroll {
+		width: 100%;
+		flex: 1;
+		min-height: 240px;
+	}
+	.route-detail-inner {
+		padding: 0 16px 8px 16px;
+		flex-direction: column;
+	}
+	.route-detail-scroll-pad { height: 24px; }
+	.route-photo-card {
+		height: 160px; border-radius: 16px; align-items: center; justify-content: center;
+		margin-bottom: 16px; overflow: hidden;
+	}
+	.route-photo-caption { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.92); }
+	.route-detail-section { margin-bottom: 16px; }
+	.route-detail-sec-title {
+		font-size: 14px; font-weight: 800; color: #1A1A1A; margin-bottom: 8px;
+	}
+	.route-detail-sec-body { font-size: 13px; color: #475569; line-height: 20px; }
+	.route-detail-rich { font-size: 13px; color: #475569; line-height: 22px; }
+	.route-bullet-row { align-items: flex-start; margin-bottom: 6px; }
+	.route-bullet-dot {
+		width: 6px; height: 6px; border-radius: 3px; background-color: #1A73E8;
+		margin-top: 7px; margin-right: 8px; flex-shrink: 0;
+	}
+	.route-bullet-dot-blue { background-color: #1A73E8; }
+	.route-bullet-text { flex: 1; font-size: 13px; color: #1A1A1A; line-height: 20px; }
+	.route-gift-row { flex-direction: row; flex-wrap: wrap; }
+	.route-gift-chip {
+		padding: 6px 10px; border-radius: 12px; background-color: rgba(255,255,255,0.96);
+		margin-right: 8px; margin-bottom: 8px;
+	}
+	.route-gift-chip-text { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+	.route-detail-footer {
+		flex-direction: row;
+		padding: 10px 16px 18px 16px;
+		border-top-width: 0.5px;
+		border-top-color: rgba(60,60,67,0.12);
+		flex-shrink: 0;
+		background-color: #FFFFFF;
+	}
+	.route-detail-primary {
+		flex: 1;
+		height: 44px;
+		border-radius: 22px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.route-detail-primary-text {
+		font-size: 14px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+
+	.notice-item {
+		padding: 4px 0 12px 0;
+		position: relative;
+	}
+	.notice-item-head {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+	.notice-type-tag {
+		padding: 2px 8px;
+		border-radius: 10px;
+	}
+	.notice-type-txt {
+		color: #FFFFFF;
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.notice-time {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+	.notice-title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1E293B;
+		margin-bottom: 6px;
+	}
+	.notice-brief {
+		font-size: 13px;
+		color: #4B5563;
+		line-height: 20px;
+	}
+	.notice-item-divider {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 0.5px;
+		background-color: rgba(255,255,255,0.96);
+	}
+	.notice-empty {
+		padding: 8px 0;
+	}
+	.notice-empty-txt {
+		font-size: 14px;
+		color: #9CA3AF;
+	}
+
+	.contact-row {
+		min-height: 44px;
+		padding: 10px 0;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.c-label {
+		font-size: 15px;
+		color: #4B5563;
+		flex-shrink: 0;
+		width: 72px;
+		margin-right: 12px;
+	}
+	.c-value {
+		font-size: 15px;
+		color: #1A1A1A;
+		font-weight: 600;
+		flex: 1;
+		min-width: 0;
+		text-align: right;
+	}
+	.c-consult-copy {
+		flex: 1;
+		min-width: 0;
+	}
+	.c-consult-title {
+		font-size: 15px;
+		color: #4B5563;
+		margin-bottom: 2px;
+	}
+	.c-hours {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+	.consult-btn {
+		height: 30px;
+		padding: 0 12px;
+		border-radius: 15px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		margin-left: 12px;
+	}
+	
+	.owners-block { margin-bottom: 10px; }
+	.owners-title { font-size: 13px; font-weight: 800; color: #1A1A1A; margin-bottom: 8px; }
+	.owner-row {
+		padding: 10px 0;
+		border-bottom: 0.5px solid #E5E7EB;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.owner-main { flex: 1; min-width: 0; }
+	.owner-name-row { align-items: center; gap: 8px; margin-bottom: 4px; }
+	.owner-name { font-size: 14px; font-weight: 700; color: #1A1A1A; }
+	.owner-role {
+		font-size: 11px; color: #1A73E8; background: #E8F0FE; padding: 2px 8px; border-radius: 999px;
+	}
+	.owner-phone { font-size: 12px; color: #4B5563; }
+	.owner-wechat { font-size: 12px; color: #4B5563; margin-top: 2px; }
+	.owner-call { font-size: 12px; font-weight: 700; color: #1A73E8; padding: 6px 10px; background: #E8F0FE; border-radius: 999px; }
+
+	.consult-contact {
+		margin: 0;
+		margin-left: 12px;
+		line-height: 30px;
+		border-width: 0;
+	}
+	.consult-contact::after { border-width: 0; }
+	.consult-btn-txt {
+		font-size: 12px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+
+	/* 底部固定栏 */
+	.bottom-fixed-bar {
+		padding: 16px 20px 44px 20px;
+		background-color: #FFFFFF;
+		border-top-width: 0.5px;
+		border-top-color: rgba(0, 0, 0, 0.05);
+		align-items: center;
+		justify-content: space-between;
+	}
+	.price-group {
+		align-items: flex-end;
+		margin-bottom: 4px;
+	}
+	.currency {
+		font-size: 14px;
+		color: #EF4444;
+		font-weight: 700;
+		margin-bottom: 2px;
+	}
+	.total-price {
+		font-size: 26px;
+		color: #EF4444;
+		font-weight: 800;
+	}
+	.unit {
+		font-size: 12px;
+		color: #9CA3AF;
+		margin-left: 4px;
+		margin-bottom: 4px;
+	}
+	.policy-txt {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+	.final-book-btn {
+		width: 180px;
+		height: 52px;
+		background-image: linear-gradient(135deg, #1A1A1A 0%, #374151 100%);
+		border-radius: 26px;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+	.btn-disabled {
+		background-image: none !important;
+		background-color: #C7C7CC !important;
+		box-shadow: none !important;
+	}
+	.book-txt {
+		color: #FFFFFF;
+		font-size: 16px;
+		font-weight: 700;
+	}
+
+	.bottom-safe-spacer {
+		height: 36px;
+		background-color: #FFFFFF;
+	}
+</style>

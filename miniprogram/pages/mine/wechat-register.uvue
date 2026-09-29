@@ -1,0 +1,333 @@
+<template>
+	<view class="page-container uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">完善资料</text>
+		</view>
+
+		<scroll-view class="scroll-body" scroll-y="true" :show-scrollbar="false">
+			<view class="form-wrap uni-column">
+				<view class="avatar-section uni-column">
+					<button class="avatar-button" open-type="chooseAvatar" @chooseavatar="handleChooseAvatar">
+						<view class="avatar-preview">
+							<image v-if="avatarPath.length > 0" :src="avatarPath" class="avatar-img" mode="aspectFill"></image>
+							<text v-else class="avatar-text">头像</text>
+						</view>
+					</button>
+					<text class="avatar-tip">选择微信头像</text>
+				</view>
+
+				<view class="form-card uni-column">
+					<view class="card-head uni-column">
+						<text class="card-title">实名信息</text>
+						<text class="card-desc">新用户需填写真实姓名、身份证号与手机号。姓名即账号展示名。</text>
+					</view>
+					<view class="field-row uni-row">
+						<text class="field-label">姓名</text>
+						<input class="field-input" v-model="realName" placeholder="请输入真实姓名" placeholder-style="color:#9CA3AF" />
+					</view>
+					<view class="line"></view>
+					<view class="field-row uni-row">
+						<text class="field-label">身份证号</text>
+						<input class="field-input" maxlength="18" v-model="idCard" placeholder="请输入18位身份证号" placeholder-style="color:#9CA3AF" />
+					</view>
+					<view class="line"></view>
+					<view class="field-row uni-row">
+						<text class="field-label">手机号</text>
+						<input class="field-input" type="number" maxlength="11" v-model="phone" placeholder="请输入11位手机号" placeholder-style="color:#9CA3AF" />
+					</view>
+				</view>
+
+				<view class="submit-btn" @click="handleSubmit">
+					<text class="submit-btn-text">完成注册</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { ApiEndpoints } from '../../utils/api-endpoints.uts'
+	import { postApi } from '../../utils/api-client.uts'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { uploadUserAvatar } from '../../utils/user-services.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const bindToken = ref('')
+	const avatarPath = ref('')
+	const phone = ref('')
+	const realName = ref('')
+	const idCard = ref('')
+	let isSubmitting = false
+
+	type AuthUser = {
+		id: string
+		phone: string
+		openId: string
+		nickname: string
+		studyNo: string
+	}
+
+	type AuthResponse = {
+		accessToken: string
+		user: AuthUser
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const token = options['bindToken']
+		bindToken.value = token != null ? decodeURIComponent(token.toString()) : ''
+	})
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const handleChooseAvatar = (event: any) => {
+		if (event.detail != null && event.detail.avatarUrl != null) {
+			avatarPath.value = event.detail.avatarUrl.toString()
+		}
+	}
+
+	const validatePhone = (value: string): boolean => {
+		if (value.length !== 11 || value.charAt(0) !== '1') {
+			uni.showToast({ title: '请输入正确手机号', icon: 'none' })
+			return false
+		}
+		return true
+	}
+
+	const validateRealName = (value: string): boolean => {
+		const name = value.trim()
+		if (name.length < 2 || name.length > 30) {
+			uni.showToast({ title: '请输入正确的真实姓名', icon: 'none' })
+			return false
+		}
+		return true
+	}
+
+	const validateIdCard = (value: string): boolean => {
+		if (value.length !== 18) {
+			uni.showToast({ title: '请输入18位身份证号', icon: 'none' })
+			return false
+		}
+		for (let i = 0; i < value.length; i++) {
+			const code = value.charCodeAt(i)
+			if (i < 17 && (code < 48 || code > 57)) {
+				uni.showToast({ title: '身份证号格式不正确', icon: 'none' })
+				return false
+			}
+			if (i === 17 && !((code >= 48 && code <= 57) || code === 88 || code === 120)) {
+				uni.showToast({ title: '身份证号格式不正确', icon: 'none' })
+				return false
+			}
+		}
+		return true
+	}
+
+	const validateForm = (): boolean => {
+		if (bindToken.value.length === 0) {
+			uni.showToast({ title: '微信注册凭证无效', icon: 'none' })
+			return false
+		}
+		if (avatarPath.value.length === 0) {
+			uni.showToast({ title: '请选择头像', icon: 'none' })
+			return false
+		}
+		if (!validateRealName(realName.value)) return false
+		if (!validateIdCard(idCard.value.trim().toUpperCase())) return false
+		if (!validatePhone(phone.value.trim())) return false
+		return true
+	}
+
+	const finish = (title: string) => {
+		uni.showToast({ title, icon: 'success' })
+		setTimeout(() => {
+			uni.navigateBack({ delta: 2 })
+		}, 800)
+	}
+
+	const handleSubmit = () => {
+		if (isSubmitting) return
+		if (!validateForm()) return
+		isSubmitting = true
+		const name = realName.value.trim()
+		uni.showLoading({ title: '注册中...' })
+		postApi<AuthResponse>(ApiEndpoints.authWechatBind, {
+			bindToken: bindToken.value,
+			phone: phone.value.trim(),
+			nickname: name,
+			realName: name,
+			idCard: idCard.value.trim().toUpperCase()
+		}, false).then((auth) => {
+			uni.setStorageSync(StorageKeys.authToken, auth.accessToken)
+			uploadUserAvatar(avatarPath.value).then((_ret) => {
+				uni.hideLoading()
+				isSubmitting = false
+				finish('注册成功')
+			}).catch((_err) => {
+				uni.hideLoading()
+				isSubmitting = false
+				finish('注册成功')
+			})
+		}).catch((err) => {
+			uni.hideLoading()
+			isSubmitting = false
+			const message = err != null && err.message != null ? err.message.toString() : '注册失败'
+			uni.showToast({ title: message.length > 0 ? message : '注册失败', icon: 'none' })
+		})
+	}
+</script>
+
+<style>
+	.page-container {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		background-color: #FFFFFF;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.scroll-body {
+		flex: 1;
+		width: 100%;
+	}
+	.form-wrap {
+		padding: 18px 20px 40px;
+	}
+	.avatar-section {
+		align-items: center;
+		margin: 10px 0 18px;
+	}
+	.avatar-button {
+		padding: 0;
+		margin: 0;
+		background-color: transparent;
+		border-width: 0;
+		line-height: 1;
+	}
+	.avatar-button::after {
+		border-width: 0;
+	}
+	.avatar-preview {
+		width: 86px;
+		height: 86px;
+		border-radius: 43px;
+		background-color: #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+	.avatar-img {
+		width: 86px;
+		height: 86px;
+		border-radius: 43px;
+	}
+	.avatar-text {
+		font-size: 15px;
+		color: #374151;
+	}
+	.avatar-tip {
+		margin-top: 10px;
+		font-size: 13px;
+		color: #374151;
+	}
+	.form-card {
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		padding: 0 16px;
+		margin-bottom: 16px;
+		border: 1px solid #EEF2F7;
+	}
+	.card-head {
+		padding: 16px 0 10px;
+	}
+	.card-title {
+		font-size: 15px;
+		color: #1A1A1A;
+		font-weight: 700;
+	}
+	.card-desc {
+		margin-top: 6px;
+		font-size: 12px;
+		line-height: 18px;
+		color: #374151;
+	}
+	.field-row {
+		min-height: 58px;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.field-label {
+		width: 86px;
+		font-size: 15px;
+		color: #1A1A1A;
+		font-weight: 600;
+	}
+	.field-input {
+		flex: 1;
+		text-align: right;
+		font-size: 15px;
+		color: #1A1A1A;
+	}
+	.line {
+		height: 1px;
+		background-color: #FFFFFF;
+	}
+	.submit-btn {
+		height: 52px;
+		border-radius: 16px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		margin-top: 8px;
+	}
+	.submit-btn-text {
+		font-size: 16px;
+		color: #FFFFFF;
+		font-weight: 700;
+	}
+</style>

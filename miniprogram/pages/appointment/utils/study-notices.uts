@@ -1,0 +1,48 @@
+import { ApiEndpoints, endpointWithId } from '../../../utils/api-endpoints.uts'
+import { getApi } from '../../../utils/api-client.uts'
+
+export type StudyNotice = {
+	id: string
+	title: string
+	content: string
+	time: string
+	timestamp: number
+	type: string
+	projectId: string
+	projectTitle: string
+}
+
+export type StudyNoticeDetail = {
+	id: string
+	title: string
+	content: string
+	time: string
+	timestamp: number
+	type: string
+	projectId: string
+	projectTitle: string
+	publisher: string
+	paragraphs: string[]
+}
+
+export function getNoticeTagColor(type: string): string {
+	if (type === '测试分类') return '#1A1A1A'
+	return '#8E8E93'
+}
+
+export function sortNoticesByTime(list: StudyNotice[], desc: boolean = true): StudyNotice[] {
+	const copy: StudyNotice[] = []
+	for (let i = 0; i < list.length; i++) copy.push(list[i])
+	copy.sort((a, b) => desc ? b.timestamp - a.timestamp : a.timestamp - b.timestamp)
+	return copy
+}
+
+export function fetchStudyNotices(projectId: string = ''): Promise<StudyNotice[]> {
+	let url = ApiEndpoints.studyNotices
+	if (projectId.length > 0) url = url + '?projectId=' + encodeURIComponent(projectId)
+	return getApi<StudyNotice[]>(url, false)
+}
+
+export function fetchStudyNoticeDetail(id: string): Promise<StudyNoticeDetail | null> {
+	return getApi<StudyNoticeDetail>(endpointWithId(ApiEndpoints.studyNoticeDetail, id), false)
+}

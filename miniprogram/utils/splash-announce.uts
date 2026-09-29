@@ -1,0 +1,117 @@
+import { getApi } from './api-client.uts'
+import { ApiEndpoints } from './api-endpoints.uts'
+import { StorageKeys } from './storage-keys.uts'
+
+export type SplashFile = {
+	url: string
+	name: string
+	size: number
+	mime: string
+}
+
+export type SplashAnnounce = {
+	enabled: boolean
+	closable: boolean
+	title: string
+	html: string
+	images: SplashFile[]
+	videos: SplashFile[]
+	attachments: SplashFile[]
+	version: number
+}
+
+let sessionDismissed = false
+let inflight: Promise<SplashAnnounce | null> | null = null
+
+function emptySplash(): SplashAnnounce {
+	return {
+		enabled: false,
+		closable: true,
+		title: '',
+		html: '',
+		images: [] as SplashFile[],
+		videos: [] as SplashFile[],
+		attachments: [] as SplashFile[],
+		version: 0
+	}
+}
+
+function asFileList(raw: any): SplashFile[] {
+	const out: SplashFile[] = []
+	if (raw == null || !Array.isArray(raw)) return out
+	for (let i = 0; i < raw.length; i++) {
+		const row = raw[i]
+		if (row == null) continue
+		const url = row['url'] != null ? row['url'].toString() : ''
+		if (url.length === 0) continue
+		const name = row['name'] != null ? row['name'].toString() : '文件'
+		const sizeRaw = Number(row['size'])
+		const mime = row['mime'] != null ? row['mime'].toString() : ''
+		out.push({
+			url: url,
+			name: name.length > 0 ? name : '文件',
+			size: sizeRaw === sizeRaw && sizeRaw > 0 ? sizeRaw : 0,
+			mime: mime
+		})
+	}
+	return out
+}
+
+function parseSplash(raw: any): SplashAnnounce {
+	const empty = emptySplash()
+	if (raw == null) return empty
+	const version = Number(raw['version'])
+	return {
+		enabled: raw['enabled'] === true,
+		closable: raw['closable'] !== false,
+		title: raw['title'] != null ? raw['title'].toString() : '',
+		html: raw['html'] != null ? raw['html'].toString() : '',
+		images: asFileList(raw['images']),
+		videos: asFileList(raw['videos']),
+		attachments: asFileList(raw['attachments']),
+		version: version === version && version > 0 ? Math.floor(version) : 0
+	}
+}
+
+export function markSplashDismissed(): void {
+	sessionDismissed = true
+}
+
+export function isSplashSessionDismissed(): boolean {
+	return sessionDismissed
+}
+
+export function storedSplashVersion(): string {
+	const raw = uni.getStorageSync(StorageKeys.splashAnnounceVersion)
+	if (raw == null) return ''
+	return raw.toString()
+}
+
+export function rememberSplashVersion(version: number): void {
+	try {
+		uni.setStorageSync(StorageKeys.splashAnnounceVersion, version.toString())
+	} catch (_e) {}
+}
+
+export function shouldShowSplash(item: SplashAnnounce | null): boolean {
+	if (item == null) return false
+	if (!item.enabled) return false
+	if (sessionDismissed) return false
+	if (item.title.length === 0 && item.html.length === 0 && item.images.length === 0 && item.videos.length === 0 && item.attachments.length === 0) return false
+	const seen = storedSplashVersion()
+	if (seen.length > 0 && seen === item.version.toString()) return false
+	return true
+}
+
+export function fetchSplashAnnounce(): Promise<SplashAnnounce | null> {
+	if (inflight != null) return inflight
+	inflight = getApi<any>(ApiEndpoints.studyPlatform, false).then((data: any): SplashAnnounce | null => {
+		if (data == null) return null
+		const splash = data['splash']
+		if (splash == null) return null
+		return parseSplash(splash)
+	}).catch((_e): SplashAnnounce | null => {
+		return null
+	})
+	return inflight
+}

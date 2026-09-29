@@ -1,0 +1,228 @@
+<template>
+	<view class="page-wrapper uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">拼图详情</text>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view v-if="detail != null" class="detail-body">
+				<view
+					class="hero-card uni-column"
+					:style="'background-image: linear-gradient(145deg, ' + detail.gradientStart + ' 0%, ' + detail.gradientEnd + ' 100%)'"
+				>
+					<view class="hero-emoji-wrap">
+						<image :src="detail.collected ? detail.icon : '/static/icon-lock.svg'" class="hero-icon" mode="aspectFit"></image>
+					</view>
+					<text class="hero-piece-name">{{ detail.pieceName }}</text>
+					<text class="hero-project-name">{{ detail.projectTitle }}</text>
+					<view :class="['status-pill', detail.collected ? 'status-collected' : 'status-locked']">
+						<text class="status-pill-txt">{{ detail.collected ? '已收集' : '未解锁' }}</text>
+					</view>
+				</view>
+
+				<view class="info-card uni-column">
+					<view class="info-row uni-row" v-if="detail.collected">
+						<text class="info-label">收集时间</text>
+						<text class="info-value">{{ detail.collectedTime }}</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">打卡地点</text>
+						<text class="info-value">{{ detail.checkLocation }}</text>
+					</view>
+					<view class="info-row uni-row info-row-last">
+						<text class="info-label">所属项目</text>
+						<text class="info-value">{{ detail.projectTitle }}</text>
+					</view>
+				</view>
+
+				<view class="content-card uni-column">
+					<text class="content-title">拼图介绍</text>
+					<text
+						v-for="(para, pIdx) in detail.intro"
+						:key="'intro-' + pIdx"
+						class="content-paragraph"
+					>{{ para }}</text>
+				</view>
+
+				<view class="content-card uni-column" v-if="!detail.collected">
+					<text class="content-title">解锁方式</text>
+					<text class="unlock-tip">{{ detail.unlockTip }}</text>
+				</view>
+
+				<view class="content-card uni-column" v-if="detail.collected">
+					<text class="content-title">收集奖励</text>
+					<text class="reward-tip">{{ detail.rewardTip }}</text>
+				</view>
+
+				<view class="action-btn action-btn-secondary" @click="goProjectBoard">
+					<text class="action-btn-text">查看完整项目拼图</text>
+				</view>
+				<view class="action-btn" :style="actionBtnStyle" @click="onActionClick">
+					<text class="action-btn-text">{{ detail.collected ? '查看研学项目' : '前往解锁拼图' }}</text>
+				</view>
+			</view>
+
+			<view v-else class="empty-state uni-column">
+				<image src="/static/icon-puzzle.svg" class="empty-svg" mode="aspectFit"></image>
+				<text class="empty-txt">拼图信息不存在</text>
+			</view>
+
+			<view style="height: 40px;"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import { fetchPuzzlePieceDetail, type PuzzlePieceDetail } from '../../utils/puzzle-data.uts'
+
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const detail = ref<PuzzlePieceDetail | null>(null)
+
+	const actionBtnStyle = computed((): string => {
+		const d = detail.value
+		if (d == null) return ''
+		return 'background-image: linear-gradient(135deg, ' + d.gradientStart + ' 0%, ' + d.gradientEnd + ' 100%)'
+	})
+
+	onLoad((options: OnLoadOptions) => {
+		const projectId = options['projectId'] != null ? options['projectId'].toString() : ''
+		const pieceId = options['pieceId'] != null ? options['pieceId'].toString() : ''
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token == null || token.toString().length === 0) {
+			detail.value = null
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			return
+		}
+		fetchPuzzlePieceDetail(projectId, pieceId).then((res) => {
+			detail.value = res
+		}).catch((_err) => {
+			detail.value = null
+			uni.showToast({ title: '拼图详情加载失败', icon: 'none' })
+		})
+	})
+
+	const goProjectBoard = () => {
+		const d = detail.value
+		if (d == null) return
+		uni.navigateTo({ url: '/pages/mine/puzzle-project-board?id=' + d.projectId })
+	}
+
+	const onActionClick = () => {
+		const d = detail.value
+		if (d == null) return
+		uni.navigateTo({ url: '/pages/appointment/project-detail?id=' + d.projectId })
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+</script>
+
+<style>
+	.page-wrapper { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+		background-color: #FFFFFF;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.nav-back { flex-direction: row; align-items: center; z-index: 1; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { font-size: 16px; color: #1A1A1A; font-weight: 500; }
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.main-scroll { flex: 1; width: 100%; }
+	.detail-body { padding: 16px; }
+
+	.hero-card {
+		border-radius: 20px;
+		padding: 28px 20px;
+		align-items: center;
+		margin-bottom: 16px;
+	}
+	.hero-emoji-wrap {
+		width: 80px;
+		height: 80px;
+		border-radius: 40px;
+		background-color: rgba(255, 255, 255, 0.2);
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 14px;
+	}
+	.hero-icon { width: 48px; height: 48px; }
+	.hero-piece-name { font-size: 24px; font-weight: 800; color: #FFFFFF; margin-bottom: 6px; }
+	.hero-project-name { font-size: 14px; color: #FFFFFF; margin-bottom: 14px; }
+	.status-pill { padding: 4px 14px; border-radius: 14px; }
+	.status-collected { background-color: rgba(52, 199, 89, 0.9); }
+	.status-locked { background-color: rgba(0, 0, 0, 0.25); }
+	.status-pill-txt { font-size: 12px; font-weight: 700; color: #FFFFFF; }
+
+	.info-card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 4px 16px;
+		margin-bottom: 12px;
+		border: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.info-row {
+		padding: 14px 0;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #FFFFFF;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.info-row-last { border-bottom-width: 0; }
+	.info-label { font-size: 14px; color: #9CA3AF; flex-shrink: 0; margin-right: 12px; }
+	.info-value { font-size: 14px; color: #1A1A1A; font-weight: 600; flex: 1; text-align: right; }
+
+	.content-card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.content-title { font-size: 16px; font-weight: 700; color: #1A1A1A; margin-bottom: 10px; }
+	.content-paragraph { font-size: 15px; color: #1A1A1A; line-height: 24px; margin-bottom: 10px; }
+	.unlock-tip { font-size: 14px; color: #374151; line-height: 22px; }
+	.reward-tip { font-size: 14px; color: #34C759; line-height: 22px; font-weight: 500; }
+
+	.action-btn {
+		height: 50px;
+		border-radius: 25px;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 10px;
+	}
+	.action-btn-secondary { background-color: #FFFFFF; border: 1px solid #1A1A1A; }
+	.action-btn-secondary .action-btn-text { color: #1A1A1A; }
+	.action-btn-text { font-size: 16px; font-weight: 600; color: #FFFFFF; }
+
+	.empty-state { padding-top: 80px; align-items: center; }
+	.empty-svg { width: 56px; height: 56px; margin-bottom: 12px; opacity: 0.45; }
+	.empty-txt { font-size: 15px; color: #9CA3AF; }
+</style>

@@ -1,0 +1,471 @@
+<template>
+	<view class="page-wrapper uni-column">
+		<!-- 1. 顶部固定区域 -->
+		<view class="fixed-header">
+			<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">{{ pageTitle }}</text>
+			</view>
+
+			<!-- 搜索框 -->
+			<view class="search-area">
+				<view class="search-wrap uni-row">
+					<image src="/static/func-search.svg" class="s-icon" mode="aspectFit"></image>
+					<input class="s-input" type="text" placeholder="搜索动态标题或内容..." placeholder-style="color:#6B7280;" v-model="searchKeyword" />
+				</view>
+			</view>
+
+			<!-- 筛选与排序栏 -->
+			<view class="filter-sort-bar uni-row">
+				<scroll-view class="type-scroll" scroll-x="true" :show-scrollbar="false">
+					<view class="type-list uni-row">
+						<view
+							v-for="(type, index) in noticeTypes"
+							:key="index"
+							:class="['type-pill', activeType === index ? 'type-active' : '']"
+							@click="activeType = index"
+						>
+							<text :class="['type-txt', activeType === index ? 'type-txt-active' : '']">{{ type }}</text>
+						</view>
+						<view style="width: 20px; flex-shrink: 0;"></view>
+					</view>
+				</scroll-view>
+			</view>
+			<view class="sort-bar uni-row">
+				<view :class="['sort-cell', sortOrder === 'desc' ? 'sort-cell-on' : '']" @click="setSort('desc')">
+					<text :class="['sort-cell-txt', sortOrder === 'desc' ? 'sort-cell-txt-on' : '']">最新优先</text>
+				</view>
+				<view :class="['sort-cell', 'sort-cell-last', sortOrder === 'asc' ? 'sort-cell-on' : '']" @click="setSort('asc')">
+					<text :class="['sort-cell-txt', sortOrder === 'asc' ? 'sort-cell-txt-on' : '']">最早优先</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 2. 动态列表 -->
+		<scroll-view class="main-list" :style="listStyle" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="list-padding">
+				<view v-for="(item, index) in filteredNotices" :key="item.id" class="notice-card" @click="goDetail(item.id)">
+					<view class="notice-card-header uni-row">
+						<view class="type-tag" :style="{ backgroundColor: getNoticeTagColor(item.type) }">
+							<text class="type-tag-txt">{{ item.type }}</text>
+						</view>
+						<text class="notice-time">{{ item.time }}</text>
+					</view>
+					<text class="notice-title">{{ item.title }}</text>
+					<text class="notice-brief">{{ noticeBrief(item.content) }}</text>
+					<view
+						v-if="item.projectId.length > 0"
+						class="notice-project-row uni-row"
+						@click.stop="goProject(item.projectId)"
+					>
+						<text class="notice-project-tag">研学项目</text>
+						<text class="notice-project-name">{{ item.projectTitle }}</text>
+						<text class="notice-project-arrow">›</text>
+					</view>
+					<view class="notice-footer uni-row">
+						<text class="read-more">阅读全文</text>
+						<text class="arrow-right">›</text>
+					</view>
+				</view>
+
+				<view v-if="filteredNotices.length === 0" class="empty-state uni-column">
+					<image src="/static/icon-note.svg" class="empty-emoji" mode="aspectFit"></image>
+					<text class="empty-txt">没有找到相关动态</text>
+				</view>
+
+				<view style="height: 40px;"></view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { fetchStudyNotices, getNoticeTagColor, sortNoticesByTime, type StudyNotice } from './utils/study-notices.uts'
+	import { stripBodyExtras, stripHtml } from '../../utils/html-content.uts'
+
+	const noticeBrief = (content: string): string => {
+		const plain = stripHtml(stripBodyExtras(content))
+		if (plain.length <= 72) return plain
+		return plain.substring(0, 72) + '…'
+	}
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const windowHeight = layout.windowHeight
+	const navBarHeight = 44
+	const searchAreaHeight = 60
+	const filterAreaHeight = 90
+	const headerHeight = statusBarHeight + navBarHeight + searchAreaHeight + filterAreaHeight
+	const listStyle = 'top: ' + headerHeight + 'px; height: ' + (windowHeight - headerHeight) + 'px;'
+
+	const searchKeyword = ref('')
+	const activeType = ref(0)
+	const noticeTypes = ['全部', '测试分类']
+	const sortOrder = ref('desc') // desc: 最新, asc: 最早
+
+	const filterProjectId = ref('')
+	const pageTitle = ref('动态列表')
+	const studyNotices = ref<StudyNotice[]>([])
+
+	const filteredNotices = computed((): StudyNotice[] => {
+		let list = studyNotices.value.filter(item => {
+			if (filterProjectId.value.length > 0) {
+				if (item.projectId !== filterProjectId.value) return false
+			}
+			// 1. 类型过滤
+			const typeMatch = activeType.value === 0 || item.type === noticeTypes[activeType.value]
+			// 2. 搜索过滤
+			const searchMatch = searchKeyword.value.trim() === '' ||
+							   item.title.toLowerCase().includes(searchKeyword.value.toLowerCase()) ||
+							   item.content.toLowerCase().includes(searchKeyword.value.toLowerCase())
+			return typeMatch && searchMatch
+		})
+
+		return sortNoticesByTime(list, sortOrder.value === 'desc')
+	})
+
+	onLoad((options: OnLoadOptions) => {
+		const pid = options['projectId']
+		if (pid != null && pid.toString().length > 0) {
+			filterProjectId.value = pid.toString()
+			pageTitle.value = '项目动态'
+		}
+		loadNotices()
+	})
+
+	const loadNotices = () => {
+		fetchStudyNotices(filterProjectId.value).then((list) => {
+			studyNotices.value = list
+			if (filterProjectId.value.length > 0) {
+				let title = '项目动态'
+				for (let i = 0; i < list.length; i++) {
+					const n = list[i]
+					if (n.projectId === filterProjectId.value) {
+						title = n.projectTitle + ' · 动态'
+						break
+					}
+				}
+				pageTitle.value = title
+			}
+		}).catch((_err) => {
+			studyNotices.value = []
+			uni.showToast({ title: '动态加载失败', icon: 'none' })
+		})
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const setSort = (order: string) => {
+	sortOrder.value = order
+}
+const toggleSort = () => {
+		sortOrder.value = sortOrder.value === 'desc' ? 'asc' : 'desc'
+	}
+
+	const goDetail = (id: string) => {
+		uni.navigateTo({ url: '/pages/index/notice-detail?id=' + id })
+	}
+
+	const goProject = (projectId: string) => {
+		uni.navigateTo({ url: '/pages/appointment/project-detail?id=' + projectId })
+	}
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+		position: relative;
+	}
+
+	.fixed-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1000;
+		background-color: #FFFFFF;
+		border-bottom: 1px solid #E5E7EB;
+	}
+
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	/* 搜索区域 */
+	.search-area {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		padding: 8px 16px 12px 16px;
+		height: 60px;
+	}
+	.search-wrap {
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		width: 100%;
+		height: 40px;
+		background-color: #E8EEF8;
+		border-radius: 20px;
+		align-items: center;
+		padding: 0 16px;
+	
+}
+	.s-icon {
+		width: 16px;
+		height: 16px;
+		margin-right: 8px;
+	}
+	.s-input {
+		flex: 1;
+		font-size: 14px;
+		color: #1A1A1A;
+	}
+
+	/* 筛选排序栏 */
+	.filter-sort-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 50px;
+		width: 100%;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #E5E7EB;
+		justify-content: space-between;
+	}
+	.type-scroll {
+		flex: 1;
+		height: 50px;
+		flex-direction: row;
+	}
+	.type-list {
+		padding: 0 16px;
+		height: 50px;
+		align-items: center;
+		flex-direction: row;
+	}
+	.type-pill {
+		padding: 0 14px;
+		height: 28px;
+		background-color: #E8EEF8;
+		border-radius: 14px;
+		justify-content: center;
+		margin-right: 8px;
+		flex-shrink: 0;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.type-active {
+		background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+	.type-txt {
+		font-size: 13px;
+		color: #374151;
+		font-weight: 500;
+	}
+	.type-txt-active {
+		color: #FFFFFF;
+		font-weight: 600;
+	}
+
+.sort-bar {
+		width: 100%;
+		height: 40px;
+		flex-direction: row;
+		background-color: #F5F7FB;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+	}
+	.sort-cell {
+		flex: 1;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+		background-color: #F5F7FB;
+		border-right-width: 1px;
+		border-right-style: solid;
+		border-right-color: #E5E7EB;
+		border-radius: 0;
+	}
+	.sort-cell-last {
+		border-right-width: 0;
+	}
+	.sort-cell-on {
+		background-color: #1A73E8;
+	}
+	.sort-cell-txt {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.sort-cell-txt-on {
+		color: #FFFFFF;
+	}
+
+	.main-list {
+		position: absolute;
+		left: 0;
+		right: 0;
+	}
+	.list-padding {
+		padding: 16px;
+	}
+
+	/* 动态卡片样式 */
+	.notice-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 18px;
+		margin-bottom: 16px;
+		border: 1px solid #E5E7EB;
+	}
+	.notice-card:active {
+		background-color: #FFFFFF;
+	}
+	.notice-card-header {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+	.type-tag {
+		padding: 2px 8px;
+		border-radius: 4px;
+	}
+	.type-tag-txt {
+		color: #FFFFFF;
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.notice-time {
+		font-size: 13px;
+		color: #6B7280;
+	}
+	.notice-title {
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 8px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.notice-brief {
+		font-size: 14px;
+		color: #374151;
+		line-height: 20px;
+		margin-bottom: 14px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.notice-project-row {
+		margin-top: 10px;
+		margin-bottom: 4px;
+		align-items: center;
+		padding: 8px 10px;
+		border-radius: 8px;
+		background-color: #F5F7FB;
+	}
+	.notice-project-tag {
+		font-size: 11px;
+		color: #374151;
+		margin-right: 6px;
+	}
+	.notice-project-name {
+		flex: 1;
+		font-size: 13px;
+		color: #1A73E8;
+		font-weight: 600;
+	}
+	.notice-project-arrow {
+		font-size: 16px;
+		color: #1A73E8;
+	}
+	.notice-footer {
+		padding-top: 12px;
+		border-top-width: 0.5px;
+		border-top-color: #E5E7EB;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.read-more {
+		font-size: 13px;
+		color: #1A73E8;
+		font-weight: 600;
+	}
+	.arrow-right {
+		font-size: 18px;
+		color: #1A73E8;
+	}
+
+	.empty-state {
+		padding-top: 60px;
+		align-items: center;
+	}
+	.empty-emoji {
+		font-size: 40px;
+		margin-bottom: 10px;
+	}
+	.empty-txt {
+		color: #6B7280;
+		font-size: 14px;
+	}
+</style>

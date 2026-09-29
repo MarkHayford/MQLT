@@ -1,0 +1,564 @@
+<template>
+	<view class="page">
+		<view class="fixed-header">
+			<view class="status-bar" :style="statusBarStyle"></view>
+			<view class="nav uni-row">
+				<view class="nav-back uni-row" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">文创商城</text>
+<view class="nav-space"></view>
+			</view>
+
+			<view v-if="isProjectShop" class="shop-hero uni-column">
+				<text class="shop-kicker">SOUVENIR</text>
+				<text class="shop-project">{{ shopProjectTitle.length > 0 ? shopProjectTitle : '本项目文创' }}</text>
+				<text class="shop-hint">仅展示本研学项目周边，与其他项目互不混入</text>
+			</view>
+
+			<view class="search-area">
+				<view class="search-wrap uni-row">
+					<image src="/static/func-search.svg" class="s-icon" mode="aspectFit"></image>
+					<input class="s-input" type="text" :placeholder="searchPlaceholder" placeholder-style="color:#6B7280;" v-model="searchKeyword" />
+				</view>
+				<view class="shop-ico" @click="goOrders">
+					<image src="/static/shop-nav-orders.svg" class="shop-ico-img" mode="aspectFit"></image>
+				</view>
+				<view class="shop-ico" @click="goCart">
+					<image src="/static/shop-nav-cart.svg" class="shop-ico-img" mode="aspectFit"></image>
+					<view v-if="cartTotal > 0" class="shop-ico-badge">
+						<text class="shop-ico-badge-txt">{{ cartBadge }}</text>
+					</view>
+				</view>
+			</view>
+
+			<scroll-view v-if="categoryTabs.length > 1" class="cat-scroll" scroll-x="true" :show-scrollbar="false">
+				<view class="cat-list uni-row">
+					<view
+						v-for="(cat, index) in categoryTabs"
+						:key="'cat-'+index"
+						:class="['cat-item', activeCategory === index ? 'cat-active' : '']"
+						@click="activeCategory = index"
+					>
+						<text :class="['cat-txt', activeCategory === index ? 'cat-txt-active' : '']">{{ cat }}</text>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+
+		<scroll-view class="main-scroll" :style="mainScrollStyle" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view v-if="filteredMallProducts.length > 0" class="products-grid">
+				<view class="product-card" v-for="(item, index) in filteredMallProducts" :key="item.id" @click="handleProductClick(item.id)">
+					<view class="product-frame">
+						<image :src="resolveMallProductImageUrl(item.imageUrl)" class="product-img-box" mode="aspectFill"></image>
+					</view>
+					<view class="product-info">
+						<text class="product-name">{{ item.name }}</text>
+						<view class="product-footer uni-row">
+							<text class="product-price">¥{{ item.price }}</text>
+							<view class="buy-tag">
+								<text class="buy-tag-txt">选购</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+			<view v-else class="empty uni-column">
+				<text class="empty-title">{{ emptyTitle }}</text>
+				<text class="empty-desc">{{ emptyDesc }}</text>
+			</view>
+			<view class="bottom-spacer"></view>
+		</scroll-view>
+
+		
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { fetchMallProducts, mallProductDetailUrl, type MallProduct } from './utils/mall-products.uts'
+	import { resolveMallProductImageUrl } from './utils/mall-product-image.uts'
+	import { ApiEndpoints } from '../../utils/api-endpoints.uts'
+	import { getApi, getAuthToken } from '../../utils/api-client.uts'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import { fetchStudyProjectDetail } from '../../utils/study-projects.uts'
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const windowHeight = layout.windowHeight
+
+	const statusBarStyle = 'height: ' + statusBarHeight + 'px;'
+
+	const searchKeyword = ref('')
+	const activeCategory = ref(0)
+	const cartTotal = ref(0)
+	const mallProducts = ref<MallProduct[]>([])
+	const filterProjectId = ref('')
+	const shopProjectTitle = ref('')
+
+	const isProjectShop = computed((): boolean => {
+		return filterProjectId.value.length > 0
+	})
+
+	const searchPlaceholder = computed((): string => {
+		return isProjectShop.value ? '搜索本店文创...' : '搜索文创周边...'
+	})
+
+	const emptyTitle = computed((): string => {
+		if (searchKeyword.value.trim().length > 0) return '没有找到相关文创'
+		return isProjectShop.value ? '暂无本项目文创' : '暂无文创商品'
+	})
+
+	const emptyDesc = computed((): string => {
+		if (searchKeyword.value.trim().length > 0) return '换个关键词再试试'
+		return isProjectShop.value ? '该研学项目还没有上架专属周边' : '商品上架后会出现在这里'
+	})
+
+	const categoryTabs = computed((): string[] => {
+		const tabs: string[] = ['全部']
+		const list = mallProducts.value
+		for (let i = 0; i < list.length; i++) {
+			const cat = list[i].category != null ? list[i].category.toString() : ''
+			if (cat.length === 0) continue
+			let exists = false
+			for (let j = 0; j < tabs.length; j++) {
+				if (tabs[j] === cat) {
+					exists = true
+					break
+				}
+			}
+			if (!exists) tabs.push(cat)
+		}
+		return tabs
+	})
+
+	const headerTotalHeight = computed((): number => {
+		let height = statusBarHeight + 44 + 56
+		if (isProjectShop.value) height += 86
+		if (categoryTabs.value.length > 1) height += 46
+		return height
+	})
+
+	const mainScrollStyle = computed((): string => {
+		const top = headerTotalHeight.value
+		return 'top: ' + top.toString() + 'px; height: ' + (windowHeight - top).toString() + 'px;'
+	})
+
+	const rememberShopProject = (projectId: string) => {
+		if (projectId.length === 0) {
+			uni.removeStorageSync(StorageKeys.mallShopProjectId)
+			return
+		}
+		uni.setStorageSync(StorageKeys.mallShopProjectId, projectId)
+	}
+
+	const refreshCartBadge = () => {
+		if (getAuthToken().length === 0) {
+			cartTotal.value = 0
+			return
+		}
+		getApi<any[]>(ApiEndpoints.mallCart, true).then((list) => {
+			let total = 0
+			for (let i = 0; i < list.length; i++) {
+				total += list[i]['quantity'] as number
+			}
+			cartTotal.value = total
+		}).catch((_err) => {
+			cartTotal.value = 0
+		})
+	}
+
+	const loadShopProjectTitle = (projectId: string) => {
+		if (projectId.length === 0) {
+			shopProjectTitle.value = ''
+			return
+		}
+		fetchStudyProjectDetail(projectId).then((found) => {
+			shopProjectTitle.value = found != null ? found.title : ''
+		}).catch((_err) => {
+			shopProjectTitle.value = ''
+		})
+	}
+
+	const isolateProjectProducts = (list: MallProduct[], projectId: string): MallProduct[] => {
+		const bound: MallProduct[] = []
+		for (let i = 0; i < list.length; i++) {
+			const item = list[i]
+			if (item.category === '奖品') continue
+			const itemPid = item.projectId != null ? item.projectId.toString() : ''
+			if (projectId.length > 0) {
+				if (itemPid === projectId) bound.push(item)
+			} else {
+				bound.push(item)
+			}
+		}
+		return bound
+	}
+
+	const loadProducts = () => {
+		const pid = filterProjectId.value
+		fetchMallProducts(pid).then((list) => {
+			mallProducts.value = isolateProjectProducts(list, pid)
+			if (activeCategory.value >= categoryTabs.value.length) activeCategory.value = 0
+		}).catch((_err) => {
+			mallProducts.value = []
+			uni.showToast({ title: '商品数据加载失败', icon: 'none' })
+		})
+	}
+
+	onShow(() => {
+		refreshCartBadge()
+		loadProducts()
+	})
+
+	onLoad((options: OnLoadOptions) => {
+		const pid = options['projectId']
+		filterProjectId.value = pid != null ? decodeURIComponent(pid.toString()) : ''
+		rememberShopProject(filterProjectId.value)
+		loadShopProjectTitle(filterProjectId.value)
+	})
+
+	const filteredMallProducts = computed((): MallProduct[] => {
+		let list = mallProducts.value
+		if (activeCategory.value > 0 && activeCategory.value < categoryTabs.value.length) {
+			const targetCat = categoryTabs.value[activeCategory.value]
+			const matched: MallProduct[] = []
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].category === targetCat) matched.push(list[i])
+			}
+			list = matched
+		}
+		const kw = searchKeyword.value.trim().toLowerCase()
+		if (kw.length > 0) {
+			const matched: MallProduct[] = []
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].name.toLowerCase().includes(kw)) matched.push(list[i])
+			}
+			list = matched
+		}
+		return list
+	})
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const cartBadge = computed((): string => {
+		if (cartTotal.value > 99) return '99+'
+		return cartTotal.value.toString()
+	})
+
+	const goOrders = () => {
+		uni.navigateTo({ url: '/pages/mine/my-orders?status=all' })
+	}
+
+	const goCart = () => {
+		uni.navigateTo({ url: '/pages/products/cart' })
+	}
+
+	const handleProductClick = (id: string) => {
+		uni.navigateTo({
+			url: mallProductDetailUrl(id, filterProjectId.value)
+		})
+	}
+
+
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		width: 100%;
+		height: 100%;
+		background-color: #F5F7FB;
+		position: relative;
+	}
+	.page view,
+	.page scroll-view,
+	.page image,
+	.page input,
+	.page text {
+		border-width: 0;
+	}
+
+	.fixed-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1000;
+		background-color: #FFFFFF;
+	}
+
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+
+	.nav {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		align-items: center;
+		padding: 0 12px;
+		background-color: #FFFFFF;
+	}
+	.nav-back {
+		align-items: center;
+		width: 88px;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+	}
+	.nav-back-text {
+		font-size: 15px;
+		color: #1A1A1A;
+		margin-left: 2px;
+	}
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.nav-space { width: 88px; border-width: 0; }
+	.shop-ico {
+		position: relative;
+		width: 40px;
+		height: 40px;
+		margin-left: 4px;
+		align-items: center;
+		justify-content: center;
+		background-color: transparent;
+		border-width: 0;
+		flex-shrink: 0;
+	}
+	.shop-ico-img {
+		width: 22px;
+		height: 22px;
+		border-width: 0;
+	}
+	.page .shop-ico-badge {
+		position: absolute;
+		top: 2px;
+		right: 0;
+		min-width: 14px;
+		height: 14px;
+		padding: 0 3px;
+		border-radius: 7px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		border-width: 0;
+	}
+	.shop-ico-badge-txt {
+		font-size: 9px;
+		font-weight: 800;
+		color: #FFFFFF;
+		line-height: 11px;
+		border-width: 0;
+	}
+
+	.shop-hero {
+		background-color: transparent;
+		border-width: 0;
+		border-color: #FFFFFF;
+		padding: 4px 16px 10px 16px;
+	}
+	.shop-kicker {
+		font-size: 10px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1.4px;
+		margin-bottom: 4px;
+	}
+	.shop-project {
+		font-size: 18px;
+		font-weight: 800;
+		color: #1A1A1A;
+		line-height: 24px;
+		margin-bottom: 4px;
+	}
+	.shop-hint {
+		font-size: 12px;
+		color: #374151;
+		line-height: 18px;
+	}
+
+	.search-area {
+		background-color: transparent;
+		border-width: 0;
+		border-color: #FFFFFF;
+		padding: 0 8px 12px 16px;
+		flex-direction: row;
+		align-items: center;
+	}
+	.page .search-wrap {
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		flex: 1;
+		height: 40px;
+		background-color: #E8EEF8;
+		border-radius: 20px;
+		align-items: center;
+		padding: 0 16px;
+	
+}
+	.s-icon {
+		width: 16px;
+		height: 16px;
+		margin-right: 8px;
+	}
+	.s-input {
+		flex: 1;
+		font-size: 14px;
+		color: #1A1A1A;
+	}
+
+	.cat-scroll {
+		width: 100%;
+		height: 46px;
+		background-color: #FFFFFF;
+	}
+	.cat-list {
+		padding: 0 16px 10px 16px;
+		height: 46px;
+		align-items: center;
+	}
+	.page .cat-item {
+		padding: 0 14px;
+		height: 28px;
+		border-radius: 14px;
+		justify-content: center;
+		margin-right: 8px;
+		flex-shrink: 0;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.page .cat-active {
+		background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+	.cat-txt {
+		font-size: 13px;
+		color: #374151;
+		font-weight: 600;
+	}
+	.cat-txt-active {
+		color: #FFFFFF;
+		font-weight: 800;
+	}
+
+	.main-scroll {
+		position: absolute;
+		left: 0;
+		right: 0;
+		width: 100%;
+		background-color: #F5F7FB;
+	}
+	.products-grid {
+		padding: 16px;
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		background-color: #F5F7FB;
+	}
+	.products-grid .product-card {
+		width: 48%;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		margin-bottom: 14px;
+		overflow: visible;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.product-frame {
+		width: 100%;
+		height: 150px;
+		position: relative;
+		background-color: #F5F7FB;
+		overflow: visible;
+		border-top-left-radius: 16px;
+		border-top-right-radius: 16px;
+	}
+	.product-img-box {
+		width: 100%;
+		height: 150px;
+		background-color: #F5F7FB;
+		border-top-left-radius: 16px;
+		border-top-right-radius: 16px;
+	}
+	.product-info {
+		padding: 10px 12px 12px 12px;
+	}
+	.product-name {
+		font-size: 14px;
+		color: #1A1A1A;
+		font-weight: 700;
+		height: 40px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		margin-bottom: 8px;
+	}
+	.product-footer {
+		justify-content: space-between;
+		align-items: center;
+	}
+	.product-price {
+		font-size: 17px;
+		color: #1A73E8;
+		font-weight: 800;
+	}
+	.buy-tag {
+		background-color: #1A73E8;
+		padding: 4px 10px;
+		border-radius: 10px;
+	}
+	.buy-tag-txt {
+		color: #FFFFFF;
+		font-size: 11px;
+		font-weight: 800;
+	}
+
+	.empty {
+		padding-top: 72px;
+		padding-left: 24px;
+		padding-right: 24px;
+		align-items: center;
+	}
+	.empty-title {
+		font-size: 16px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+	}
+	.empty-desc {
+		font-size: 13px;
+		color: #374151;
+		text-align: center;
+		line-height: 20px;
+	}
+
+	.bottom-spacer {
+		height: 48px;
+	}
+</style>

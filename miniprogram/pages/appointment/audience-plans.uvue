@@ -1,0 +1,309 @@
+<template>
+	<view class="page-wrapper uni-column" :style="pageStyle">
+		<view class="fixed-header">
+			<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">分层点位</text>
+			</view>
+		</view>
+
+		<scroll-view class="main-list" :style="listStyle" scroll-y="true" :show-scrollbar="false" :bounces="true" :enable-flex="true">
+			<view class="list-padding">
+				<view class="intro uni-column">
+					<text class="intro-kicker">AUDIENCE</text>
+					<text class="intro-title">按人群选一套推荐点位</text>
+					<text class="intro-sub">企业为亲子、高校、商务等配好的分层方案。选一套后写入行程，再按天微调。</text>
+				</view>
+
+				<view v-if="loading" class="empty-state uni-column">
+					<text class="empty-txt">正在加载方案…</text>
+				</view>
+				<view v-else-if="plans.length === 0" class="empty-state uni-column">
+					<image src="/static/icon-users.svg" class="empty-emoji" mode="aspectFit"></image>
+					<text class="empty-txt">该项目还没有分层点位方案</text>
+				</view>
+
+				<view
+					v-for="tpl in plans"
+					:key="tpl.id"
+					:class="['plan-card', 'uni-column', selectedId === tpl.id ? 'plan-card-on' : '']"
+					@click="selectPlan(tpl)"
+				>
+					<view class="plan-top uni-row">
+						<view class="plan-tag">
+							<text class="plan-tag-txt">{{ audienceTag(tpl) }}</text>
+						</view>
+						<text class="plan-pace">{{ paceLabel(tpl.pace) }}</text>
+					</view>
+					<text class="plan-name">{{ tpl.name }}</text>
+					<text v-if="tpl.description.length > 0" class="plan-desc">{{ tpl.description }}</text>
+					<text class="plan-meta">{{ tpl.spotIds.length.toString() }} 个推荐点位</text>
+					<view v-if="spotNamesOf(tpl).length > 0" class="plan-spots uni-row">
+						<view v-for="(name, ni) in spotNamesOf(tpl)" :key="tpl.id + '-s-' + ni.toString()" class="spot-chip">
+							<text class="spot-chip-txt">{{ name }}</text>
+						</view>
+					</view>
+				</view>
+				<view class="list-bottom-space"></view>
+			</view>
+		</scroll-view>
+
+		<view v-if="plans.length > 0" class="pick-bar uni-row">
+			<view class="pick-info uni-column">
+				<text class="pick-label">当前方案</text>
+				<text class="pick-value">{{ selectedName }}</text>
+			</view>
+			<view class="pick-done" @click="confirmPlan">
+				<text class="pick-done-text">{{ confirmText }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+import { parseStudyRouteSpots, type StudyRouteZoneSpot } from './utils/study-route-zones.uts'
+import { fetchStudyProjectDetail, fetchStudyProjectRoutePoints, type AudienceSpotTemplate } from '../../utils/study-projects.uts'
+
+const layout = getLayoutWindowInfo()
+const statusBarHeight = layout.statusBarHeight
+const windowHeight = layout.windowHeight
+const screenHeight = layout.screenHeight
+const pageHeight = screenHeight > windowHeight ? screenHeight : windowHeight
+const headerHeight = statusBarHeight + 44
+const pageStyle = 'height: ' + pageHeight.toString() + 'px'
+const listStyle = 'height: ' + (pageHeight - headerHeight).toString() + 'px; padding-top: ' + headerHeight.toString() + 'px;'
+
+const projectId = ref('')
+const fromBooking = ref(false)
+const loading = ref(true)
+const plans = ref([] as AudienceSpotTemplate[])
+const spots = ref([] as StudyRouteZoneSpot[])
+const selectedId = ref('')
+
+const selectedName = computed((): string => {
+	const id = selectedId.value
+	const list = plans.value
+	for (let i = 0; i < list.length; i++) {
+		if (list[i].id === id) {
+			const n = list[i].name
+			return n.length > 0 ? n : audienceTag(list[i])
+		}
+	}
+	return '请选择一套方案'
+})
+
+const confirmText = computed((): string => {
+	return fromBooking.value ? '选用这套点位' : '选用并去预约'
+})
+
+const audienceTag = (tpl: AudienceSpotTemplate): string => {
+	if (tpl.audience === 'family') return '亲子'
+	if (tpl.audience === 'college') return '高校'
+	if (tpl.audience === 'business') return '商务'
+	const label = tpl.audienceLabel != null ? tpl.audienceLabel : ''
+	if (label.length > 0 && label !== '自定义') return label
+	const n = tpl.name != null ? tpl.name : ''
+	if (n.length > 0 && n !== '自定义') return n
+	return '自定义'
+}
+
+const paceLabel = (raw: string): string => {
+	if (raw === 'light') return '轻松少选'
+	if (raw === 'full') return '紧凑走全'
+	return '节奏适中'
+}
+
+const spotTitleOf = (id: string): string => {
+	const list = spots.value
+	for (let i = 0; i < list.length; i++) {
+		if (list[i].id === id) return list[i].title
+	}
+	return ''
+}
+
+const spotNamesOf = (tpl: AudienceSpotTemplate): string[] => {
+	const out: string[] = []
+	const ids = tpl.spotIds
+	for (let i = 0; i < ids.length && out.length < 8; i++) {
+		const name = spotTitleOf(ids[i])
+		if (name.length > 0) out.push(name)
+	}
+	return out
+}
+
+const selectedPlan = (): AudienceSpotTemplate | null => {
+	const id = selectedId.value
+	const list = plans.value
+	for (let i = 0; i < list.length; i++) {
+		if (list[i].id === id) return list[i]
+	}
+	return null
+}
+
+const goBack = () => {
+	uni.navigateBack()
+}
+
+const selectPlan = (tpl: AudienceSpotTemplate) => {
+	selectedId.value = tpl.id
+}
+
+const load = (id: string) => {
+	loading.value = true
+	fetchStudyProjectDetail(id).then((p) => {
+		const out: AudienceSpotTemplate[] = []
+		if (p != null && p.audienceTemplates != null) {
+			const src = p.audienceTemplates
+			for (let i = 0; i < src.length; i++) {
+				if (src[i].enabled !== false) out.push(src[i])
+			}
+		}
+		plans.value = out
+		if (out.length > 0 && selectedId.value.length === 0) selectedId.value = out[0].id
+		loading.value = false
+	}).catch((_e) => {
+		loading.value = false
+		uni.showToast({ title: '方案加载失败', icon: 'none' })
+	})
+	fetchStudyProjectRoutePoints(id).then((res) => {
+		spots.value = parseStudyRouteSpots(res)
+	}).catch((_e) => {})
+}
+
+const confirmPlan = () => {
+	const tpl = selectedPlan()
+	if (tpl == null) {
+		uni.showToast({ title: '请先选择一套方案', icon: 'none' })
+		return
+	}
+	if (tpl.spotIds.length === 0) {
+		uni.showToast({ title: '该方案还没有点位', icon: 'none' })
+		return
+	}
+	const pid = projectId.value
+	if (fromBooking.value) {
+		try {
+			uni.setStorageSync('mqlt_booking_audience_tpl', tpl.id)
+		} catch (_e) {}
+		uni.navigateBack()
+		return
+	}
+	if (pid.length === 0) return
+	uni.navigateTo({
+		url: '/pages/appointment/booking-create?id=' + pid + '&tpl=' + tpl.id
+	})
+}
+
+onLoad((options: OnLoadOptions) => {
+	const pid = options['projectId']
+	const from = options['from']
+	if (pid != null) projectId.value = pid.toString()
+	if (from != null && from.toString() === 'booking') fromBooking.value = true
+	if (projectId.value.length === 0) {
+		uni.showToast({ title: '缺少项目', icon: 'none' })
+		return
+	}
+	load(projectId.value)
+})
+</script>
+
+<style>
+.page-wrapper {
+	border-width: 0;
+	flex: 1;
+	background-color: #F5F7FB;
+	position: relative;
+	overflow: hidden;
+}
+.fixed-header {
+	position: fixed;
+	top: 0; left: 0; right: 0;
+	z-index: 1000;
+	background-color: #FFFFFF;
+	border-bottom-width: 1px;
+	border-bottom-color: rgba(0, 0, 0, 0.05);
+}
+.status-bar { width: 100%; background-color: #FFFFFF; }
+.nav-bar {
+	background-color: #FFFFFF;
+	height: 44px;
+	flex-direction: row;
+	align-items: center;
+	padding: 0 16px;
+	position: relative;
+}
+.nav-back { flex-direction: row; align-items: center; z-index: 1; }
+.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+.nav-back-text { font-size: 16px; color: #1A1A1A; font-weight: 500; }
+.nav-title {
+	position: absolute; left: 0; right: 0; text-align: center;
+	font-size: 17px; font-weight: 700; color: #1A1A1A;
+}
+.main-list { width: 100%; }
+.list-padding { padding: 16px 16px 0 16px; }
+.intro { margin-bottom: 14px; }
+.intro-kicker {
+	font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1px; margin-bottom: 4px;
+}
+.intro-title { font-size: 20px; font-weight: 800; color: #1A1A1A; margin-bottom: 6px; }
+.intro-sub { font-size: 13px; color: #6B7280; line-height: 20px; }
+.plan-card {
+	background-color: #FFFFFF;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #E5E7EB;
+	border-radius: 16px;
+	padding: 14px;
+	margin-bottom: 12px;
+}
+.plan-card-on {
+	border-color: #1A73E8;
+	background-color: #F4F8FF;
+}
+.plan-top { align-items: center; margin-bottom: 8px; }
+.plan-tag {
+	padding: 2px 8px;
+	border-radius: 8px;
+	background-color: #E8EEF8;
+	margin-right: 8px;
+}
+.plan-tag-txt { font-size: 11px; font-weight: 800; color: #1A73E8; }
+.plan-pace { font-size: 12px; font-weight: 700; color: #6B7280; }
+.plan-name { font-size: 17px; font-weight: 800; color: #1A1A1A; margin-bottom: 6px; }
+.plan-desc { font-size: 13px; color: #4B5563; line-height: 20px; margin-bottom: 8px; }
+.plan-meta { font-size: 12px; font-weight: 700; color: #1A73E8; margin-bottom: 8px; }
+.plan-spots { flex-wrap: wrap; }
+.spot-chip {
+	padding: 4px 8px;
+	border-radius: 8px;
+	background-color: #F5F7FB;
+	margin-right: 6px;
+	margin-bottom: 6px;
+}
+.spot-chip-txt { font-size: 12px; color: #1A1A1A; }
+.empty-state { align-items: center; padding: 48px 24px; }
+.empty-emoji { width: 48px; height: 48px; margin-bottom: 10px; }
+.empty-txt { font-size: 14px; color: #9CA3AF; }
+.list-bottom-space { height: 110px; }
+.pick-bar {
+	position: fixed; left: 0; right: 0; bottom: 0;
+	padding: 12px 16px 28px 16px; background-color: #FFFFFF;
+	border-top-width: 0.5px; border-top-color: rgba(60,60,67,0.12);
+	align-items: center; z-index: 900;
+}
+.pick-info { flex: 1; min-width: 0; }
+.pick-label { font-size: 12px; color: #9CA3AF; margin-bottom: 2px; }
+.pick-value { font-size: 16px; font-weight: 800; color: #1A1A1A; }
+.pick-done {
+	height: 44px; padding: 0 22px; border-radius: 22px; background-color: #1A73E8;
+	align-items: center; justify-content: center; flex-shrink: 0;
+}
+.pick-done-text { font-size: 15px; font-weight: 800; color: #FFFFFF; }
+</style>

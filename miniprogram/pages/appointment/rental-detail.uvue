@@ -1,0 +1,192 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar uni-row">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">租车详情</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view v-if="loading" class="state"><text class="state-text">加载中…</text></view>
+			<view v-else-if="order == null" class="state"><text class="state-text">订单不存在</text></view>
+			<view v-else class="content uni-column">
+				<view class="hero uni-column">
+					<text class="status-label">{{ order!.statusLabel }}</text>
+					<text class="order-no">{{ order!.orderNo }}</text>
+					<text class="hero-desc">{{ statusHint }}</text>
+				</view>
+
+
+				<view v-if="showFulfillProgress" class="card uni-column">
+					<text class="prog-title">履约进度</text>
+					<view class="prog-row uni-row">
+						<view v-for="(lab, i) in fulfillLabels" :key="'fp-'+i" class="prog-item uni-column">
+							<view :class="['prog-dot', fulfillIndex >= i ? 'prog-dot-on' : '']"></view>
+							<text :class="['prog-lab', fulfillIndex >= i ? 'prog-lab-on' : '']">{{ lab }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view class="card uni-column">
+					<view class="kv uni-row"><text class="k">项目</text><text class="v">{{ order!.projectTitle.length > 0 ? order!.projectTitle : order!.projectId }}</text></view>
+					<view class="kv uni-row"><text class="k">出行</text><text class="v">{{ order!.travelDateText }} · {{ order!.passengerCount }}人</text></view>
+					<view class="kv uni-row"><text class="k">上车点</text><text class="v">{{ order!.pickupAddress }}</text></view>
+					<view v-if="order!.remark.length > 0" class="kv uni-row"><text class="k">备注</text><text class="v">{{ order!.remark }}</text></view>
+					<view v-if="order!.driverName.length > 0" class="kv uni-row"><text class="k">司机</text><text class="v">{{ order!.driverName }} {{ order!.driverPhone }}</text></view>
+					<view v-if="order!.refPriceText.length > 0" class="kv uni-row"><text class="k">参考价</text><text class="v">{{ order!.refPriceText }}</text></view>
+					<view v-if="order!.offeredPriceText.length > 0" class="kv uni-row"><text class="k">报价</text><text class="v">{{ order!.offeredPriceText }}</text></view>
+					<view v-if="order!.agreedPriceText.length > 0" class="kv uni-row"><text class="k">成交价</text><text class="v">{{ order!.agreedPriceText }}</text></view>
+				</view>
+
+				<view class="ops uni-column">
+					<view v-if="order!.status === 'NEGOTIATING' || order!.status === 'PRICE_CONFIRMED' || order!.status === 'PAID' || order!.status === 'EN_ROUTE' || order!.status === 'ARRIVED' || order!.status === 'IN_TRIP' || order!.status === 'COMPLETED'" class="main-btn" @click="goNegotiate">
+						<text class="main-btn-text">{{ order!.status === 'PRICE_CONFIRMED' ? '去支付 / 查看协商' : (order!.status === 'NEGOTIATING' ? '进入协商' : '查看协商与进度') }}</text>
+					</view>
+					<view class="ghost-btn" @click="refresh"><text class="ghost-text">刷新状态</text></view>
+					<view v-if="order!.status === 'OPEN' || order!.status === 'NEGOTIATING' || order!.status === 'PRICE_CONFIRMED'" class="danger-btn" @click="cancelOrder">
+						<text class="danger-text">取消租车单</text>
+					</view>
+				</view>
+			</view>
+			<view class="footer-spacer"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { getApi, postApi } from '../../utils/api-client.uts'
+	import { ApiEndpoints, endpointWithId } from '../../utils/api-endpoints.uts'
+
+	type RentalOrder = {
+		id: string
+		orderNo: string
+		projectId: string
+		projectTitle: string
+		travelDateText: string
+		passengerCount: number
+		pickupAddress: string
+		remark: string
+		status: string
+		statusLabel: string
+		driverName: string
+		driverPhone: string
+		refPriceText: string
+		offeredPriceText: string
+		agreedPriceText: string
+	}
+
+	const statusBarHeight = ref(20)
+	const orderId = ref('')
+	const loading = ref(true)
+	const order = ref<RentalOrder | null>(null)
+
+	const statusHint = computed((): string => {
+		const o = order.value
+		if (o == null) return ''
+		if (o.status === 'OPEN') return '正在等待司机接单'
+		if (o.status === 'NEGOTIATING') return '已有司机接单，可进入协商聊天与报价'
+		if (o.status === 'PRICE_CONFIRMED') return '价格已确认，请尽快支付（2小时内）'
+		if (o.status === 'PAID') return '已支付，等待司机出车'
+		if (o.status === 'EN_ROUTE') return '司机正在前往上车点'
+		if (o.status === 'ARRIVED') return '司机已到达上车点'
+		if (o.status === 'IN_TRIP') return '行程进行中'
+		if (o.status === 'COMPLETED') return '行程已完成'
+		if (o.status === 'CANCELLED') return '订单已取消'
+		return o.statusLabel
+	})
+
+	const fulfillSteps = ['PAID', 'EN_ROUTE', 'ARRIVED', 'IN_TRIP', 'COMPLETED']
+	const fulfillLabels = ['已支付', '出车中', '已到达', '行程中', '已完成']
+	const fulfillIndex = computed((): number => {
+		const o = order.value
+		if (o == null) return -1
+		const idx = fulfillSteps.indexOf(o.status)
+		return idx
+	})
+	const showFulfillProgress = computed((): boolean => {
+		const o = order.value
+		if (o == null) return false
+		return fulfillSteps.indexOf(o.status) >= 0
+	})
+
+	onLoad((query: any) => {
+		statusBarHeight.value = getStatusBarHeight()
+		if (query != null && query.id != null) orderId.value = query.id.toString()
+	})
+	onShow(() => { refresh() })
+
+	const goBack = () => { uni.navigateBack({}) }
+
+	const goNegotiate = () => {
+		uni.navigateTo({ url: '/pages/appointment/rental-negotiate?id=' + orderId.value + '&role=user' })
+	}
+
+	const refresh = () => {
+		if (orderId.value.length === 0) {
+			loading.value = false
+			return
+		}
+		loading.value = true
+		const url = endpointWithId(ApiEndpoints.studyRentalOrderDetail, orderId.value)
+		getApi<RentalOrder>(url, true).then((data) => {
+			order.value = data
+			loading.value = false
+		}).catch((_e) => {
+			loading.value = false
+			order.value = null
+		})
+	}
+
+	const cancelOrder = () => {
+		uni.showModal({
+			title: '取消租车单',
+			content: '确定取消？取消后不可恢复。',
+			success: (res) => {
+				if (!res.confirm) return
+				const url = endpointWithId(ApiEndpoints.studyRentalOrderCancel, orderId.value)
+				postApi<any>(url, { reason: '用户取消' }, true).then((_d) => {
+					uni.showToast({ title: '已取消', icon: 'success' })
+					refresh()
+				}).catch((err: any) => {
+					uni.showToast({ title: err != null && err.message != null ? err.message.toString() : '取消失败', icon: 'none' })
+				})
+			}
+		})
+	}
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #1A73E8; }
+	.nav-bar { border-width: 0; border-color: #FFFFFF; height: 48px; align-items: center; padding: 0 12px; background-color: #1A73E8; }
+	.nav-back { flex-direction: row; align-items: center; width: 72px; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { color: #1A73E8; font-size: 14px; font-weight: 600; }
+	.nav-title { flex: 1; text-align: center; color: #FFFFFF; font-size: 17px; font-weight: 700; margin-right: 72px; }
+	.body { flex: 1; padding: 14px 16px; 
+ width: 100%;}
+	.state { padding: 40px; align-items: center; }
+	.state-text { color: #374151; font-size: 14px; }
+	.hero { background-color: #1A73E8; border-radius: 16px; padding: 20px 18px; margin-bottom: 12px; }
+	.status-label { color: #1A73E8; font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+	.order-no { color: rgba(255,248,238,0.7); font-size: 13px; margin-bottom: 8px; }
+	.hero-desc { color: #FFFFFF; font-size: 14px; line-height: 20px; }
+	.card { background-color: #FFFFFF; border-radius: 14px; padding: 8px 16px; margin-bottom: 12px; }
+	.kv { padding: 12px 0; border-bottom-width: 1px; border-bottom-style: solid; border-bottom-color: #F0E4D0; justify-content: space-between; }
+	.k { font-size: 13px; color: #374151; width: 64px; }
+	.v { flex: 1; font-size: 14px; color: #1A1A1A; font-weight: 600; text-align: right; }
+	.ops { margin-top: 8px; }
+	.main-btn { height: 46px; border-radius: 23px; background-color: #1A73E8; align-items: center; justify-content: center; margin-bottom: 10px; }
+	.main-btn-text { color: #FFFFFF; font-size: 15px; font-weight: 700; }
+	.ghost-btn { height: 44px; border-radius: 22px; border-width: 1px; border-style: solid; border-color: #1A1A1A; align-items: center; justify-content: center; margin-bottom: 10px; }
+	.ghost-text { color: #1A1A1A; font-size: 15px; font-weight: 700; }
+	.danger-btn { height: 44px; border-radius: 22px; background-color: #FFFFFF; align-items: center; justify-content: center; }
+	.danger-text { color: #DC2626; font-size: 15px; font-weight: 700; }
+	.footer-spacer { height: 40px; }
+</style>

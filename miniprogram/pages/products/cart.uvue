@@ -1,0 +1,466 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav uni-row">
+			<view class="nav-back uni-row" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">购物车</text>
+			<view class="nav-edit" @click="toggleEdit">
+				<text class="nav-edit-txt">{{ isEditing ? '完成' : (cartItems.length > 0 ? '编辑' : '') }}</text>
+			</view>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view v-if="cartItems.length > 0" class="list">
+				<text class="kicker">CART</text>
+				<view class="card uni-row" v-for="(item, index) in cartItems" :key="item.id">
+					<view class="check-hit" @click="toggleSelect(index)">
+						<view :class="['check', item.selected ? 'check-on' : '']">
+							<image v-if="item.selected" src="/static/icon-check.svg" class="check-icon" mode="aspectFit"></image>
+						</view>
+					</view>
+					<view class="thumb-frame" @click="goToProductDetail(item.productId)">
+						<image :src="resolveMallProductImageUrl(item.imageUrl)" class="thumb" mode="aspectFill"></image>
+					</view>
+					<view class="info uni-column">
+						<text class="name" @click="goToProductDetail(item.productId)">{{ item.name }}</text>
+						<text class="sku">{{ item.sku.length > 0 ? item.sku : '研学文创' }}</text>
+						<view class="info-foot uni-row">
+							<text class="price">¥{{ formatPrice(item.price) }}</text>
+							<view class="qty uni-row">
+								<view class="qty-btn" @click="changeQty(index, -1)">
+									<text class="qty-txt">−</text>
+								</view>
+								<text class="qty-val">{{ item.quantity }}</text>
+								<view class="qty-btn" @click="changeQty(index, 1)">
+									<text class="qty-txt">+</text>
+								</view>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<view v-else class="empty uni-column">
+				<view class="empty-frame">
+					<image src="/static/shop-nav-cart.svg" class="empty-icon" mode="aspectFit"></image>
+				</view>
+				<text class="empty-title">购物车是空的</text>
+				<text class="empty-desc">去文创商城看看本项目周边</text>
+				<view class="empty-btn" @click="goBack">
+					<text class="empty-btn-txt">返回商城</text>
+				</view>
+			</view>
+			<view class="safe"></view>
+		</scroll-view>
+
+		<view v-if="cartItems.length > 0" class="bar uni-row">
+			<view class="all uni-row" @click="toggleSelectAll">
+				<view :class="['check', isAllSelected ? 'check-on' : '']">
+					<image v-if="isAllSelected" src="/static/icon-check.svg" class="check-icon" mode="aspectFit"></image>
+				</view>
+				<text class="all-txt">全选</text>
+			</view>
+			<view class="sum uni-column" v-if="!isEditing">
+				<view class="sum-row uni-row">
+					<text class="sum-label">合计</text>
+					<text class="sum-sym">¥</text>
+					<text class="sum-val">{{ totalPrice }}</text>
+				</view>
+				<text class="sum-hint">已选 {{ selectedCount }} 件 · 免运费</text>
+			</view>
+			<view :class="['act', isEditing ? 'act-del' : 'act-buy']" @click="handleSettlement">
+				<text class="act-txt">{{ isEditing ? '删除' : '去结算' }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import { ApiEndpoints } from '../../utils/api-endpoints.uts'
+	import { deleteApi, getApi, putApi } from '../../utils/api-client.uts'
+	import { resolveMallProductImageUrl } from './utils/mall-product-image.uts'
+	import { mallProductDetailUrl, mallShopUrl } from './utils/mall-products.uts'
+	import { goMineTab, promptLoginThenGoMine } from '../../utils/app-nav.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const isEditing = ref(false)
+
+	type CartItem = {
+		id: string
+		productId: string
+		sku: string
+		name: string
+		price: number
+		imageUrl: string
+		quantity: number
+		selected: boolean
+	}
+
+	const cartItems = ref<CartItem[]>([])
+
+	const hasToken = (): boolean => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		return token != null && token.toString().length > 0
+	}
+
+	const formatPrice = (price: number): string => {
+		return price.toFixed(2)
+	}
+
+	const loadCart = () => {
+		if (!hasToken()) {
+			cartItems.value = []
+			promptLoginThenGoMine()
+			return
+		}
+		getApi<any[]>(ApiEndpoints.mallCart, true).then((raw) => {
+			const list: CartItem[] = []
+			for (let i = 0; i < raw.length; i++) {
+				const item = raw[i]
+				const product = item['product'] as any
+				list.push({
+					id: item['id'] as string,
+					productId: item['productId'] as string,
+					sku: product['sku'] as string,
+					name: product['name'] as string,
+					price: parseFloat(product['price'].toString()),
+					imageUrl: product['imageUrl'] == null ? '' : product['imageUrl'].toString(),
+					quantity: item['quantity'] as number,
+					selected: item['selected'] as boolean
+				})
+			}
+			cartItems.value = list
+		}).catch((_err) => {
+			cartItems.value = []
+			uni.showToast({ title: '购物车加载失败，请稍后重试', icon: 'none' })
+		})
+	}
+
+	onShow(() => {
+		loadCart()
+	})
+
+	const isAllSelected = computed((): boolean => {
+		if (cartItems.value.length === 0) return false
+		for (let i = 0; i < cartItems.value.length; i++) {
+			if (!cartItems.value[i].selected) return false
+		}
+		return true
+	})
+
+	const selectedCount = computed((): number => {
+		let n = 0
+		for (let i = 0; i < cartItems.value.length; i++) {
+			if (cartItems.value[i].selected) n++
+		}
+		return n
+	})
+
+	const totalPrice = computed((): string => {
+		let total = 0
+		for (let i = 0; i < cartItems.value.length; i++) {
+			const item = cartItems.value[i]
+			if (item.selected) total += item.price * item.quantity
+		}
+		return total.toFixed(2)
+	})
+
+	const shopProjectId = (): string => {
+		const stored = uni.getStorageSync(StorageKeys.mallShopProjectId)
+		return stored != null ? stored.toString() : ''
+	}
+
+	const goBack = () => {
+		uni.navigateBack({
+			fail: () => {
+				const stored = uni.getStorageSync(StorageKeys.mallShopProjectId)
+				const pid = stored != null ? stored.toString() : ''
+				if (pid.length > 0) {
+					uni.redirectTo({ url: mallShopUrl(pid) })
+					return
+				}
+				goMineTab()
+			}
+		})
+	}
+
+	const toggleEdit = () => {
+		if (cartItems.value.length === 0) return
+		isEditing.value = !isEditing.value
+	}
+
+	const goToProductDetail = (id: string) => {
+		uni.navigateTo({ url: mallProductDetailUrl(id, shopProjectId()) })
+	}
+
+	const toggleSelect = (index: number) => {
+		if (!hasToken()) return
+		cartItems.value[index].selected = !cartItems.value[index].selected
+		const item = cartItems.value[index]
+		putApi<any>(ApiEndpoints.mallCart + '/' + item.id, {
+			selected: item.selected,
+			quantity: item.quantity
+		}, true).catch((_err) => {
+			uni.showToast({ title: '购物车同步失败', icon: 'none' })
+		})
+	}
+
+	const toggleSelectAll = () => {
+		if (!hasToken()) return
+		const target = !isAllSelected.value
+		for (let i = 0; i < cartItems.value.length; i++) {
+			cartItems.value[i].selected = target
+			const item = cartItems.value[i]
+			putApi<any>(ApiEndpoints.mallCart + '/' + item.id, {
+				selected: item.selected,
+				quantity: item.quantity
+			}, true)
+		}
+	}
+
+	const changeQty = (index: number, delta: number) => {
+		if (!hasToken()) return
+		const item = cartItems.value[index]
+		const next = item.quantity + delta
+
+		if (next < 1) {
+			uni.showModal({
+				title: '移出购物车',
+				content: '确定移除「' + item.name + '」吗？',
+				confirmColor: '#1A1A1A',
+				success: (res) => {
+					if (res.confirm) {
+						const removed = cartItems.value[index]
+						cartItems.value.splice(index, 1)
+						deleteApi<any>(ApiEndpoints.mallCart + '/' + removed.id, true).catch((_err) => {
+							uni.showToast({ title: '购物车同步失败', icon: 'none' })
+						})
+						uni.showToast({ title: '已移除', icon: 'none' })
+					}
+				}
+			})
+		} else if (next <= 99) {
+			item.quantity = next
+			putApi<any>(ApiEndpoints.mallCart + '/' + item.id, {
+				quantity: item.quantity,
+				selected: item.selected
+			}, true).catch((_err) => {
+				uni.showToast({ title: '购物车同步失败', icon: 'none' })
+			})
+		}
+	}
+
+	const handleSettlement = () => {
+		if (selectedCount.value === 0) {
+			uni.showToast({ title: '请选择商品', icon: 'none' })
+			return
+		}
+		if (isEditing.value) {
+			const kept: CartItem[] = []
+			const removed: CartItem[] = []
+			for (let i = 0; i < cartItems.value.length; i++) {
+				if (cartItems.value[i].selected) removed.push(cartItems.value[i])
+				else kept.push(cartItems.value[i])
+			}
+			cartItems.value = kept
+			if (hasToken()) {
+				for (let j = 0; j < removed.length; j++) {
+					deleteApi<any>(ApiEndpoints.mallCart + '/' + removed[j].id, true)
+				}
+			}
+			isEditing.value = false
+			uni.showToast({ title: '已移除商品', icon: 'none' })
+		} else {
+			const ids: string[] = []
+			for (let i = 0; i < cartItems.value.length; i++) {
+				if (cartItems.value[i].selected) ids.push(cartItems.value[i].id)
+			}
+			uni.navigateTo({ url: '/pages/products/order-confirm?source=cart&cartIds=' + encodeURIComponent(ids.join(',')) })
+		}
+	}
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		align-items: center;
+		padding: 0 12px;
+		background-color: #FFFFFF;
+	}
+	.nav-back { align-items: center; width: 88px; }
+	.nav-back-icon { width: 18px; height: 18px; }
+	.nav-back-text { font-size: 15px; color: #1A1A1A; margin-left: 2px; }
+	.nav-title { flex: 1; text-align: center; font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.nav-edit { width: 88px; align-items: flex-end; justify-content: center; }
+	.nav-edit-txt { font-size: 14px; font-weight: 700; color: #1A1A1A; }
+
+	.body { flex: 1; width: 100%; }
+	.list { padding: 16px 16px 8px 16px; }
+	.kicker {
+		font-size: 10px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 1.4px;
+		margin-bottom: 12px;
+	}
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 12px;
+		margin-bottom: 12px;
+		align-items: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.check-hit {
+		width: 36px;
+		height: 36px;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.check {
+		width: 20px;
+		height: 20px;
+		border-radius: 10px;
+		border-width: 1.5px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		background-color: #F5F7FB;
+		align-items: center;
+		justify-content: center;
+	}
+	.check-on {
+		background-color: #1A73E8;
+		border-color: #1A1A1A;
+	}
+	.check-icon { width: 12px; height: 12px; }
+
+	.thumb-frame {
+		width: 84px;
+		height: 84px;
+		border-radius: 12px;
+		overflow: hidden;
+		margin-right: 12px;
+		flex-shrink: 0;
+		border-width: 1px;
+		border-style: dashed;
+		border-color: #E5E7EB;
+		background-color: #F5F7FB;
+	}
+	.thumb { width: 84px; height: 84px; }
+
+	.info { flex: 1; min-width: 0; }
+	.name {
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		margin-bottom: 4px;
+	}
+	.sku { font-size: 12px; color: #374151; margin-bottom: 10px; }
+	.info-foot { align-items: center; justify-content: space-between; }
+	.price { font-size: 18px; font-weight: 800; color: #1A73E8; }
+
+	.qty {
+		align-items: center;
+		background-color: #E8EEF8;
+		border-radius: 14px;
+		padding: 2px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.qty-btn {
+		width: 26px;
+		height: 26px;
+		align-items: center;
+		justify-content: center;
+	}
+	.qty-txt { font-size: 16px; font-weight: 700; color: #1A1A1A; }
+	.qty-val {
+		width: 28px;
+		text-align: center;
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+
+	.empty {
+		padding-top: 80px;
+		align-items: center;
+		padding-left: 24px;
+		padding-right: 24px;
+	}
+	.empty-frame {
+		width: 72px;
+		height: 72px;
+		border-radius: 36px;
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-style: dashed;
+		border-color: #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 16px;
+	}
+	.empty-icon { width: 28px; height: 28px; opacity: 0.45; }
+	.empty-title { font-size: 17px; font-weight: 800; color: #1A1A1A; margin-bottom: 6px; }
+	.empty-desc { font-size: 13px; color: #374151; margin-bottom: 20px; }
+	.empty-btn {
+		height: 40px;
+		padding: 0 22px;
+		border-radius: 20px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+	}
+	.empty-btn-txt { font-size: 14px; font-weight: 800; color: #FFFFFF; }
+	.safe { height: 108px; }
+
+	.bar {
+		position: fixed;
+		left: 0; right: 0; bottom: 0;
+		padding: 10px 16px calc(10px + env(safe-area-inset-bottom)) 16px;
+		background-color: #FFFFFF;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+		align-items: center;
+		z-index: 100;
+	}
+	.all { align-items: center; margin-right: 10px; flex-shrink: 0; }
+	.all-txt { font-size: 13px; font-weight: 700; color: #1A1A1A; margin-left: 6px; }
+	.sum { flex: 1; align-items: flex-end; margin-right: 12px; min-width: 0; }
+	.sum-row { align-items: flex-end; }
+	.sum-label { font-size: 12px; color: #374151; margin-right: 4px; margin-bottom: 3px; }
+	.sum-sym { font-size: 13px; font-weight: 800; color: #1A73E8; margin-bottom: 2px; }
+	.sum-val { font-size: 22px; font-weight: 800; color: #1A73E8; }
+	.sum-hint { font-size: 11px; color: #374151; margin-top: 2px; }
+	.act {
+		height: 44px;
+		padding: 0 18px;
+		border-radius: 22px;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		min-width: 96px;
+	}
+	.act-buy { background-color: #1A73E8; }
+	.act-del { background-color: #DC2626; }
+	.act-txt { font-size: 15px; font-weight: 800; color: #FFFFFF; }
+</style>

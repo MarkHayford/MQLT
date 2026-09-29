@@ -1,0 +1,534 @@
+<template>
+	<view :class="rootClass">
+		<view v-if="isStack" :class="paperBackClass"></view>
+		<view v-if="isStack" :class="paperMidClass"></view>
+		<view :class="sheetClass">
+			<view v-if="isStack" class="chrome uni-row">
+				<view class="dots uni-row">
+					<view class="dot"></view>
+					<view class="dot"></view>
+					<view class="dot"></view>
+				</view>
+			</view>
+			<text v-if="isQuote" :class="quoteClass">“</text>
+			<view v-if="tplId === 'lined'" class="ruled uni-column">
+				<view class="ruled-line"></view>
+				<view class="ruled-line"></view>
+				<view class="ruled-line"></view>
+				<view class="ruled-line"></view>
+				<view class="ruled-line"></view>
+				<view class="ruled-line"></view>
+			</view>
+			<view v-if="tplId === 'letter'" class="wax">
+				<text class="wax-txt">研</text>
+			</view>
+			<view :class="ttlBoxClass">
+				<text v-if="titlePrefix.length > 0" :class="preClass">{{ titlePrefix }}</text>
+				<view v-if="titleHead.length > 0" :class="hlClass">
+					<text :class="titleClass">{{ titleHead }}</text>
+				</view>
+				<text v-if="titleRest.length > 0" :class="restClass">{{ titleRest }}</text>
+			</view>
+			<view :class="footClass">
+				<view :class="ruleClass"></view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed } from 'vue'
+
+	type CoverTitleParts = {
+		prefix: string
+		head: string
+		rest: string
+	}
+
+	const props = defineProps({
+		tpl: {
+			type: String,
+			default: 'sticky'
+		},
+		title: {
+			type: String,
+			default: ''
+		},
+		hl: {
+			type: String,
+			default: ''
+		},
+		autoHl: {
+			type: Boolean,
+			default: true
+		},
+		kicker: {
+			type: String,
+			default: ''
+		},
+		size: {
+			type: String,
+			default: 'feed'
+		}
+	})
+
+	const tplId = computed((): string => {
+		const id = props.tpl.trim()
+		if (id === 'kraft') return 'dusk'
+		if (id === 'sticky' || id === 'quote' || id === 'mint' || id === 'peach' || id === 'sky' || id === 'lined' || id === 'letter' || id === 'dusk' || id === 'forest') return id
+		return 'sticky'
+	})
+
+	const isStack = computed((): boolean => {
+		const id = tplId.value
+		return id === 'sticky' || id === 'mint' || id === 'peach' || id === 'sky' || id === 'dusk'
+	})
+
+	const isQuote = computed((): boolean => {
+		const id = tplId.value
+		return id === 'quote' || id === 'forest'
+	})
+
+	const titleText = computed((): string => {
+		const t = props.title.trim()
+		if (t.length > 0) return t
+		return '拟一个让人想点开的标题'
+	})
+
+	const splitCoverTitle = (title: string, hl: string): CoverTitleParts => {
+		const parts: CoverTitleParts = {
+			prefix: '',
+			head: title,
+			rest: ''
+		}
+		if (title.length === 0) return parts
+		const mark = hl.trim()
+		if (mark.length === 0) {
+			if (props.autoHl == false) {
+				parts.prefix = title
+				parts.head = ''
+				parts.rest = ''
+				return parts
+			}
+			if (title.length <= 4) return parts
+			parts.head = title.substring(0, 4)
+			parts.rest = title.substring(4)
+			return parts
+		}
+		const idx = title.indexOf(mark)
+		if (idx >= 0) {
+			parts.prefix = title.substring(0, idx)
+			parts.head = mark
+			parts.rest = title.substring(idx + mark.length)
+			return parts
+		}
+		const n = mark.length < title.length ? mark.length : title.length
+		parts.head = title.substring(0, n)
+		parts.rest = title.substring(n)
+		return parts
+	}
+
+	const titlePrefix = computed((): string => {
+		return splitCoverTitle(titleText.value, props.hl).prefix
+	})
+
+	const titleHead = computed((): string => {
+		return splitCoverTitle(titleText.value, props.hl).head
+	})
+
+	const titleRest = computed((): string => {
+		return splitCoverTitle(titleText.value, props.hl).rest
+	})
+
+	const sz = computed((): string => {
+		if (props.size === 'pick') return 'sm'
+		if (props.size === 'hero') return 'lg'
+		return 'md'
+	})
+
+	const rootClass = computed((): string => {
+		let cls = 'tpl-cover tpl-' + tplId.value
+		if (sz.value === 'sm') cls = cls + ' tpl-cover-sm'
+		else if (sz.value === 'lg') cls = cls + ' tpl-cover-lg'
+		return cls
+	})
+
+	const sheetClass = computed((): string => {
+		let cls = isQuote.value ? 'sheet-flat' : 'sheet-card'
+		if (sz.value === 'sm') cls = cls + (isQuote.value ? ' sheet-sm' : ' sheet-sm sheet-card-sm')
+		else if (sz.value === 'lg') cls = cls + (isQuote.value ? ' sheet-lg' : ' sheet-lg sheet-card-lg')
+		return cls
+	})
+
+	const paperBackClass = computed((): string => {
+		let cls = 'paper-b'
+		if (sz.value === 'sm') cls = cls + ' paper-b-sm'
+		else if (sz.value === 'lg') cls = cls + ' paper-b-lg'
+		return cls
+	})
+
+	const paperMidClass = computed((): string => {
+		let cls = 'paper-m'
+		if (sz.value === 'sm') cls = cls + ' paper-m-sm'
+		else if (sz.value === 'lg') cls = cls + ' paper-m-lg'
+		return cls
+	})
+
+	const quoteClass = computed((): string => {
+		let cls = 'qmark qmark-' + tplId.value
+		if (sz.value === 'sm') cls = cls + ' qmark-sm'
+		else if (sz.value === 'lg') cls = cls + ' qmark-lg'
+		return cls
+	})
+
+	const ttlBoxClass = computed((): string => {
+		return isQuote.value ? 'ttl-box ttl-box-mid' : 'ttl-box'
+	})
+
+	const hlClass = computed((): string => {
+		let cls = 'hl hl-' + tplId.value
+		if (sz.value === 'sm') cls = cls + ' hl-sm'
+		return cls
+	})
+
+	const titleClass = computed((): string => {
+		let cls = 'ttl ttl-mark ttl-head-' + tplId.value
+		if (sz.value === 'sm') cls = cls + ' ttl-sm'
+		else if (sz.value === 'lg') cls = cls + ' ttl-lg'
+		return cls
+	})
+
+	const preClass = computed((): string => {
+		let cls = 'ttl ttl-pre ttl-' + tplId.value
+		if (sz.value === 'sm') cls = cls + ' ttl-sm'
+		else if (sz.value === 'lg') cls = cls + ' ttl-lg'
+		return cls
+	})
+
+	const restClass = computed((): string => {
+		let cls = 'ttl ttl-rest ttl-' + tplId.value
+		if (sz.value === 'sm') cls = cls + ' ttl-sm'
+		else if (sz.value === 'lg') cls = cls + ' ttl-lg'
+		return cls
+	})
+
+	const footClass = computed((): string => {
+		return isQuote.value ? 'foot foot-end uni-row' : 'foot uni-row'
+	})
+
+	const ruleClass = computed((): string => {
+		let cls = 'rule rule-' + tplId.value
+		if (isQuote.value) cls = cls + ' rule-dash'
+		if (sz.value === 'sm') cls = cls + ' rule-sm'
+		return cls
+	})
+</script>
+
+<style>
+	.tpl-cover {
+		width: 100%;
+		height: 200px;
+		position: relative;
+		overflow: hidden;
+	}
+	.tpl-cover-sm {
+		width: 112px;
+		height: 148px;
+		border-radius: 10px;
+	}
+	.tpl-cover-lg {
+		width: 100%;
+		height: 248px;
+		border-radius: 16px;
+	}
+
+	.paper-b {
+		position: absolute;
+		left: 18px;
+		right: 8px;
+		top: 18px;
+		bottom: 8px;
+		border-radius: 14px;
+		background-color: rgba(255, 255, 255, 0.42);
+		z-index: 0;
+	}
+	.paper-b-sm {
+		left: 12px;
+		right: 6px;
+		top: 14px;
+		bottom: 6px;
+		border-radius: 10px;
+	}
+	.paper-b-lg {
+		left: 22px;
+		right: 10px;
+		top: 22px;
+		bottom: 10px;
+		border-radius: 16px;
+	}
+	.paper-m {
+		position: absolute;
+		left: 14px;
+		right: 11px;
+		top: 13px;
+		bottom: 12px;
+		border-radius: 14px;
+		background-color: rgba(255, 252, 245, 0.88);
+		z-index: 1;
+	}
+	.paper-m-sm {
+		left: 10px;
+		right: 8px;
+		top: 10px;
+		bottom: 9px;
+		border-radius: 10px;
+	}
+	.paper-m-lg {
+		left: 16px;
+		right: 13px;
+		top: 16px;
+		bottom: 14px;
+		border-radius: 16px;
+	}
+
+	.sheet-card {
+		position: absolute;
+		left: 10px;
+		right: 14px;
+		top: 8px;
+		bottom: 16px;
+		background-color: #FFFEF8;
+		border-radius: 14px;
+		padding: 10px 12px 12px 12px;
+		flex-direction: column;
+		z-index: 2;
+	}
+	.sheet-flat {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		padding: 14px 16px 16px 16px;
+		flex-direction: column;
+		z-index: 2;
+	}
+	.sheet-sm {
+		padding: 8px 8px 8px 8px;
+		border-radius: 10px;
+	}
+	.sheet-lg {
+		padding: 16px 18px 16px 18px;
+		border-radius: 16px;
+	}
+	.sheet-card-sm {
+		left: 7px;
+		right: 10px;
+		top: 6px;
+		bottom: 11px;
+	}
+	.sheet-card-lg {
+		left: 12px;
+		right: 18px;
+		top: 10px;
+		bottom: 20px;
+	}
+
+	.chrome {
+		width: 100%;
+		align-items: center;
+		flex-shrink: 0;
+		z-index: 3;
+	}
+	.dots {
+		align-items: center;
+		height: 12px;
+	}
+	.dot {
+		width: 3px;
+		height: 3px;
+		border-radius: 2px;
+		background-color: #D2D2D2;
+		margin-right: 3px;
+	}
+
+	.qmark {
+		font-size: 52px;
+		font-weight: 700;
+		line-height: 48px;
+		margin-top: 4px;
+		margin-bottom: -6px;
+		z-index: 3;
+	}
+	.qmark-sm {
+		font-size: 28px;
+		line-height: 26px;
+		margin-top: 0;
+		margin-bottom: -4px;
+	}
+	.qmark-lg {
+		font-size: 64px;
+		line-height: 58px;
+	}
+
+	.ruled {
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		top: 36px;
+		bottom: 18px;
+		z-index: 0;
+	}
+	.ruled-line {
+		height: 0;
+		border-bottom-width: 1px;
+		border-bottom-color: rgba(180, 160, 120, 0.28);
+		margin-top: 22px;
+	}
+	.wax {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		width: 26px;
+		height: 26px;
+		border-radius: 13px;
+		border-width: 1px;
+		border-color: rgba(196, 92, 38, 0.45);
+		align-items: center;
+		justify-content: center;
+		z-index: 3;
+	}
+	.wax-txt {
+		font-size: 11px;
+		font-weight: 800;
+		color: #1A73E8;
+	}
+
+	.ttl-box {
+		flex: 1;
+		width: 100%;
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: flex-start;
+		padding-top: 10px;
+		z-index: 3;
+	}
+	.ttl-box-mid {
+		justify-content: center;
+		padding-top: 0;
+	}
+	.hl {
+		padding: 0 5px 2px 5px;
+		border-radius: 3px;
+		margin-bottom: 6px;
+		max-width: 100%;
+	}
+	.hl-sm {
+		padding: 0 3px 1px 3px;
+		margin-bottom: 3px;
+	}
+	.ttl {
+		font-size: 18px;
+		font-weight: 800;
+		line-height: 26px;
+	}
+	.ttl-mark {
+		lines: 4;
+	}
+	.ttl-pre {
+		width: 100%;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		margin-bottom: 4px;
+	}
+	.ttl-sm {
+		font-size: 12px;
+		line-height: 17px;
+	}
+	.ttl-lg {
+		font-size: 24px;
+		line-height: 34px;
+	}
+	.ttl-rest {
+		width: 100%;
+		lines: 3;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.foot {
+		width: 100%;
+		align-items: center;
+		flex-shrink: 0;
+		padding-top: 8px;
+		z-index: 3;
+	}
+	.foot-end { justify-content: flex-end; }
+	.rule {
+		width: 42px;
+		height: 2px;
+		border-radius: 1px;
+	}
+	.rule-dash {
+		width: 18px;
+		height: 3px;
+	}
+	.rule-sm {
+		width: 22px;
+		height: 2px;
+	}
+
+	.tpl-sticky { background-color: #F2C45A; }
+	.tpl-quote { background-color: #E6E1F5; }
+	.tpl-mint { background-color: #8FCFB8; }
+	.tpl-peach { background-color: #F3B7A6; }
+	.tpl-sky { background-color: #A8C8EA; }
+	.tpl-lined { background-color: #D8E3D4; }
+	.tpl-letter { background-color: #E2C9A0; }
+	.tpl-dusk { background-color: #E0894A; }
+	.tpl-forest { background-color: #1A73E8; }
+
+	.qmark-quote { color: #D0C8E8; }
+	.qmark-forest { color: rgba(26, 115, 232, 0.35); }
+
+	.hl-sticky { background-color: #93C5FD; }
+	.hl-quote { background-color: #E8D56A; }
+	.hl-mint { background-color: #F0E08A; }
+	.hl-peach { background-color: #C8EBD8; }
+	.hl-sky { background-color: #F8D3C0; }
+	.hl-lined { background-color: #F0D56A; }
+	.hl-letter { background-color: #1A73E8; }
+	.hl-dusk { background-color: #FFE7B0; }
+	.hl-forest { background-color: #1A73E8; }
+
+	.ttl-head-sticky { color: #1A1A1A; }
+	.ttl-head-quote { color: #1A1A1A; }
+	.ttl-head-mint { color: #1A1A1A; }
+	.ttl-head-peach { color: #1A1A1A; }
+	.ttl-head-sky { color: #1A1A1A; }
+	.ttl-head-lined { color: #1A1A1A; }
+	.ttl-head-letter { color: #1A1A1A; }
+	.ttl-head-dusk { color: #1A1A1A; }
+	.ttl-head-forest { color: #1A1A1A; }
+
+	.ttl-sticky { color: #1A1A1A; }
+	.ttl-quote { color: #1A1A1A; }
+	.ttl-mint { color: #1A1A1A; }
+	.ttl-peach { color: #1A1A1A; }
+	.ttl-sky { color: #1A1A1A; }
+	.ttl-lined { color: #1A1A1A; }
+	.ttl-letter { color: #1A1A1A; }
+	.ttl-dusk { color: #1A1A1A; }
+	.ttl-forest { color: #FFFFFF; }
+
+	.rule-sticky { background-color: #E8D7A4; }
+	.rule-quote { background-color: #C9C0E0; }
+	.rule-mint { background-color: #C5E0D4; }
+	.rule-peach { background-color: #F0D0C6; }
+	.rule-sky { background-color: #C5D6EA; }
+	.rule-lined { background-color: #D4C4A0; }
+	.rule-letter { background-color: #1A73E8; }
+	.rule-dusk { background-color: #F0C9A0; }
+	.rule-forest { background-color: #1A73E8; }
+</style>

@@ -1,0 +1,230 @@
+<template>
+	<view class="page uni-column">
+		<view class="hud" :style="{ paddingTop: (statusBarHeight + 8) + 'px' }">
+			<view class="hud-back" @click="goBack"><text class="hud-back-txt">返回</text></view>
+			<text class="hud-title">{{ mallTitle }}</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" :show-scrollbar="false">
+			<view class="points-card uni-column">
+				<text class="points-kicker">导览积分</text>
+				<view class="points-row uni-row">
+					<view class="points-cell uni-column">
+						<text class="points-num">{{ availablePoints.toString() }}</text>
+						<text class="points-lbl">可用</text>
+					</view>
+					<view class="points-cell uni-column">
+						<text class="points-num dim">{{ totalPoints.toString() }}</text>
+						<text class="points-lbl">累计</text>
+					</view>
+					<view class="points-cell uni-column">
+						<text class="points-num dim">{{ spentPoints.toString() }}</text>
+						<text class="points-lbl">已兑</text>
+					</view>
+				</view>
+				<text class="points-hint">{{ gateHint }}</text>
+			</view>
+
+			<view class="gate-banner" v-if="!canRedeem">
+				<text class="gate-banner-txt">{{ redeemHint }}</text>
+			</view>
+
+			<view v-for="item in items" :key="item.id" class="sku-card uni-column">
+				<view class="sku-top uni-row">
+					<image v-if="item.imageUrl.length > 0" :src="item.imageUrl" class="sku-img" mode="aspectFill"></image>
+					<view class="sku-main uni-column">
+						<text class="sku-name">{{ item.name }}</text>
+						<text class="sku-sub" v-if="item.note.length > 0">{{ item.note }}</text>
+						<text class="sku-pts">{{ item.points.toString() }} 积分</text>
+					</view>
+				</view>
+				<view :class="['sku-btn', canRedeemSku(item) ? '' : 'disabled']" @click="onRedeem(item)">
+					<text class="sku-btn-txt">{{ redeemBtnLabel(item) }}</text>
+				</view>
+			</view>
+
+			<text v-if="items.length === 0" class="empty">{{ emptyMsg }}</text>
+			<view class="body-pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { fetchStudyTourMall, redeemStudyTourMall } from '../../utils/study-projects.uts'
+
+	type MallSku = {
+		id: string
+		name: string
+		points: number
+		imageUrl: string
+		note: string
+		stock: number
+		canAfford: boolean
+		redeemBlockedReason: string
+	}
+
+	const statusBarHeight = getStatusBarHeight()
+	const projectId = ref('')
+	const mallTitle = ref('积分商城')
+	const totalPoints = ref(0)
+	const spentPoints = ref(0)
+	const availablePoints = ref(0)
+	const canEnter = ref(true)
+	const canRedeem = ref(false)
+	const graduated = ref(false)
+	const gateHint = ref('')
+	const redeemHint = ref('结业后才可兑换')
+	const emptyMsg = ref('暂无商品')
+	const items = ref<MallSku[]>([])
+	const busy = ref(false)
+
+	function goBack() { uni.navigateBack({}) }
+
+	function canRedeemSku(item: MallSku): boolean {
+		if (!canRedeem.value) return false
+		if (item.redeemBlockedReason.length > 0) return false
+		return item.canAfford && item.points > 0
+	}
+
+	function redeemBtnLabel(item: MallSku): string {
+		if (!canRedeem.value) {
+			if (!graduated.value) return '结业后可兑'
+			return '暂不可兑'
+		}
+		if (item.redeemBlockedReason.length > 0) return item.redeemBlockedReason
+		if (!item.canAfford) return '积分不足'
+		return '兑换'
+	}
+
+	function mapItem(raw: any): MallSku {
+		return {
+			id: String(raw.id || raw.skuId || ''),
+			name: String(raw.name || raw.title || '兑换商品'),
+			points: Number(raw.points || raw.cost || 0),
+			imageUrl: String(raw.imageUrl || raw.coverUrl || raw.image || ''),
+			note: String(raw.note || raw.remark || raw.desc || ''),
+			stock: Number(raw.stock != null ? raw.stock : 99),
+			canAfford: raw.canAfford !== false,
+			redeemBlockedReason: String(raw.redeemBlockedReason || '')
+		}
+	}
+
+	async function loadMall() {
+		if (projectId.value.length === 0) return
+		try {
+			const res = await fetchStudyTourMall(projectId.value)
+			if (res == null) return
+			mallTitle.value = String(res.title || '积分商城')
+			totalPoints.value = Number(res.totalPoints || 0)
+			spentPoints.value = Number(res.spentPoints || 0)
+			availablePoints.value = Number(res.availablePoints || 0)
+			canEnter.value = res.canEnter !== false
+			canRedeem.value = res.canRedeem === true
+			graduated.value = res.graduated === true || res.mallRedeemUnlocked === true
+			gateHint.value = String(res.message || res.hint || '结业前可浏览，结业后兑换；预约日 24 小时内开放')
+			if (!canRedeem.value) {
+				redeemHint.value = !graduated.value ? '浏览模式：集齐拼图结业后即可兑换' : String(res.message || '当前不在兑换窗口（预约日 24 小时）')
+			} else {
+				redeemHint.value = '积分足够即可兑换，卡券将放入「我的卡券」'
+			}
+			const list: MallSku[] = []
+			const rawItems = res.items != null ? res.items as any[] : []
+			for (let i = 0; i < rawItems.length; i++) {
+				const it = mapItem(rawItems[i])
+				if (it.id.length > 0) list.push(it)
+			}
+			items.value = list
+			if (!canEnter.value) {
+				emptyMsg.value = String(res.message || '暂不可进入积分商城')
+			} else if (list.length === 0) {
+				emptyMsg.value = '暂无上架商品'
+			}
+		} catch (e) {
+			const msg = (e != null && (e as any).message != null) ? String((e as any).message) : '加载失败'
+			emptyMsg.value = msg
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	}
+
+	async function onRedeem(item: MallSku) {
+		if (busy.value) return
+		if (!canRedeemSku(item)) {
+			uni.showToast({ title: redeemBtnLabel(item), icon: 'none' })
+			return
+		}
+		busy.value = true
+		uni.showLoading({ title: '兑换中', mask: true })
+		try {
+			const res = await redeemStudyTourMall(projectId.value, item.id)
+			uni.hideLoading()
+			const tip = (res != null && res.message != null) ? String(res.message) : '兑换成功，已放入我的卡券'
+			uni.showToast({ title: tip, icon: 'success' })
+			await loadMall()
+		} catch (e) {
+			uni.hideLoading()
+			const msg = (e != null && (e as any).message != null) ? String((e as any).message) : '兑换失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		} finally {
+			busy.value = false
+		}
+	}
+
+	onLoad((query: any) => {
+		projectId.value = query != null && query.projectId != null ? String(query.projectId) : ''
+	})
+	onShow(() => { loadMall() })
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; height: 100%; background-color: #F5F7FB; }
+	.hud {
+		flex-direction: row; align-items: center;
+		padding-left: 12px; padding-right: 96px; padding-bottom: 10px;
+		background-color: #1A73E8;
+	}
+	.hud-back {
+		height: 32px; padding: 0 12px; border-radius: 16px;
+		background-color: rgba(255,248,238,.12);
+		align-items: center; justify-content: center; flex-shrink: 0;
+	}
+	.hud-back-txt { color: #FFFFFF; font-size: 13px; font-weight: 700; }
+	.hud-title { flex: 1; color: #FFFFFF; font-size: 15px; font-weight: 700; margin-left: 10px; }
+	.body { flex: 1; }
+	.points-card {
+		margin: 14px 16px 8px 16px; padding: 16px;
+		background-color: #1A73E8; border-radius: 18px;
+	}
+	.points-kicker { font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1px; }
+	.points-row { margin-top: 12px; }
+	.points-cell { flex: 1; align-items: center; }
+	.points-num { font-size: 22px; font-weight: 800; color: #FFFFFF; }
+	.points-num.dim { color: #E5E7EB; font-size: 18px; }
+	.points-lbl { font-size: 11px; color: #E5E7EB; margin-top: 4px; }
+	.points-hint { margin-top: 12px; font-size: 12px; color: #E5E7EB; line-height: 18px; }
+	.gate-banner {
+		margin: 0 16px 10px 16px; padding: 10px 12px; border-radius: 12px;
+		background-color: #FFFFFF;
+	}
+	.gate-banner-txt { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+	.sku-card {
+		margin: 0 16px 10px 16px; padding: 14px; border-radius: 16px;
+		background-color: #FFFFFF;
+	}
+	.sku-top { align-items: center; }
+	.sku-img { width: 64px; height: 64px; border-radius: 12px; margin-right: 12px; background-color: #F5F7FB; flex-shrink: 0; }
+	.sku-main { flex: 1; min-width: 0; }
+	.sku-name { font-size: 15px; font-weight: 800; color: #1A1A1A; }
+	.sku-sub { font-size: 12px; color: #374151; margin-top: 4px; }
+	.sku-pts { font-size: 13px; font-weight: 800; color: #1A73E8; margin-top: 6px; }
+	.sku-btn {
+		margin-top: 12px; height: 42px; border-radius: 14px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.sku-btn.disabled { background-color: #E5E7EB; }
+	.sku-btn-txt { color: #FFFFFF; font-size: 14px; font-weight: 800; }
+	.empty { padding: 40px 20px; text-align: center; font-size: 13px; color: #374151; }
+	.body-pad { height: 28px; }
+</style>

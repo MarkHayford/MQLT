@@ -1,0 +1,235 @@
+import { ApiEndpoints } from './api-endpoints.uts'
+import { getApi, postApi } from './api-client.uts'
+
+export type CommerceRole = {
+	type: string
+	label: string
+	panel: string
+	path: string
+	primary: boolean
+	badge: string
+}
+
+export type CommerceAccess = {
+	hasAccess: boolean
+	roles: CommerceRole[]
+	defaultRole: CommerceRole | null
+	entryTitle: string
+	entrySubtitle: string
+	enterprise: any[]
+	driver: any | null
+	platform: any | null
+}
+
+export function fetchCommerceAccess(): Promise<CommerceAccess> {
+	return getApi<CommerceAccess>(ApiEndpoints.commerceAccess, true)
+}
+
+export function hasDriverAccess(res: CommerceAccess): boolean {
+	if (res.driver != null) return true
+	const roles = res.roles
+	if (roles == null) return false
+	for (let i = 0; i < roles.length; i++) {
+		if (roles[i].type === 'driver') return true
+	}
+	return false
+}
+
+export function fetchDriverHome(): Promise<any> {
+	return getApi<any>(ApiEndpoints.commerceDriverHome, true)
+}
+
+export function setDriverOnline(online: boolean, acceptOrders: boolean = true, latitude: number = 0, longitude: number = 0): Promise<any> {
+	const body: any = { online: online, acceptOrders: acceptOrders }
+	if (latitude != 0 && longitude != 0) {
+		body.latitude = latitude
+		body.longitude = longitude
+	}
+	return postApi<any>(ApiEndpoints.commerceDriverOnline, body, true)
+}
+
+export function updateDriverCity(city: string, latitude: number = 0, longitude: number = 0, address: string = ''): Promise<any> {
+	const body: any = { city: city }
+	if (latitude != 0 && longitude != 0) {
+		body.latitude = latitude
+		body.longitude = longitude
+	}
+	if (address.length > 0) body.address = address
+	return postApi<any>(ApiEndpoints.commerceDriverCity, body, true)
+}
+
+export function acceptDriverJob(jobId: string): Promise<any> {
+	return postApi<any>(ApiEndpoints.commerceDriverJobAccept.replace('{jobId}', jobId), {}, true)
+}
+
+export function updateDriverJobStatus(jobId: string, status: string, reason: string = ''): Promise<any> {
+	return postApi<any>(ApiEndpoints.commerceDriverJobStatus.replace('{jobId}', jobId), { status: status, reason: reason }, true)
+}
+
+export type DriverWallet = {
+	availableAmount: number
+	availableText: string
+	pendingAmount: number
+	pendingText: string
+	withdrawnAmount: number
+	withdrawnText: string
+	minAmount: number
+}
+
+export type DriverWithdrawRecord = {
+	id: string
+	amountText: string
+	status: string
+	statusLabel: string
+	channelLabel: string
+	timeText: string
+}
+
+function asMoney(v: any): number {
+	if (v == null) return 0
+	if (typeof v === 'number') {
+		const n = v as number
+		if (n != n) return 0
+		return n
+	}
+	let s = v.toString()
+	s = s.replace('¥', '').replace(',', '').replace('元', '').trim()
+	const n = parseFloat(s)
+	if (n != n) return 0
+	return n
+}
+
+function yuanText(n: number): string {
+	return '¥' + n.toFixed(2)
+}
+
+function firstMoney(vals: any[]): number {
+	for (let i = 0; i < vals.length; i++) {
+		if (vals[i] == null) continue
+		if (typeof vals[i] === 'string' && vals[i].toString().trim().length === 0) continue
+		return asMoney(vals[i])
+	}
+	return 0
+}
+
+function textOf(v: any, fallback: string): string {
+	if (v == null) return fallback
+	const s = v.toString().trim()
+	return s.length > 0 ? s : fallback
+}
+
+export function emptyDriverWallet(): DriverWallet {
+	return {
+		availableAmount: 0,
+		availableText: '¥0.00',
+		pendingAmount: 0,
+		pendingText: '¥0.00',
+		withdrawnAmount: 0,
+		withdrawnText: '¥0.00',
+		minAmount: 1
+	}
+}
+
+export function parseDriverWallet(raw: any): DriverWallet {
+	const src = raw != null && raw.wallet != null ? raw.wallet : raw
+	const kpis = raw != null && raw.kpis != null ? raw.kpis : src
+	const driver = raw != null && raw.driver != null ? raw.driver : src
+	const available = firstMoney([
+		src != null ? src.availableAmount : null,
+		src != null ? src.availableBalance : null,
+		src != null ? src.withdrawable : null,
+		src != null ? src.balance : null,
+		kpis != null ? kpis.availableAmount : null,
+		kpis != null ? kpis.availableBalance : null,
+		driver != null ? driver.availableBalance : null,
+		driver != null ? driver.walletBalance : null,
+		driver != null ? driver.totalIncome : null
+	])
+	const pending = firstMoney([
+		src != null ? src.pendingAmount : null,
+		src != null ? src.pendingBalance : null,
+		kpis != null ? kpis.pendingAmount : null
+	])
+	const withdrawn = firstMoney([
+		src != null ? src.withdrawnAmount : null,
+		src != null ? src.withdrawn : null,
+		kpis != null ? kpis.withdrawnAmount : null
+	])
+	const minAmount = firstMoney([src != null ? src.minAmount : null])
+	return {
+		availableAmount: available,
+		availableText: textOf(src != null ? src.availableText : null, yuanText(available)),
+		pendingAmount: pending,
+		pendingText: textOf(src != null ? src.pendingText : null, yuanText(pending)),
+		withdrawnAmount: withdrawn,
+		withdrawnText: textOf(src != null ? src.withdrawnText : null, yuanText(withdrawn)),
+		minAmount: minAmount > 0 ? minAmount : 1
+	}
+}
+
+export function fetchDriverWallet(): Promise<DriverWallet> {
+	return getApi<any>(ApiEndpoints.commerceDriverWallet, true).then((raw) => {
+		return parseDriverWallet(raw)
+	})
+}
+
+export function requestDriverWithdraw(amount: number, channel: string, accountName: string, bankName: string, bankAccount: string, remark: string): Promise<any> {
+	const body: any = {
+		amount: amount,
+		channel: channel,
+		accountName: accountName,
+		bankName: bankName,
+		bankAccount: bankAccount,
+		remark: remark
+	}
+	return postApi<any>(ApiEndpoints.commerceDriverWithdraw, body, true)
+}
+
+function withdrawStatusLabel(status: string): string {
+	if (status === 'PENDING') return '审核中'
+	if (status === 'APPROVED') return '处理中'
+	if (status === 'PAID' || status === 'SUCCESS') return '已到账'
+	if (status === 'REJECTED') return '已拒绝'
+	if (status === 'FAILED') return '失败'
+	if (status === 'CANCELLED') return '已取消'
+	return status.length > 0 ? status : '处理中'
+}
+
+function withdrawChannelLabel(channel: string): string {
+	if (channel === 'WECHAT' || channel === 'wechat') return '微信零钱'
+	if (channel === 'BANK' || channel === 'bank') return '银行卡'
+	if (channel === 'ALIPAY' || channel === 'alipay') return '支付宝'
+	return channel.length > 0 ? channel : '微信零钱'
+}
+
+export function fetchDriverWithdrawals(): Promise<DriverWithdrawRecord[]> {
+	return getApi<any>(ApiEndpoints.commerceDriverWithdrawals, true).then((raw) => {
+		let list: any[] = []
+		if (Array.isArray(raw)) {
+			list = raw as any[]
+		} else if (raw != null && raw.items != null) {
+			list = raw.items as any[]
+		} else if (raw != null && raw.list != null) {
+			list = raw.list as any[]
+		} else if (raw != null && raw.records != null) {
+			list = raw.records as any[]
+		}
+		const out: DriverWithdrawRecord[] = []
+		for (let i = 0; i < list.length; i++) {
+			const it = list[i]
+			const amount = asMoney(it.amount != null ? it.amount : it.amountText)
+			const status = textOf(it.status, 'PENDING').toUpperCase()
+			const channel = textOf(it.channel, 'WECHAT')
+			const timeRaw = textOf(it.createdAt != null ? it.createdAt : it.created_at, '')
+			out.push({
+				id: textOf(it.id, i.toString()),
+				amountText: textOf(it.amountText, yuanText(amount)),
+				status: status,
+				statusLabel: textOf(it.statusLabel, withdrawStatusLabel(status)),
+				channelLabel: textOf(it.channelLabel, withdrawChannelLabel(channel)),
+				timeText: timeRaw.length >= 16 ? timeRaw.substring(0, 16).replace('T', ' ') : timeRaw
+			})
+		}
+		return out
+	})
+}

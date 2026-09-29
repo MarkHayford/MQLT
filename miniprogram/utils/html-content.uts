@@ -1,0 +1,218 @@
+export function isHtmlContent(s: string): boolean {
+	const t = s.trim()
+	if (t.length < 3) return false
+	if (t.indexOf('<p') >= 0) return true
+	if (t.indexOf('<div') >= 0) return true
+	if (t.indexOf('<span') >= 0) return true
+	if (t.indexOf('<img') >= 0) return true
+	if (t.indexOf('<strong') >= 0) return true
+	return t.charAt(0) == '<'
+}
+
+export function stripHtml(html: string): string {
+	let out = ''
+	let inTag = false
+	for (let i = 0; i < html.length; i++) {
+		const ch = html.charAt(i)
+		if (ch == '<') {
+			inTag = true
+			continue
+		}
+		if (ch == '>') {
+			inTag = false
+			continue
+		}
+		if (!inTag) out += ch
+	}
+	out = out.split('&nbsp;').join(' ')
+	out = out.split('&amp;').join('&')
+	out = out.split('&lt;').join('<')
+	out = out.split('&gt;').join('>')
+	return out.trim()
+}
+
+export function extractImgSrcs(html: string): string[] {
+	const out: string[] = []
+	let from = 0
+	while (true) {
+		const tag = html.indexOf('<img', from)
+		if (tag < 0) break
+		const srcPos = html.indexOf('src="', tag)
+		if (srcPos < 0) break
+		const start = srcPos + 5
+		const end = html.indexOf('"', start)
+		if (end < 0) break
+		const url = html.substring(start, end)
+		if (url.length > 0) out.push(url)
+		from = end + 1
+	}
+	return out
+}
+
+export type BodyVideo = {
+	url: string
+	thumb: string
+}
+
+export type BodyLink = {
+	url: string
+	title: string
+}
+
+export function isVideoFileUrl(url: string): boolean {
+	const u = url.toLowerCase()
+	if (u.indexOf('.mp4') >= 0) return true
+	if (u.indexOf('.mov') >= 0) return true
+	if (u.indexOf('.m4v') >= 0) return true
+	if (u.indexOf('.webm') >= 0) return true
+	return false
+}
+
+export function normalizeHttpUrl(raw: string): string {
+	const s = raw.trim()
+	if (s.length === 0) return ''
+	if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) return s
+	return 'https://' + s
+}
+
+export function guessLinkTitle(url: string): string {
+	const u = url.toLowerCase()
+	if (u.indexOf('mp.weixin.qq.com') >= 0) return '公众号文章'
+	if (u.indexOf('channels.weixin.qq.com') >= 0) return '视频号'
+	if (u.indexOf('weixin.qq.com') >= 0) return '微信链接'
+	if (isVideoFileUrl(u)) return '小视频'
+	return '网页链接'
+}
+
+function encodeMark(s: string): string {
+	return s.split('|').join('%7C')
+}
+
+function decodeMark(s: string): string {
+	return s.split('%7C').join('|')
+}
+
+function parseMarks(html: string, prefix: string): string[] {
+	const out: string[] = []
+	const token = '[[' + prefix + ':'
+	let from = 0
+	while (true) {
+		const i = html.indexOf(token, from)
+		if (i < 0) break
+		const start = i + token.length
+		const end = html.indexOf(']]', start)
+		if (end < 0) break
+		out.push(html.substring(start, end))
+		from = end + 2
+	}
+	return out
+}
+
+export function parseBodyCover(html: string): string {
+	const raw = parseMarks(html, 'cover')
+	if (raw.length === 0) return ''
+	return decodeMark(raw[0])
+}
+
+export function parseBodyVideos(html: string): BodyVideo[] {
+	const raw = parseMarks(html, 'video')
+	const out: BodyVideo[] = []
+	for (let i = 0; i < raw.length; i++) {
+		const item = raw[i]
+		const bar = item.indexOf('|')
+		const url = decodeMark(bar >= 0 ? item.substring(0, bar) : item)
+		const thumb = decodeMark(bar >= 0 ? item.substring(bar + 1) : '')
+		if (url.length > 0) {
+			const v: BodyVideo = { url: url, thumb: thumb }
+			out.push(v)
+		}
+	}
+	return out
+}
+
+export function parseBodyLinks(html: string): BodyLink[] {
+	const raw = parseMarks(html, 'link')
+	const out: BodyLink[] = []
+	for (let i = 0; i < raw.length; i++) {
+		const item = raw[i]
+		const bar = item.indexOf('|')
+		const url = decodeMark(bar >= 0 ? item.substring(0, bar) : item)
+		let title = decodeMark(bar >= 0 ? item.substring(bar + 1) : '')
+		if (title.length === 0) title = guessLinkTitle(url)
+		if (url.length > 0) {
+			const l: BodyLink = { url: url, title: title }
+			out.push(l)
+		}
+	}
+	return out
+}
+
+export function parseBodyTags(html: string): string[] {
+	const raw = parseMarks(html, 'tags')
+	const out: string[] = []
+	for (let i = 0; i < raw.length; i++) {
+		const parts = raw[i].split('|')
+		for (let j = 0; j < parts.length; j++) {
+			const t = decodeMark(parts[j]).trim()
+			if (t.length > 0) out.push(t)
+		}
+	}
+	return out
+}
+
+export function parseTitleHtml(html: string): string {
+	const raw = parseMarks(html, 'thtml')
+	if (raw.length === 0) return ''
+	return decodeURIComponent(raw[0])
+}
+
+export function appendBodyExtras(html: string, videos: BodyVideo[], links: BodyLink[], tags: string[] = [], titleHtml: string = ''): string {
+	let out = html
+	for (let i = 0; i < videos.length; i++) {
+		const v = videos[i]
+		out = out + '<p>[[video:' + encodeMark(v.url) + '|' + encodeMark(v.thumb) + ']]</p>'
+	}
+	for (let i = 0; i < links.length; i++) {
+		const l = links[i]
+		out = out + '<p>[[link:' + encodeMark(l.url) + '|' + encodeMark(l.title) + ']]</p>'
+	}
+	if (tags.length > 0) {
+		let packed = encodeMark(tags[0])
+		for (let i = 1; i < tags.length; i++) {
+			packed = packed + '|' + encodeMark(tags[i])
+		}
+		out = out + '<p>[[tags:' + packed + ']]</p>'
+	}
+	if (titleHtml.length > 0 && titleHtml.indexOf('<') >= 0) {
+		out = out + '<p>[[thtml:' + encodeURIComponent(titleHtml) + ']]</p>'
+	}
+	return out
+}
+
+export function stripBodyExtras(html: string): string {
+	let out = html
+	const kinds = ['video', 'link', 'tags', 'cover', 'thtml']
+	for (let k = 0; k < kinds.length; k++) {
+		const token = '[[' + kinds[k] + ':'
+		while (true) {
+			const i = out.indexOf(token)
+			if (i < 0) break
+			const end = out.indexOf(']]', i)
+			if (end < 0) break
+			let from = i
+			let to = end + 2
+			if (from >= 3 && out.substring(from - 3, from) === '<p>') from = from - 3
+			if (to + 4 <= out.length && out.substring(to, to + 4) === '</p>') to = to + 4
+			out = out.substring(0, from) + out.substring(to)
+		}
+	}
+	return out
+}
+
+export function postHasVideoFile(images: string[], coverUrl: string, content: string): boolean {
+	if (isVideoFileUrl(coverUrl)) return true
+	for (let i = 0; i < images.length; i++) {
+		if (isVideoFileUrl(images[i])) return true
+	}
+	return parseBodyVideos(content).length > 0
+}

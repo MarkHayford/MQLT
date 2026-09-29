@@ -1,0 +1,547 @@
+<template>
+	<view class="page-wrapper uni-column" :style="pageStyle">
+		<view class="fixed-header">
+			<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">{{ pageTitle }}</text>
+			</view>
+
+			<view class="search-area">
+				<view class="search-wrap uni-row">
+					<image src="/static/func-search.svg" class="s-icon" mode="aspectFit"></image>
+					<input class="s-input" type="text" placeholder="搜索路线区域名称或介绍..." placeholder-style="color:#6B7280;" v-model="searchKeyword" />
+				</view>
+			</view>
+
+			<view class="filter-sort-bar uni-row">
+				<scroll-view class="type-scroll" scroll-x="true" :show-scrollbar="false" :enable-flex="true">
+					<view class="type-list uni-row">
+						<view
+							v-for="z in zoneFilters"
+							:key="z.key"
+							:class="['type-pill', selectedZoneKey === z.key ? 'type-active' : '']"
+							@click="selectZone(z.key)"
+						>
+							<text :class="['type-txt', selectedZoneKey === z.key ? 'type-txt-active' : '']">{{ z.label }}</text>
+						</view>
+						<view class="type-tail"></view>
+					</view>
+				</scroll-view>
+			</view>
+			<view class="sort-bar uni-row">
+				<view :class="['sort-cell', sortOrder === 'asc' ? 'sort-cell-on' : '']" @click="setSort('asc')">
+					<text :class="['sort-cell-txt', sortOrder === 'asc' ? 'sort-cell-txt-on' : '']">默认排序</text>
+				</view>
+				<view :class="['sort-cell', 'sort-cell-last', sortOrder === 'dur' ? 'sort-cell-on' : '']" @click="setSort('dur')">
+					<text :class="['sort-cell-txt', sortOrder === 'dur' ? 'sort-cell-txt-on' : '']">时长优先</text>
+				</view>
+			</view>
+		</view>
+
+		<scroll-view class="main-list" :style="listStyle" scroll-y="true" :show-scrollbar="false" :bounces="true" :enable-flex="true" :enhanced="true">
+			<view class="list-padding">
+				<view
+					v-for="spot in filteredSpots"
+					:key="spot.id"
+					:class="cardClass(spot.id)"
+				>
+					<view class="route-card-header uni-row">
+						<view class="zone-tag">
+							<text class="zone-tag-txt">{{ spot.zoneLabel }}</text>
+						</view>
+						<text class="route-duration">预计 {{ spot.durationText }}</text>
+					</view>
+					<text class="route-title">{{ spot.title }}</text>
+					<text class="route-brief">{{ spot.desc }}</text>
+					<view class="route-footer uni-row">
+						<text class="picked-flag">{{ pickedHint(spot.id) }}</text>
+						<view class="detail-btn" @click.stop="openSpotDetail(spot)">
+							<text class="detail-btn-text">详情</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="filteredSpots.length === 0" class="empty-state uni-column">
+					<image src="/static/icon-note.svg" class="empty-emoji" mode="aspectFit"></image>
+					<text class="empty-txt">没有找到相关路线区域</text>
+				</view>
+				<view class="list-bottom-space"></view>
+			</view>
+		</scroll-view>
+
+		<view v-if="pickMode" class="pick-bar uni-row">
+			<view class="pick-info uni-column">
+				<text class="pick-label">已选站点</text>
+				<text class="pick-value">{{ pickedIds.length }} 个</text>
+			</view>
+			<view class="pick-done" @click="confirmPick">
+				<text class="pick-done-text">完成</text>
+			</view>
+		</view>
+
+		<!-- 详情弹窗 -->
+		<view v-if="showDetail" class="detail-mask" @click="closeDetail" @touchmove.stop.prevent="onMaskTouch"></view>
+		<view v-if="showDetail && detailSpot != null" class="detail-sheet uni-column" @touchmove.stop="onSheetTouch">
+			<view class="detail-handle"></view>
+			<view class="detail-top uni-row">
+				<view class="detail-titles uni-column">
+					<text class="detail-title">{{ detailSpot.title }}</text>
+					<text class="detail-zone">{{ detailSpot.zoneLabel }} · 预计 {{ detailSpot.durationText }}</text>
+				</view>
+				<view class="detail-close" @click="closeDetail">
+					<text class="detail-close-text">关闭</text>
+				</view>
+			</view>
+			<scroll-view class="detail-scroll" scroll-y="true" :show-scrollbar="true" :enhanced="true" :bounces="true" :enable-flex="true">
+				<view class="detail-inner">
+					<view class="detail-photo" :style="detailSpot.coverStyle">
+						<text class="detail-photo-cap">{{ detailSpot.photoCaption }}</text>
+					</view>
+					<view v-for="sec in detailSpot.sections" :key="sec.key">
+						<view v-if="sectionHasBody(sec.html)" class="detail-sec uni-column">
+							<text class="detail-sec-title">{{ sec.title }}</text>
+							<rich-text v-if="sectionIsHtml(sec.html)" class="detail-rich" :nodes="sec.html"></rich-text>
+							<text v-else class="detail-sec-body">{{ sec.html }}</text>
+						</view>
+					</view>
+					<view class="detail-scroll-pad"></view>
+				</view>
+			</scroll-view>
+			<view v-if="pickMode" class="detail-footer uni-row">
+				<view class="detail-secondary" @click="closeDetail">
+					<text class="detail-secondary-text">关闭</text>
+				</view>
+				<view class="detail-primary" @click="togglePickFromDetail">
+					<text class="detail-primary-text">{{ detailPicked ? '取消选择' : '选择该点位' }}</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { buildRouteZoneFilters, parseRouteZoneFilters, parseStudyRouteSpots, routeSectionHasBody, type StudyRouteZoneFilter, type StudyRouteZoneSpot } from './utils/study-route-zones.uts'
+	import { fetchStudyProjectDetail, fetchStudyProjectRoutePoints } from '../../utils/study-projects.uts'
+	import { isHtmlContent, stripHtml } from '../../utils/html-content.uts'
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const windowHeight = layout.windowHeight
+	const screenHeight = layout.screenHeight
+	const pageHeight = screenHeight > windowHeight ? screenHeight : windowHeight
+	const headerHeight = statusBarHeight + 44 + 60 + 50 + 40
+	const pageStyle = 'height: ' + pageHeight.toString() + 'px;'
+	const pickMode = ref(false)
+	const listStyle = computed((): string => {
+		const bottom = pickMode.value ? 92 : 0
+		return 'top: ' + headerHeight.toString() + 'px; bottom: ' + bottom.toString() + 'px;'
+	})
+
+	const pageTitle = ref('研学路径')
+	const projectId = ref('')
+	const searchKeyword = ref('')
+	const selectedZoneKey = ref('all')
+	const sortOrder = ref('asc')
+	const zoneFilters = ref<StudyRouteZoneFilter[]>(buildRouteZoneFilters([] as StudyRouteZoneSpot[], [] as StudyRouteZoneFilter[]))
+	const allSpots = ref<StudyRouteZoneSpot[]>([])
+	const pickDayKey = ref('')
+	const pickedIds = ref<string[]>([])
+	const showDetail = ref(false)
+	const detailSpot = ref<StudyRouteZoneSpot | null>(null)
+
+	const filteredSpots = computed((): StudyRouteZoneSpot[] => {
+		const zone = selectedZoneKey.value
+		const kw = searchKeyword.value.trim().toLowerCase()
+		let list: StudyRouteZoneSpot[] = []
+		const src = allSpots.value
+		for (let i = 0; i < src.length; i++) {
+			const s = src[i]
+			if (zone !== 'all' && s.zoneKey !== zone) continue
+			if (kw.length > 0) {
+				const hay = (s.title + ' ' + s.desc + ' ' + stripHtml(s.intro)).toLowerCase()
+				if (hay.indexOf(kw) < 0) continue
+			}
+			list.push(s)
+		}
+		if (sortOrder.value === 'dur') {
+			// 按时长升序
+			const copy: StudyRouteZoneSpot[] = []
+			for (let i = 0; i < list.length; i++) copy.push(list[i])
+			copy.sort((a, b) => a.durationMin - b.durationMin)
+			return copy
+		}
+		return list
+	})
+
+	const detailPicked = computed((): boolean => {
+		const s = detailSpot.value
+		if (s == null) return false
+		return isPicked(s.id)
+	})
+	const sectionHasBody = (html: string): boolean => {
+		return routeSectionHasBody(html)
+	}
+	const sectionIsHtml = (html: string): boolean => {
+		return isHtmlContent(html)
+	}
+
+	const isPicked = (id: string): boolean => {
+		const list = pickedIds.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i] === id) return true
+		}
+		return false
+	}
+
+	const selectZone = (key: string) => {
+		selectedZoneKey.value = key
+	}
+
+	const setSort = (order: string) => {
+	sortOrder.value = order
+}
+const toggleSort = () => {
+		sortOrder.value = sortOrder.value === 'asc' ? 'dur' : 'asc'
+	}
+
+	const loadSpots = (pid: string) => {
+		if (pid.length === 0) {
+			allSpots.value = [] as StudyRouteZoneSpot[]
+			return
+		}
+		fetchStudyProjectRoutePoints(pid).then((res) => {
+			const spots = parseStudyRouteSpots(res)
+			allSpots.value = spots
+			zoneFilters.value = buildRouteZoneFilters(spots, parseRouteZoneFilters(res != null ? res['zones'] : null))
+		}).catch((_e) => {
+			allSpots.value = [] as StudyRouteZoneSpot[]
+		})
+		fetchStudyProjectDetail(pid).then((proj) => {
+			if (proj != null && proj.title != null && proj.title.length > 0) {
+				pageTitle.value = pickMode.value ? '选择研学点位' : (proj.title + ' · 点位')
+			}
+		}).catch((_e) => {})
+	}
+
+	const cardClass = (id: string): string => {
+		if (pickMode.value && isPicked(id)) return 'route-card route-card-picked'
+		return 'route-card'
+	}
+	const pickedHint = (id: string): string => {
+		if (pickMode.value && isPicked(id)) return '已选择'
+		return ''
+	}
+
+	const openSpotDetail = (spot: StudyRouteZoneSpot) => {
+		detailSpot.value = spot
+		showDetail.value = true
+	}
+
+	const togglePick = (id: string) => {
+		const list = pickedIds.value
+		const next: string[] = []
+		let found = false
+		for (let i = 0; i < list.length; i++) {
+			if (list[i] === id) {
+				found = true
+			} else {
+				next.push(list[i])
+			}
+		}
+		if (!found) next.push(id)
+		pickedIds.value = next
+	}
+
+	const togglePickFromDetail = () => {
+		const s = detailSpot.value
+		if (s == null) return
+		togglePick(s.id)
+	}
+
+	const confirmPick = () => {
+		const dayKey = pickDayKey.value
+		const ids = pickedIds.value
+		let joined = ''
+		for (let i = 0; i < ids.length; i++) {
+			if (i > 0) joined = joined + ','
+			joined = joined + ids[i]
+		}
+		try {
+			uni.setStorageSync('mqlt_booking_route_pick', dayKey + '|||' + joined)
+		} catch (_e) {}
+		uni.navigateBack()
+	}
+
+	const closeDetail = () => {
+		showDetail.value = false
+	}
+	const onMaskTouch = () => {}
+	const onSheetTouch = () => {}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const pid = options['projectId']
+		const zone = options['zone']
+		const mode = options['mode']
+		const dayKey = options['dayKey']
+		const selected = options['selected']
+		if (pid != null) projectId.value = pid.toString()
+		if (zone != null && zone.toString().length > 0) selectedZoneKey.value = zone.toString()
+		if (mode != null && mode.toString() === 'pick') {
+			pickMode.value = true
+			pageTitle.value = '选择研学点位'
+		}
+		if (dayKey != null) pickDayKey.value = dayKey.toString()
+		if (selected != null && selected.toString().length > 0) {
+			const parts = selected.toString().split(',')
+			const ids: string[] = []
+			for (let i = 0; i < parts.length; i++) {
+				if (parts[i].length > 0) ids.push(parts[i])
+			}
+			pickedIds.value = ids
+		}
+		loadSpots(projectId.value)
+	})
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+		position: relative;
+		overflow: hidden;
+	}
+	.fixed-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: fixed;
+		top: 0; left: 0; right: 0;
+		z-index: 1000;
+		background-color: #FFFFFF;
+		border-bottom-width: 1px;
+		border-bottom-color: rgba(0, 0, 0, 0.05);
+	}
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px; flex-direction: row; align-items: center;
+		padding: 0 16px; position: relative;
+	}
+	.nav-back { flex-direction: row; align-items: center; z-index: 1; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { font-size: 16px; color: #1A1A1A; font-weight: 500; }
+	.nav-title {
+		position: absolute; left: 0; right: 0; text-align: center;
+		font-size: 17px; font-weight: 700; color: #1A1A1A;
+	}
+	.search-area { background-color: #FFFFFF; border-width: 0; border-color: #FFFFFF; padding: 8px 16px 12px 16px; height: 60px; }
+	.search-wrap {
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		width: 100%; height: 40px; background-color: #E8EEF8;
+		border-radius: 20px; align-items: center; padding: 0 16px;
+	
+}
+	.s-icon { width: 16px; height: 16px; margin-right: 8px; }
+	.s-input { flex: 1; font-size: 14px; color: #1A1A1A; }
+	.filter-sort-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 50px; width: 100%; align-items: center;
+		background-color: #FFFFFF;
+		border-bottom-width: 0.5px; border-bottom-color: rgba(0,0,0,0.05);
+		justify-content: space-between;
+	}
+	.type-scroll { flex: 1; height: 50px; }
+	.type-list { padding: 0 16px; height: 50px; align-items: center; flex-direction: row; }
+	.type-tail { width: 12px; height: 1px; flex-shrink: 0; }
+	.type-pill {
+		padding: 0 14px; height: 28px; background-color: #E8EEF8;
+		border-radius: 14px; justify-content: center; margin-right: 8px; flex-shrink: 0;
+		align-items: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.type-active { background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+	.type-txt { font-size: 13px; color: #374151; font-weight: 500; }
+	.type-txt-active { color: #FFFFFF; font-weight: 600; }
+	.sort-bar {
+		width: 100%;
+		height: 40px;
+		flex-direction: row;
+		background-color: #F5F7FB;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+	}
+	.sort-cell {
+		flex: 1;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+		background-color: #F5F7FB;
+		border-right-width: 1px;
+		border-right-style: solid;
+		border-right-color: #E5E7EB;
+		border-radius: 0;
+	}
+	.sort-cell-last {
+		border-right-width: 0;
+	}
+	.sort-cell-on {
+		background-color: #1A73E8;
+	}
+	.sort-cell-txt {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.sort-cell-txt-on {
+		color: #FFFFFF;
+	}
+.main-list {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+	}
+	.list-padding { padding: 16px; padding-bottom: 0; }
+	.list-bottom-space {
+		height: 34px;
+		padding-bottom: env(safe-area-inset-bottom);
+	}
+	.route-card {
+		background-color: #FFFFFF; border-radius: 16px; padding: 18px;
+		margin-bottom: 16px; border-width: 1px; border-style: solid;
+		border-color: rgba(0, 0, 0, 0.05);
+	}
+	.route-card-picked {
+		border-color: #1A73E8;
+	}
+	.route-card-header { justify-content: space-between; align-items: center; margin-bottom: 12px; }
+	.zone-tag { padding: 2px 8px; border-radius: 4px; background-color: #1A73E8; }
+	.zone-tag-txt { color: #FFFFFF; font-size: 11px; font-weight: 700; }
+	.route-duration { font-size: 13px; color: #9CA3AF; }
+	.route-title {
+		font-size: 17px; font-weight: 700; color: #1A1A1A; margin-bottom: 8px;
+		lines: 2; overflow: hidden; text-overflow: ellipsis;
+	}
+	.route-brief {
+		font-size: 14px; color: #374151; line-height: 20px; margin-bottom: 14px;
+		lines: 2; overflow: hidden; text-overflow: ellipsis;
+	}
+	.route-footer {
+		padding-top: 12px; border-top-width: 0.5px; border-top-color: #FFFFFF;
+		justify-content: space-between; align-items: center;
+	}
+	.read-more { font-size: 13px; color: #1A1A1A; font-weight: 600; }
+	.picked-flag { font-size: 12px; font-weight: 700; color: #1A73E8; flex: 1; }
+	.detail-btn {
+		height: 28px; padding: 0 14px; border-radius: 14px; background-color: #1A73E8;
+		align-items: center; justify-content: center; flex-shrink: 0;
+	}
+	.detail-btn-text { font-size: 12px; font-weight: 700; color: #FFFFFF; }
+	.arrow-right { font-size: 18px; color: #E5E7EB; }
+	.empty-state { padding-top: 60px; align-items: center; }
+	.empty-emoji { width: 40px; height: 40px; margin-bottom: 10px; }
+	.empty-txt { color: #9CA3AF; font-size: 14px; }
+
+	.pick-bar {
+		position: fixed; left: 0; right: 0; bottom: 0;
+		padding: 12px 16px 28px 16px; background-color: #FFFFFF;
+		border-top-width: 0.5px; border-top-color: rgba(60,60,67,0.12);
+		align-items: center; z-index: 900;
+	}
+	.pick-info { flex: 1; }
+	.pick-label { font-size: 12px; color: #9CA3AF; margin-bottom: 2px; }
+	.pick-value { font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.pick-done {
+		height: 44px; padding: 0 28px; border-radius: 22px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.pick-done-text { font-size: 15px; font-weight: 800; color: #FFFFFF; }
+
+	.detail-mask {
+		position: fixed; left: 0; right: 0; top: 0; bottom: 0;
+		background-color: rgba(0, 0, 0, 0.45); z-index: 920;
+	}
+	.detail-sheet {
+		position: fixed; left: 0; right: 0; bottom: 0;
+		height: 78%; max-height: 78%; background-color: #FFFFFF;
+		border-top-left-radius: 20px; border-top-right-radius: 20px;
+		z-index: 921; overflow: hidden;
+	}
+	.detail-handle {
+		width: 36px; height: 4px; border-radius: 2px; background-color: #E5E7EB;
+		align-self: center; margin-top: 10px; margin-bottom: 8px; flex-shrink: 0;
+	}
+	.detail-top { align-items: center; padding: 4px 16px 10px 16px; flex-shrink: 0; }
+	.detail-titles { flex: 1; min-width: 0; }
+	.detail-title { font-size: 17px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px; }
+	.detail-zone { font-size: 12px; color: #374151; font-weight: 600; }
+	.detail-close {
+		padding: 6px 12px; border-radius: 14px; background-color: #FFFFFF;
+		flex-shrink: 0; margin-left: 10px;
+	}
+	.detail-close-text { font-size: 12px; font-weight: 700; color: #374151; }
+	.detail-scroll { width: 100%; flex: 1; min-height: 240px; }
+	.detail-inner { padding: 0 16px 8px 16px; flex-direction: column; }
+	.detail-scroll-pad { height: 24px; }
+	.detail-photo {
+		height: 160px; border-radius: 16px; align-items: center; justify-content: center;
+		margin-bottom: 16px; overflow: hidden;
+	}
+	.detail-photo-cap { font-size: 13px; font-weight: 700; color: #FFFFFF; }
+	.detail-sec { margin-bottom: 16px; }
+	.detail-sec-title { font-size: 14px; font-weight: 800; color: #1A1A1A; margin-bottom: 8px; }
+	.detail-sec-body { font-size: 13px; color: #374151; line-height: 20px; }
+	.detail-rich { font-size: 13px; color: #374151; line-height: 22px; }
+	.bullet-row { align-items: flex-start; margin-bottom: 6px; }
+	.bullet-dot {
+		width: 6px; height: 6px; border-radius: 3px; background-color: #1A73E8;
+		margin-top: 7px; margin-right: 8px; flex-shrink: 0;
+	}
+	.bullet-dot-blue { background-color: #1A73E8; }
+	.bullet-text { flex: 1; font-size: 13px; color: #1A1A1A; line-height: 20px; }
+	.gift-row { flex-direction: row; flex-wrap: wrap; }
+	.gift-chip {
+		padding: 6px 10px; border-radius: 12px; background-color: #FFFFFF;
+		margin-right: 8px; margin-bottom: 8px;
+	}
+	.gift-chip-text { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+	.detail-footer {
+		flex-direction: row; padding: 10px 16px 18px 16px;
+		border-top-width: 0.5px; border-top-color: rgba(60,60,67,0.12);
+		flex-shrink: 0; background-color: #FFFFFF;
+	}
+	.detail-secondary {
+		height: 44px; padding: 0 18px; border-radius: 22px; background-color: #FFFFFF;
+		align-items: center; justify-content: center; margin-right: 10px;
+	}
+	.detail-secondary-text { font-size: 14px; font-weight: 700; color: #1A1A1A; }
+	.detail-primary {
+		flex: 1; height: 44px; border-radius: 22px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.detail-primary-text { font-size: 14px; font-weight: 800; color: #FFFFFF; }
+</style>

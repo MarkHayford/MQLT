@@ -1,0 +1,1029 @@
+<template>
+	<view class="page-container uni-column">
+		<view class="page-flock">
+			
+		</view>
+		<view :class="statusBarClass" :style="statusBarStyle"></view>
+
+		<view :class="headStackShellClass">
+			<view :class="headGlassClass"></view>
+			<view :class="headStackClass">
+			<mqlt-scape tone="study"></mqlt-scape>
+			<view class="head-gold-edge"></view>
+			<!-- 1. 沉浸式顶部 Hero 区域 -->
+			<view :class="heroHeaderClass">
+				<view class="hero-bg-gradient"></view>
+
+				<!-- 标题区 -->
+				<view :class="heroTitleClass">
+					<text class="hero-main-title">开启研学之路</text>
+					<text class="hero-sub-title">走进内蒙古产业一线，开启研学之旅</text>
+				</view>
+
+				<view class="search-bar-container">
+					<view class="search-box-inner uni-row">
+						<view class="search-icon-wrap"><image src="/static/func-search-light.svg" class="search-icon-img" mode="aspectFit"></image></view>
+						<input class="search-input-field" type="text" placeholder="搜索研学项目、地点..." placeholder-style="color: #9CA3AF;" v-model="searchKeyword" />
+					</view>
+				</view>
+			</view>
+
+			<view class="filter-sticky-area">
+				<view class="filter-container uni-row">
+					<view class="category-scroll-wrap">
+						<scroll-view :class="categoryScrollClass" scroll-x="true" show-scrollbar="false">
+							<view class="category-row uni-row">
+								<view
+									v-for="(catItem, index) in categoryItems"
+									:key="index"
+									:class="catItem.pillClass"
+									@click="selectCategory(index)"
+								>
+									<text :class="catItem.pillTextClass">{{ catItem.name }}</text>
+								</view>
+								<view class="cat-row-end"></view>
+							</view>
+						</scroll-view>
+						<text :class="filterAllTitleClass">全部分类</text>
+					</view>
+					<view class="filter-expand-btn" @click="toggleCatExpanded">
+						<view :class="expandArrowClass">
+							<image
+								src="/static/func-arrow-down.svg"
+								class="expand-arrow-img"
+								mode="aspectFit"
+							></image>
+						</view>
+					</view>
+				</view>
+				<view :class="expandGridClass">
+					<view class="cat-grid-body">
+						<view
+							v-for="(catItem, index) in categoryItems"
+							:key="'grid-'+index"
+							:class="catItem.gridClass"
+							@click="handleGridSelect(index)"
+						>
+							<text :class="catItem.gridTextClass">{{ catItem.name }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+			<view :class="searchPullRowClass" @click="toggleHeadCollapsed">
+				<view class="search-pull-grab"></view>
+			</view>
+		</view>
+
+		<!-- 3. 研学项目列表 -->
+		<scroll-view :class="projectListScrollClass" scroll-y="true" :show-scrollbar="false" :bounces="true" @scroll="onScroll">
+			<view :class="listInnerClass">
+
+				<view v-for="item in projectListItems" :key="item.id" class="premium-project-card-shell" @click="goToDetail(item.id)">
+					<view class="premium-project-card-glass"></view>
+					<view class="premium-project-card-line"></view>
+					<view class="premium-project-card">
+						<view class="card-gold-edge"></view>
+					<view class="card-hero-image">
+						<swiper
+							class="card-media-swiper"
+							:autoplay="item.mediaBackgrounds.length > 1"
+							:circular="item.mediaBackgrounds.length > 1"
+							:interval="4500"
+							:indicator-dots="false"
+							@change="onProjectCardMediaChange($event, item.id)"
+							@click.stop="goToDetail(item.id)"
+						>
+							<swiper-item v-for="(media, mIdx) in item.mediaBackgrounds" :key="mIdx">
+								<view class="card-media-slide" :style="'background-image:' + media"></view>
+							</swiper-item>
+						</swiper>
+						<view class="card-hero-shade"></view>
+						<view class="card-media-dots uni-row" v-if="item.mediaBackgrounds.length > 1">
+							<view
+								v-for="(_media, dotIdx) in item.mediaBackgrounds"
+								:key="dotIdx"
+								:class="['card-media-dot', (projectCardMediaState[item.id] || 0) === dotIdx ? 'card-media-dot-active' : '']"
+							></view>
+						</view>
+					</view>
+					<view class="card-rip">
+						<view class="card-cut card-cut-left"></view>
+						<view class="card-rip-line"></view>
+						<view class="card-cut card-cut-right"></view>
+					</view>
+
+					<view class="card-body-details">
+						<text class="card-main-name">{{ item.title }}</text>
+						<text class="card-desc-text">{{ item.subtitle }}</text>
+
+						<view class="card-meta-row uni-row">
+							<view class="meta-tags-wrap uni-row">
+								<text class="meta-tag" v-for="(tag, tIdx) in item.tags" :key="tIdx">{{ tag }}</text>
+							</view>
+							<view class="premium-book-btn" :style="item.bookBtnStyle" @click.stop="handleBookButtonClick(item)">
+								<text class="btn-inner-text">{{ item.bookBtnText }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+				</view>
+
+				<view class="footer-spacer"></view>
+			</view>
+		</scroll-view>
+
+		<!-- 租车浮动入口 -->
+		<taxi-fab />
+		<splash-announce></splash-announce>
+
+		<floating-tab-bar :current="1"></floating-tab-bar>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed, reactive } from 'vue'
+	import { onShow, onLoad, onUnload } from '@dcloudio/uni-app'
+	import { getStudyStatusDisplay, sortProjectsInProgressFirst, subscribeStudyBookingChanged, unsubscribeStudyBookingChanged, syncStudyBookingsFromApi } from '../../utils/study-booking.uts'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { ensureNativeTabBarHidden } from '../../utils/tab-bar.uts'
+	import { fetchStudyProjects, type StudyProjectMeta } from '../../utils/study-projects.uts'
+	import { resolveStudyProjectMediaBackground } from '../../utils/study-project-media.uts'
+
+	type Project = StudyProjectMeta
+
+	type CategoryItem = {
+		name: string
+		pillClass: string
+		pillTextClass: string
+		gridClass: string
+		gridTextClass: string
+	}
+
+	type ProjectListItem = {
+		id: string
+		title: string
+		subtitle: string
+		status: string
+		enrolled: number
+		maxCapacity: number
+		tags: string[]
+		mediaBackgrounds: string[]
+		statusLabel: string
+		bookBtnText: string
+		bookBtnStyle: string
+	}
+
+	const statusBarHeightPx = getStatusBarHeight()
+	const statusBarStyle = 'height: ' + statusBarHeightPx.toString() + 'px;'
+	const searchKeyword = ref('')
+	const activeCategory = ref(0)
+	const isCatExpanded = ref(false)
+	const isHeroCollapsed = ref(false)
+	const isHeadCollapsed = ref(false)
+	let lastScrollTop = 0
+	let lastScrollHandleAt = 0
+	const categories = ['全部', '测试分类']
+
+	const allProjects = ref<Project[]>([])
+	const projectCardMediaState = reactive<Record<string, number>>({})
+
+	const bookRefreshTick = ref(0)
+
+	const refreshBookUi = () => {
+		bookRefreshTick.value++
+	}
+
+	const loadProjects = () => {
+		syncStudyBookingsFromApi().then((_ids) => {
+			refreshBookUi()
+		}).catch((_err) => {})
+
+		fetchStudyProjects().then((list) => {
+			allProjects.value = list
+		}).catch((_err) => {
+			allProjects.value = []
+			uni.showToast({ title: '研学项目加载失败', icon: 'none' })
+		})
+	}
+
+	const projectMatchesCategory = (p: Project, targetCat: string): boolean => {
+		if (p.category === targetCat) return true
+		const tags = p.tags
+		for (let i = 0; i < tags.length; i++) {
+			if (tags[i] === targetCat) return true
+		}
+		return false
+	}
+
+	const filteredProjects = computed((): Project[] => {
+		let list = allProjects.value
+		if (activeCategory.value > 0) {
+			const targetCat = categories[activeCategory.value]
+			list = list.filter(p => projectMatchesCategory(p, targetCat))
+		}
+		if (searchKeyword.value.trim().length > 0) {
+			const kw = searchKeyword.value.toLowerCase()
+			list = list.filter(p => p.title.toLowerCase().includes(kw) || p.subtitle.toLowerCase().includes(kw))
+		}
+		return sortProjectsInProgressFirst(list, (p: Project): string => p.status)
+	})
+
+	const heroHeaderClass = computed((): string => {
+		return isHeroCollapsed.value ? 'hero-header-section hero-header-collapsed' : 'hero-header-section'
+	})
+
+	const heroTitleClass = computed((): string => {
+		return isHeroCollapsed.value ? 'hero-title-area uni-column hero-title-hidden' : 'hero-title-area uni-column'
+	})
+
+	const headStackClass = computed((): string => {
+		return isHeadCollapsed.value ? 'head-stack head-stack-collapsed' : 'head-stack'
+	})
+	const headStackShellClass = computed((): string => {
+		return isHeadCollapsed.value ? 'head-stack-shell head-stack-shell-collapsed' : 'head-stack-shell'
+	})
+	const headGlassClass = computed((): string => {
+		return isHeadCollapsed.value ? 'head-stack-glass head-stack-glass-collapsed' : 'head-stack-glass'
+	})
+
+	const hasHeadFilter = computed((): boolean => {
+		if (searchKeyword.value.trim().length > 0) return true
+		return activeCategory.value > 0
+	})
+
+	const searchPullLabel = computed((): string => {
+		return isHeadCollapsed.value ? '展开' : '收起'
+	})
+
+	const searchPullBtnClass = computed((): string => {
+		return isHeadCollapsed.value ? 'search-pull-btn uni-column' : 'search-pull-btn search-pull-btn-live uni-column'
+	})
+
+	const statusBarClass = computed((): string => {
+		return isHeadCollapsed.value ? 'status-bar status-bar-desk' : 'status-bar'
+	})
+
+	const searchPullRowClass = computed((): string => {
+		return isHeadCollapsed.value ? 'search-pull-row search-pull-row-compact' : 'search-pull-row'
+	})
+	const projectListScrollClass = computed((): string => {
+		return isHeadCollapsed.value ? 'project-list-scroll project-list-scroll-open' : 'project-list-scroll'
+	})
+	const listInnerClass = computed((): string => {
+		return isHeadCollapsed.value ? 'list-inner-wrapper list-inner-open' : 'list-inner-wrapper'
+	})
+
+	const toggleHeadCollapsed = () => {
+		const next = !isHeadCollapsed.value
+		isHeadCollapsed.value = next
+		if (next) {
+			isCatExpanded.value = false
+		}
+	}
+
+	const expandArrowClass = computed((): string => {
+		return isCatExpanded.value ? 'expand-arrow-icon arrow-rotate' : 'expand-arrow-icon'
+	})
+
+	const categoryScrollClass = computed((): string => {
+		return isCatExpanded.value ? 'category-scroll-view category-scroll-hidden' : 'category-scroll-view'
+	})
+
+	const expandGridClass = computed((): string => {
+		return isCatExpanded.value ? 'expand-grid-panel expand-grid-panel-on' : 'expand-grid-panel'
+	})
+
+	const filterAllTitleClass = computed((): string => {
+		return isCatExpanded.value ? 'filter-all-title filter-all-title-on' : 'filter-all-title'
+	})
+
+	const categoryItems = computed((): CategoryItem[] => {
+		const idx = activeCategory.value
+		const items: CategoryItem[] = []
+		for (let i = 0; i < categories.length; i++) {
+			const active = i === idx
+			items.push({
+				name: categories[i],
+				pillClass: active ? 'cat-pill cat-pill-active' : 'cat-pill',
+				pillTextClass: active ? 'cat-pill-text cat-pill-text-active' : 'cat-pill-text',
+				gridClass: active ? 'grid-pill-item grid-pill-active' : 'grid-pill-item',
+				gridTextClass: active ? 'grid-pill-txt grid-pill-txt-active' : 'grid-pill-txt'
+			})
+		}
+		return items
+	})
+
+	const buildProjectListItem = (project: Project, _tick: number): ProjectListItem => {
+		const bookBtnText = project.status === '暂未开放' ? '暂未开放' : '查看详情'
+		let bookBtnStyle = 'background-color: #1A73E8;'
+		if (project.status === '暂未开放') {
+			bookBtnStyle = 'background-color: #C7C7CC; box-shadow: none;'
+		}
+		return {
+			id: project.id,
+			title: project.title,
+			subtitle: project.subtitle,
+			status: project.status,
+			enrolled: project.enrolled,
+			maxCapacity: project.maxCapacity,
+			tags: project.tags,
+			mediaBackgrounds: getProjectMediaBackgrounds(project),
+			statusLabel: getStudyStatusDisplay(project.status),
+			bookBtnText: bookBtnText,
+			bookBtnStyle: bookBtnStyle
+		}
+	}
+
+	const getProjectMediaBackgrounds = (project: Project): string[] => {
+		const mediaList: string[] = []
+		for (let i = 0; i < project.mediaColors.length; i++) {
+			const media = resolveStudyProjectMediaBackground(project.mediaColors[i])
+			if (media.length > 0) mediaList.push(media)
+		}
+		if (mediaList.length === 0) {
+			mediaList.push('linear-gradient(135deg, ' + project.gradientStart + ' 0%, ' + project.gradientEnd + ' 100%)')
+		}
+		return mediaList
+	}
+
+	const projectListItems = computed((): ProjectListItem[] => {
+		const tick = bookRefreshTick.value
+		const list = filteredProjects.value
+		const items: ProjectListItem[] = []
+		for (let i = 0; i < list.length; i++) {
+			items.push(buildProjectListItem(list[i], tick))
+		}
+		return items
+	})
+
+	const selectCategory = (index: number) => {
+		activeCategory.value = index
+	}
+
+	const toggleCatExpanded = () => {
+		isCatExpanded.value = !isCatExpanded.value
+	}
+
+	const handleGridSelect = (index: number) => {
+		activeCategory.value = index
+		isCatExpanded.value = false
+	}
+
+	const goToDetail = (id : string) => {
+		uni.navigateTo({
+			url: '/pages/appointment/project-detail?id=' + id
+		})
+	}
+
+	const handleBookButtonClick = (item: ProjectListItem) => {
+		if (item.status === '暂未开放') {
+			uni.showToast({ title: '该项目暂未开放', icon: 'none' })
+			return
+		}
+		goToDetail(item.id)
+	}
+
+	const onProjectCardMediaChange = (e: UniSwiperChangeEvent, projectId: string) => {
+		projectCardMediaState[projectId] = e.detail.current
+	}
+
+	const onScroll = (e : UniScrollEvent) => {
+		const now = Date.now()
+		if (now - lastScrollHandleAt < 80) return
+		lastScrollHandleAt = now
+
+		const scrollTop = e.detail.scrollTop
+		const delta = scrollTop - lastScrollTop
+
+		if (scrollTop < 10) {
+			if (isHeadCollapsed.value) isHeadCollapsed.value = false
+			if (isHeroCollapsed.value) isHeroCollapsed.value = false
+			lastScrollTop = scrollTop
+			return
+		}
+
+		const scrollHeight = e.detail.scrollHeight
+		const isNearBottom = (scrollTop + 900) > scrollHeight
+
+		if (!isNearBottom) {
+			if (delta > 8) {
+				if (!isHeadCollapsed.value) {
+					isHeadCollapsed.value = true
+					isCatExpanded.value = false
+				}
+			}
+		}
+
+		lastScrollTop = scrollTop
+	}
+
+	onLoad(() => {
+		subscribeStudyBookingChanged(refreshBookUi)
+		refreshBookUi()
+		loadProjects()
+	})
+	onUnload(() => {
+		unsubscribeStudyBookingChanged(refreshBookUi)
+	})
+	onShow(() => {
+		ensureNativeTabBarHidden()
+		refreshBookUi()
+		loadProjects()
+	})
+</script>
+
+<style>
+	.page-container {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		height: 100%;
+		width: 100%;
+		position: relative;
+		background-color: #F5F7FB;
+	}
+	.page-flock { display: none; }
+	.page-flock-img { display: none; }
+
+	.head-stack-shell {
+		width: 100%;
+		position: relative;
+		overflow: visible;
+		z-index: 20;
+		/* no radius, no fill, no shadow: Skyline paints a radius parent as an opaque rectangle over the list */
+		background-color: transparent;
+		box-shadow: none;
+		border-radius: 0;
+		padding-bottom: 16px;
+	}
+	.head-stack-glass {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-bottom-left-radius: 24px;
+		border-bottom-right-radius: 24px;
+		background-color: rgba(255, 255, 255, 0.95);
+		overflow: visible;
+		z-index: 0;
+		pointer-events: none;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.head-stack-glass-collapsed {
+		opacity: 0;
+		box-shadow: none;
+	}
+	.head-stack-shell-collapsed {
+		padding-bottom: 0;
+	}
+
+	.head-stack {
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		overflow: hidden;
+		max-height: 640px;
+		background-color: transparent;
+		border-radius: 0;
+		transition: max-height 0.35s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.25s;
+		box-shadow: none;
+	}
+
+	.head-stack-collapsed {
+		max-height: 0;
+		opacity: 0;
+		pointer-events: none;
+		box-shadow: none;
+		overflow: hidden;
+	}
+
+	.head-gold-edge {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 2px;
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		background-color: #1A73E8;
+	}
+
+	/* 1. Hero Header 区域 */
+	.hero-header-section {
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		overflow: hidden;
+		padding-bottom: 4px;
+	}
+	.hero-header-collapsed {
+		padding-bottom: 10px;
+	}
+	.hero-bg-gradient {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: transparent;
+		background-image: none;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #F5F7FB;
+	}
+	.status-bar-desk {
+		background-color: transparent;
+	}
+	.hero-title-area {
+		padding: 20px 24px 6px 24px;
+		transition: opacity 0.2s, transform 0.2s;
+		overflow: hidden;
+	}
+	.hero-title-hidden {
+		opacity: 0;
+		transform: translateY(-20px);
+		height: 0;
+		padding: 0;
+	}
+	.hero-main-title {
+		font-size: 24px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+		letter-spacing: 0;
+		padding-bottom: 8px;
+		border-bottom-width: 2px;
+		border-bottom-style: solid;
+		border-bottom-color: #1A73E8;
+		align-self: flex-start;
+	}
+	.hero-sub-title {
+		font-size: 14px;
+		color: #374151;
+		font-weight: 400;
+		margin-top: 8px;
+	}
+
+	.search-bar-container {
+		padding: 8px 16px 4px 16px;
+		position: relative;
+		z-index: 1;
+	}
+	.search-pull-row {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		width: 100%;
+		height: 16px;
+		align-items: center;
+		justify-content: center;
+		z-index: 3;
+		background-color: transparent;
+	}
+	.search-pull-row-compact {
+		position: relative;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		margin-top: 2px;
+		margin-bottom: 4px;
+	}
+	.search-pull-btn {
+		padding: 4px 14px 6px 14px;
+		align-items: center;
+		background-color: transparent;
+	}
+	.search-pull-btn-live {
+		animation-name: pullBob;
+		animation-duration: 1.8s;
+		animation-timing-function: ease-in-out;
+		animation-iteration-count: infinite;
+	}
+	@keyframes pullBob {
+		0% { transform: translateY(0); }
+		50% { transform: translateY(-3px); }
+		100% { transform: translateY(0); }
+	}
+	.search-pull-grab {
+		width: 36px;
+		height: 4px;
+		border-radius: 2px;
+		background-color: #1A73E8;
+	}
+	.search-pull-text {
+		font-size: 10px;
+		font-weight: 700;
+		color: #4B5563;
+		letter-spacing: 1px;
+	}
+	.search-pull-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		background-color: #1A73E8;
+		margin-top: 4px;
+	}
+	.search-box-inner {
+		width: 100%;
+		height: 44px;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		border: 1px solid #E5E7EB;
+		align-items: center;
+		padding: 0 14px;
+	}
+	.search-icon-wrap {
+		width: 18px;
+		height: 18px;
+		margin-right: 10px;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+	}
+	.search-icon-img {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+	}
+	.search-input-field {
+		flex: 1;
+		font-size: 15px;
+		color: #1A1A1A;
+	}
+
+	.filter-sticky-area {
+		width: 100%;
+		background-color: transparent;
+		position: relative;
+		z-index: 1;
+	}
+	.filter-container {
+		height: 46px;
+		align-items: center;
+		padding-right: 4px;
+		padding-bottom: 2px;
+		background-color: transparent;
+	}
+	.category-scroll-wrap {
+		flex: 1;
+		height: 40px;
+		min-width: 0;
+		position: relative;
+		justify-content: center;
+	}
+	.filter-all-title {
+		position: absolute;
+		left: 16px;
+		top: 0;
+		height: 40px;
+		line-height: 40px;
+		font-size: 13px;
+		font-weight: 600;
+		color: #1A73E8;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.28s ease;
+	}
+	.filter-all-title-on {
+		opacity: 1;
+	}
+	.category-scroll-view {
+		width: 100%;
+		height: 40px;
+		flex-direction: row;
+		opacity: 1;
+		transition: opacity 0.28s ease;
+	}
+	.category-scroll-hidden {
+		opacity: 0;
+		pointer-events: none;
+	}
+	.category-row {
+		padding: 0 16px;
+		align-items: center;
+		height: 40px;
+		flex-direction: row;
+	}
+	.cat-row-end {
+		width: 12px;
+		flex-shrink: 0;
+	}
+	.cat-pill {
+		padding: 0 14px;
+		height: 28px;
+		border-radius: 14px;
+		background-color: #F3F4F6;
+		justify-content: center;
+		margin-right: 8px;
+		flex-shrink: 0;
+		border: 1px solid #E5E7EB;
+	}
+	.cat-pill-active {
+		background-color: #1A73E8;
+		border: 1px solid #1A73E8;
+	}
+	.cat-pill-text {
+		font-size: 13px;
+		color: #374151;
+		font-weight: 600;
+	}
+	.cat-pill-text-active {
+		color: #FFFFFF;
+		font-weight: 700;
+	}
+
+	/* 展开按钮 */
+	.filter-expand-btn {
+		width: 44px;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.expand-arrow-icon {
+		width: 30px;
+		height: 30px;
+		background-color: #F3F4F6;
+		border-radius: 15px;
+		border: 1px solid #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		transition: transform 0.34s cubic-bezier(0.25, 0.1, 0.25, 1);
+	}
+	.expand-arrow-img {
+		width: 16px;
+		height: 16px;
+	}
+	.arrow-rotate {
+		transform: rotate(180deg);
+	}
+
+	/* 分类展开面板（固定在筛选栏下方） */
+	.expand-grid-panel {
+		background-color: transparent;
+		width: 100%;
+		padding: 0 18px;
+		max-height: 0;
+		opacity: 0;
+		overflow: hidden;
+		transition: max-height 0.34s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.28s ease, padding 0.34s cubic-bezier(0.25, 0.1, 0.25, 1);
+	}
+	.expand-grid-panel-on {
+		max-height: 220px;
+		opacity: 1;
+		padding: 0 18px 12px 18px;
+	}
+	.cat-grid-body {
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin: 0 -6px;
+	}
+	.grid-pill-item {
+		width: 25%;
+		padding: 0 6px;
+		margin-bottom: 12px;
+	}
+	.grid-pill-txt {
+		height: 32px;
+		line-height: 32px;
+		background-color: #F3F4F6;
+		border-radius: 12px;
+		border: 1px solid #E5E7EB;
+		text-align: center;
+		font-size: 13px;
+		color: #374151;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.grid-pill-active .grid-pill-txt {
+		background-color: #1A73E8;
+		color: #FFFFFF;
+		font-weight: 700;
+	}
+
+	/* 3. 列表内容 */
+	.project-list-scroll {
+		flex: 1;
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		background-color: transparent;
+		/* pull row hangs 22px below the header; -50 puts the first card about 20px under the rounded lip */
+		margin-top: -50px;
+	}
+	.project-list-scroll-open {
+		margin-top: 0;
+	}
+	.list-inner-wrapper {
+		padding: 58px 18px 20px 18px;
+	}
+	.list-inner-open {
+		padding-top: 8px;
+	}
+
+	.premium-project-card-shell {
+		position: relative;
+		margin-bottom: 22px;
+		overflow: visible;
+		background-color: transparent;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	.premium-project-card-glass {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		overflow: visible;
+		z-index: 0;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.premium-project-card-line {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 16px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		z-index: 2;
+		pointer-events: none;
+	}
+	.premium-project-card {
+		position: relative;
+		z-index: 1;
+		background-color: transparent;
+		border-radius: 16px;
+		overflow: hidden;
+	}
+
+	.card-gold-edge {
+		height: 4px;
+		width: 100%;
+		background-image: linear-gradient(90deg, #1A73E8 0%, #1A73E8 48%, #1A73E8 100%);
+	}
+	.card-hero-image {
+		width: 100%;
+		height: 180px;
+		position: relative;
+		border-top-left-radius: 0;
+		border-top-right-radius: 0;
+		overflow: hidden;
+	}
+	.card-media-swiper {
+		width: 100%;
+		height: 180px;
+	}
+	.card-media-slide {
+		width: 100%;
+		height: 180px;
+		background-size: cover;
+		background-position: center;
+		background-repeat: no-repeat;
+	}
+	.card-hero-shade {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		background-image: linear-gradient(to bottom, rgba(15, 23, 42, 0.08) 0%, rgba(15, 23, 42, 0.12) 46%, rgba(15, 23, 42, 0.42) 100%);
+		pointer-events: none;
+		z-index: 2;
+	}
+	.card-media-dots {
+		position: absolute;
+		left: 16px;
+		bottom: 18px;
+		z-index: 5;
+		align-items: center;
+		pointer-events: none;
+	}
+	.card-media-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 3px;
+		background-color: rgba(255, 255, 255, 0.58);
+		margin-right: 5px;
+	}
+	.card-media-dot-active {
+		width: 14px;
+		background-color: #FFFFFF;
+	}
+	.card-rip {
+		height: 18px;
+		position: relative;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+	}
+	.card-rip-line {
+		position: absolute;
+		left: 20px;
+		right: 20px;
+		top: 9px;
+		height: 1px;
+		background-color: rgba(55,65,81, 0.16);
+	}
+	.card-cut {
+		position: absolute;
+		top: 1px;
+		width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		background-color: #F5F7FB;
+		z-index: 3;
+	}
+	.card-cut-left { left: -8px; }
+	.card-cut-right { right: -8px; }
+	.card-badge {
+		position: absolute;
+		top: 16px;
+		left: 16px;
+		background-color: rgba(255,255,255,0.96);
+		padding: 4px 10px;
+		border-radius: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+		z-index: 6;
+		pointer-events: none;
+		transform: rotate(-6deg);
+	}
+	.card-badge-txt {
+		color: #1A73E8;
+		font-size: 11px;
+		font-weight: 800;
+		letter-spacing: 1px;
+	}
+
+	.card-body-details {
+		padding: 16px 20px 18px 20px;
+		border-bottom-left-radius: 24px;
+		border-bottom-right-radius: 24px;
+		background-color: #FFFFFF;
+	}
+	.card-main-name {
+		font-size: 21px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 8px;
+	}
+	.card-desc-text {
+		font-size: 14px;
+		color: #4B5563;
+		line-height: 22px;
+		margin-bottom: 14px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.card-meta-row {
+		justify-content: space-between;
+		align-items: center;
+	}
+	.meta-tags-wrap {
+		flex: 1;
+		flex-wrap: wrap;
+	}
+	.meta-tag {
+		font-size: 12px;
+		color: #4B5563;
+		background-color: #F3F4F6;
+		padding: 4px 10px;
+		border-radius: 10px;
+		margin-right: 8px;
+		margin-bottom: 6px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.premium-book-btn {
+		padding: 12px 24px;
+		border-radius: 24px;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		overflow: hidden;
+	}
+	.btn-inner-text {
+		color: #FFFFFF;
+		font-size: 15px;
+		font-weight: 700;
+		letter-spacing: 0.5px;
+	}
+
+	.footer-spacer {
+		height: 160px;
+	}
+</style>

@@ -1,0 +1,93 @@
+import { ApiEndpoints } from './api-endpoints.uts'
+import { postApi } from './api-client.uts'
+import { StorageKeys } from './storage-keys.uts'
+
+export type WechatAuthUser = {
+	id: string
+	phone: string
+	openId: string
+	nickname: string
+	studyNo: string
+}
+
+export type WechatAuthResponse = {
+	accessToken: string
+	user: WechatAuthUser
+}
+
+export type WechatLoginResponse = {
+	requiresBinding: boolean
+	bindToken: string | null
+	auth: WechatAuthResponse | null
+}
+
+let wechatLoginBusy = false
+
+export function saveWechatAuthSession(auth: WechatAuthResponse): void {
+	uni.setStorageSync(StorageKeys.authToken, auth.accessToken)
+}
+
+/**
+ * 调起微信一键登录。
+ * requiresBinding 时跳转完善资料页；成功则写 token。
+ * @param navigateBackOnSuccess 登录页传 true；我的页等原地刷新传 false
+ * @param refreshAfterSuccess 成功后是否触发页面侧刷新（通过 storage 事件不够稳，由调用方在 then 路径用 onShow 刷新；此处仅 toast）
+ */
+export function startWechatLogin(navigateBackOnSuccess: boolean = false): void {
+	if (wechatLoginBusy) return
+	wechatLoginBusy = true
+
+	uni.showLoading({ title: '授权中...' })
+	uni.login({
+		provider: 'weixin',
+		success: (res) => {
+			const code = res.code != null ? res.code.toString() : ''
+			if (code.length === 0) {
+				wechatLoginBusy = false
+				uni.hideLoading()
+				uni.showToast({ title: '微信授权失败', icon: 'none' })
+				return
+			}
+			postApi<WechatLoginResponse>(ApiEndpoints.authWechatLogin, {
+				code: code
+			}, false).then((result) => {
+				uni.hideLoading()
+				wechatLoginBusy = false
+				if (result.requiresBinding) {
+					const bindToken = result.bindToken != null ? result.bindToken : ''
+					if (bindToken.length === 0) {
+						uni.showToast({ title: '微信绑定凭证无效', icon: 'none' })
+						return
+					}
+					uni.navigateTo({
+						url: '/pages/mine/wechat-register?bindToken=' + encodeURIComponent(bindToken)
+					})
+					return
+				}
+				if (result.auth == null) {
+					uni.showToast({ title: '微信登录失败', icon: 'none' })
+					return
+				}
+				saveWechatAuthSession(result.auth)
+				// 通知「我的」等页刷新（onShow 也会兜底）
+				uni.$emit('wechatLoginSuccess')
+				uni.showToast({ title: '登录成功', icon: 'success' })
+				if (navigateBackOnSuccess) {
+					setTimeout(() => {
+						uni.navigateBack()
+					}, 800)
+				}
+			}).catch((err) => {
+				uni.hideLoading()
+				wechatLoginBusy = false
+				const message = err != null && err.message != null ? err.message.toString() : '微信登录失败'
+				uni.showToast({ title: message.length > 0 ? message : '微信登录失败', icon: 'none' })
+			})
+		},
+		fail: (_err) => {
+			uni.hideLoading()
+			wechatLoginBusy = false
+			uni.showToast({ title: '微信授权失败', icon: 'none' })
+		}
+	})
+}

@@ -1,0 +1,382 @@
+<template>
+	<view class="page uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">我的卡券</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" show-scrollbar="false">
+			<view class="hero uni-column">
+				<text class="hero-label">可使用</text>
+				<text class="hero-value">{{ unusedCount }}</text>
+				<text class="hero-tip">研学活动与商城优惠会发放到这里</text>
+			</view>
+
+			<view class="tabs uni-row">
+				<view :class="['tab', tab === 'unused' ? 'tab-on' : '']" @click="setTab('unused')">
+					<text :class="['tab-text', tab === 'unused' ? 'tab-text-on' : '']">可使用</text>
+				</view>
+				<view :class="['tab', tab === 'used' ? 'tab-on' : '']" @click="setTab('used')">
+					<text :class="['tab-text', tab === 'used' ? 'tab-text-on' : '']">已使用</text>
+				</view>
+				<view :class="['tab', tab === 'expired' ? 'tab-on' : '']" @click="setTab('expired')">
+					<text :class="['tab-text', tab === 'expired' ? 'tab-text-on' : '']">已过期</text>
+				</view>
+			</view>
+
+			<view v-for="item in visibleCoupons" :key="item.id" :class="['ticket', tab !== 'unused' ? 'ticket-mute' : '']" @click="onCouponTap(item)">
+				<view class="ticket-face uni-column">
+					<view class="type-tag">
+						<text class="type-tag-text">{{ typeLabelOf(item) }}</text>
+					</view>
+					<text class="face-value">{{ faceTextOf(item) }}</text>
+					<text class="face-min">{{ minTextOf(item) }}</text>
+				</view>
+				<view class="ticket-dash"></view>
+				<view class="ticket-body uni-column">
+					<text class="ticket-title">{{ item.title }}</text>
+					<text v-if="item.subtitle.length > 0" class="ticket-sub">{{ item.subtitle }}</text>
+					<text class="ticket-meta">{{ couponMetaText(item) }}</text>
+					<text v-if="tab === 'unused' && item.productId.length > 0" class="ticket-action">点击前往对应商品并自动用券 ›</text>
+					<text v-else-if="tab === 'unused'" class="ticket-action">点击进入商城下单 ›</text>
+				</view>
+			</view>
+
+			<view v-if="visibleCoupons.length === 0" class="empty uni-column">
+				<text class="empty-t">{{ emptyTitle }}</text>
+				<text class="empty-d">{{ emptyDesc }}</text>
+			</view>
+
+			<view class="rules uni-column">
+				<text class="rules-title">使用说明</text>
+				<text class="rules-line">1. 研学奖品券可在文创商城结算时免费兑换绑定商品，每单限用一张。</text>
+				<text class="rules-line">2. 满减券需达到使用门槛；折扣券按商品金额计算。</text>
+				<text class="rules-line">3. 过期或已使用的卡券不可再次使用，请在有效期内核销。</text>
+			</view>
+			<view class="pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import {
+		couponBucket,
+		couponFaceText,
+		couponMinText,
+		couponTypeLabel,
+		countUnusedCoupons,
+		fetchUserCoupons,
+		type UserCoupon
+	} from '../../utils/user-services.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const tab = ref('unused')
+	const isLoading = ref(false)
+	const coupons = ref<UserCoupon[]>([])
+
+	const unusedCount = computed((): number => {
+		return countUnusedCoupons(coupons.value)
+	})
+
+	const visibleCoupons = computed((): UserCoupon[] => {
+		const list = coupons.value
+		const out: UserCoupon[] = []
+		for (let i = 0; i < list.length; i++) {
+			if (couponBucket(list[i]) === tab.value) out.push(list[i])
+		}
+		return out
+	})
+
+	const emptyTitle = computed((): string => {
+		if (tab.value === 'used') return '暂无已使用卡券'
+		if (tab.value === 'expired') return '暂无过期卡券'
+		return '暂无可用卡券'
+	})
+
+	const emptyDesc = computed((): string => {
+		if (isLoading.value) return '正在同步卡券'
+		if (tab.value === 'unused') return '参与研学活动后，优惠会发放到这里'
+		return '使用或过期后会显示在这里'
+	})
+
+	const typeLabelOf = (item: UserCoupon): string => {
+		return couponTypeLabel(item)
+	}
+
+	const faceTextOf = (item: UserCoupon): string => {
+		return couponFaceText(item)
+	}
+
+	const minTextOf = (item: UserCoupon): string => {
+		return couponMinText(item)
+	}
+
+	const formatExpire = (value: string): string => {
+		if (value.length === 0) return ''
+		const text = value.replace('T', ' ')
+		if (text.length >= 16) return text.substring(0, 16)
+		if (text.length >= 10) return text.substring(0, 10)
+		return text
+	}
+
+	const couponMetaText = (item: UserCoupon): string => {
+		const parts: string[] = []
+		if (item.scope.length > 0) parts.push(item.scope)
+		if (item.source.length > 0) parts.push(item.source)
+		const expire = formatExpire(item.expireAt)
+		if (expire.length > 0) parts.push(expire + ' 到期')
+		if (couponBucket(item) === 'used') {
+			const used = formatExpire(item.usedAt)
+			if (used.length > 0) parts.push(used + ' 已用')
+		}
+		if (parts.length === 0) return '文创商城可用'
+		return parts.join(' · ')
+	}
+
+	const loadCoupons = () => {
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token == null || token.toString().length === 0) {
+			coupons.value = []
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			return
+		}
+		isLoading.value = true
+		fetchUserCoupons().then((list) => {
+			coupons.value = list
+			isLoading.value = false
+		}).catch((_err) => {
+			coupons.value = []
+			isLoading.value = false
+		})
+	}
+
+	const setTab = (key: string) => {
+		tab.value = key
+	}
+
+	const onCouponTap = (item: UserCoupon) => {
+		if (couponBucket(item) !== 'unused') {
+			uni.showToast({ title: couponBucket(item) === 'used' ? '卡券已使用' : '卡券已过期', icon: 'none' })
+			return
+		}
+		if (item.productId.length > 0) {
+			uni.navigateTo({
+				url: '/pages/products/product-detail?id=' + encodeURIComponent(item.productId) + '&couponId=' + encodeURIComponent(item.id)
+			})
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/products/products?couponId=' + encodeURIComponent(item.id)
+		})
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	onShow(() => {
+		loadCoupons()
+	})
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+		background-color: #FFFFFF;
+		border-bottom-width: 0.5px;
+		border-bottom-color: rgba(60, 60, 67, 0.12);
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { font-size: 16px; color: #1A1A1A; font-weight: 500; }
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.body { flex: 1; width: 100%; }
+	.hero {
+		margin: 16px 16px 12px 16px;
+		padding: 24px 20px;
+		border-radius: 20px;
+		background-image: linear-gradient(145deg, #1A1A1A 0%, #374151 100%);
+		align-items: center;
+	}
+	.hero-label {
+		font-size: 13px;
+		color: #FFFFFF;
+		margin-bottom: 6px;
+	}
+	.hero-value {
+		font-size: 40px;
+		font-weight: 800;
+		color: #FFFFFF;
+		margin-bottom: 8px;
+	}
+	.hero-tip {
+		font-size: 12px;
+		color: #FFFFFF;
+	}
+	.tabs {
+		margin: 0 16px 12px 16px;
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 4px;
+		border: 1px solid #E5E7EB;
+	}
+	.tab {
+		flex: 1;
+		height: 34px;
+		border-radius: 10px;
+		align-items: center;
+		justify-content: center;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.tab-on { background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+	.tab-text { font-size: 13px; font-weight: 600; color: #374151; }
+	.tab-text-on { color: #FFFFFF; }
+	.ticket {
+		margin: 0 16px 10px 16px;
+		flex-direction: row;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		overflow: hidden;
+		border: 1px solid #E5E7EB;
+	}
+	.ticket-mute { opacity: 0.55; }
+	.ticket-face {
+		width: 108px;
+		padding: 16px 10px;
+		align-items: center;
+		justify-content: center;
+		background-color: #F7F0E3;
+	}
+	.type-tag {
+		padding: 2px 8px;
+		border-radius: 8px;
+		background-color: rgba(32, 33, 36, 0.1);
+		margin-bottom: 8px;
+	}
+	.type-tag-text {
+		font-size: 10px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.face-value {
+		font-size: 26px;
+		font-weight: 800;
+		color: #1A73E8;
+		margin-bottom: 4px;
+	}
+	.face-min {
+		font-size: 11px;
+		color: #374151;
+	}
+	.ticket-dash {
+		width: 1px;
+		background-color: #E5E7EB;
+	}
+	.ticket-body {
+		flex: 1;
+		padding: 16px 14px;
+		justify-content: center;
+	}
+	.ticket-title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+	}
+	.ticket-sub {
+		font-size: 12px;
+		color: #374151;
+		margin-bottom: 6px;
+	}
+	.ticket-action {
+		font-size: 11px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-top: 8px;
+	}
+	.ticket-meta {
+		font-size: 11px;
+		color: #9CA3AF;
+		line-height: 16px;
+	}
+	.empty {
+		margin: 0 16px 10px 16px;
+		padding: 28px 16px;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		border: 1px solid #E5E7EB;
+		align-items: center;
+	}
+	.empty-t {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+	}
+	.empty-d {
+		font-size: 12px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+	.rules {
+		margin: 8px 16px 0 16px;
+		padding: 16px;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		border: 1px solid #E5E7EB;
+	}
+	.rules-title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 8px;
+	}
+	.rules-line {
+		font-size: 12px;
+		color: #374151;
+		line-height: 20px;
+		margin-bottom: 2px;
+	}
+	.pad { height: 40px; }
+</style>

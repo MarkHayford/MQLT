@@ -1,0 +1,971 @@
+<template>
+	<view class="page uni-column">
+		<view :class="statusBarClass" :style="statusBarStyle"></view>
+
+		<view :class="headStackShellClass">
+			<view :class="headGlassClass"></view>
+			<view :class="headStackClass">
+			<mqlt-scape tone="study"></mqlt-scape>
+			<view class="head-gold-edge"></view>
+			<view class="hero-header-section">
+				<view class="hero-bg-gradient"></view>
+				<view class="hero-title-area uni-column">
+					<text class="hero-main-title">研学资讯</text>
+					<text class="hero-sub-title">走进内蒙古产业一线，看见研学正在发生</text>
+				</view>
+				<view class="search-bar-container">
+					<view class="search-box-inner uni-row">
+						<view class="search-icon-wrap"><image src="/static/func-search-light.svg" class="search-icon-img" mode="aspectFit"></image></view>
+						<input class="search-input-field" type="text" placeholder="搜文章、话题、官方资讯" placeholder-style="color: #9CA3AF;" v-model="keyword" confirm-type="search" @confirm="reload" />
+					</view>
+				</view>
+			</view>
+			<view class="filter-sticky-area">
+				<view class="filter-container uni-row">
+					<view class="category-scroll-wrap">
+						<scroll-view :class="categoryScrollClass" scroll-x="true" :show-scrollbar="false">
+							<view class="tab-row uni-row">
+								<view v-for="(tab, tIdx) in channelTabs" :key="tab.key" :class="['chan-pill', activeChannel === tab.key ? 'chan-pill-on' : '']" @click="selectChannel(tab.key)">
+									<text :class="['chan-pill-text', activeChannel === tab.key ? 'chan-pill-text-on' : '']">{{ tab.label }}</text>
+								</view>
+							</view>
+						</scroll-view>
+						<text :class="filterAllTitleClass">全部分类</text>
+					</view>
+					<view class="filter-expand-btn" @click="toggleCatExpanded">
+						<view :class="expandArrowClass">
+							<image
+								src="/static/func-arrow-down.svg"
+								class="expand-arrow-img"
+								mode="aspectFit"
+							></image>
+						</view>
+					</view>
+				</view>
+				<view :class="expandGridClass">
+					<view class="cat-grid-body">
+						<view
+							v-for="(tab, gIdx) in channelTabs"
+							:key="'g-'+tab.key"
+							:class="['grid-pill-item', activeChannel === tab.key ? 'grid-pill-active' : '']"
+							@click="handleGridSelect(tab.key)"
+						>
+							<text :class="['grid-pill-txt', activeChannel === tab.key ? 'grid-pill-txt-on' : '']">{{ tab.label }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+			<view :class="searchPullRowClass" @click="toggleHeadCollapsed">
+				<view class="search-pull-grab"></view>
+			</view>
+		</view>
+
+		<scroll-view :class="feedScrollClass" scroll-y="true" :show-scrollbar="false" :bounces="true" @scroll="onScroll">
+			<view :class="feedPadClass">
+				<view class="feed-col uni-column">
+					<view v-for="item in leftPosts" :key="item.id" class="note-shell" @click="openPost(item)">
+						<view class="note-glass"></view>
+						<view class="note-line"></view>
+						<view class="note-card">
+							<view class="note-hit" @click.stop="openPost(item)"></view>
+							<view class="note-cover">
+								<image v-if="isHttpCoverUrl(item.coverUrl)" :src="item.coverUrl" class="note-cover-img" mode="aspectFill" @click.stop="openPost(item)"></image>
+								<note-text-cover v-else :tpl="coverTplIdOf(item.coverUrl)" :title="item.title" :hl="coverTplHlOf(item.coverUrl)" size="feed"></note-text-cover>
+								<view v-if="isHttpCoverUrl(item.coverUrl) && showPlayBadge(item)" class="play-badge">
+									<text class="play-badge-text">▶</text>
+								</view>
+							</view>
+							<view class="note-tag-row uni-row" v-if="postDisplayTags(item).length > 0">
+								<view v-for="(tag, ti) in postDisplayTags(item)" :key="item.id + '-' + tag" class="note-tag" :style="'background-color:' + getPostTagColor(tag)">
+									<text class="note-tag-txt">{{ tag }}</text>
+								</view>
+							</view>
+							<text class="note-title">{{ item.title }}</text>
+							<view class="note-meta uni-row">
+								<text class="note-author">{{ item.authorName }}</text>
+								<text class="note-likes">♡ {{ item.likeCount }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+				<view class="feed-col uni-column">
+					<view v-for="item in rightPosts" :key="item.id" class="note-shell" @click="openPost(item)">
+						<view class="note-glass"></view>
+						<view class="note-line"></view>
+						<view class="note-card">
+							<view class="note-hit" @click.stop="openPost(item)"></view>
+							<view class="note-cover">
+								<image v-if="isHttpCoverUrl(item.coverUrl)" :src="item.coverUrl" class="note-cover-img" mode="aspectFill" @click.stop="openPost(item)"></image>
+								<note-text-cover v-else :tpl="coverTplIdOf(item.coverUrl)" :title="item.title" :hl="coverTplHlOf(item.coverUrl)" size="feed"></note-text-cover>
+								<view v-if="isHttpCoverUrl(item.coverUrl) && showPlayBadge(item)" class="play-badge">
+									<text class="play-badge-text">▶</text>
+								</view>
+							</view>
+							<view class="note-tag-row uni-row" v-if="postDisplayTags(item).length > 0">
+								<view v-for="(tag, ti) in postDisplayTags(item)" :key="item.id + '-' + tag" class="note-tag" :style="'background-color:' + getPostTagColor(tag)">
+									<text class="note-tag-txt">{{ tag }}</text>
+								</view>
+							</view>
+							<text class="note-title">{{ item.title }}</text>
+							<view class="note-meta uni-row">
+								<text class="note-author">{{ item.authorName }}</text>
+								<text class="note-likes">♡ {{ item.likeCount }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+			<view v-if="posts.length === 0" class="empty uni-column">
+				<text class="empty-title">还没有内容</text>
+				<text class="empty-desc">官方资讯、视频号宣传和同学的文章都会出现在这里</text>
+			</view>
+			<view class="feed-end"></view>
+		</scroll-view>
+
+		<view class="fab-stack">
+			<view v-if="fabOpen" class="fab-actions fab-actions-on">
+				<view class="fab-pop fab-a1" @click="goCompose">
+					<view class="fab-action">
+						<view class="fab-action-glass"></view>
+						<view class="fab-action-line"></view>
+						<text class="fab-action-txt">发文章</text>
+					</view>
+				</view>
+				<view class="fab-pop fab-a2" @click="goDrafts">
+					<view class="fab-action">
+						<view class="fab-action-glass"></view>
+						<view class="fab-action-line"></view>
+						<text class="fab-action-txt">草稿箱</text>
+					</view>
+				</view>
+				<view class="fab-pop fab-a3" @click="goMine">
+					<view class="fab-action">
+						<view class="fab-action-glass"></view>
+						<view class="fab-action-line"></view>
+						<text class="fab-action-txt">我的文章</text>
+					</view>
+				</view>
+			</view>
+			<view class="fab-shell" @click="toggleFab">
+				<view class="fab">
+					<view :class="fabOpen ? 'fab-glyph fab-open' : 'fab-glyph'">
+						<text class="fab-plus">+</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		<splash-announce></splash-announce>
+		<floating-tab-bar :current="0"></floating-tab-bar>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { ensureNativeTabBarHidden } from '../../utils/tab-bar.uts'
+	import { getAuthToken } from '../../utils/api-client.uts'
+	import { promptLoginThenGoMine } from '../../utils/app-nav.uts'
+	import { coverTplHlOf, coverTplIdOf, fetchCommunityPosts, getPostTagColor, isHttpCoverUrl, postDisplayTags, type CommunityPost } from '../../utils/community.uts'
+	import { postHasVideoFile } from '../../utils/html-content.uts'
+
+	type ChannelTab = {
+		key: string
+		label: string
+	}
+
+	const statusBarHeight = getStatusBarHeight()
+	const statusBarStyle = 'height: ' + statusBarHeight.toString() + 'px;'
+	const keyword = ref('')
+	const activeChannel = ref('all')
+	const posts = ref<CommunityPost[]>([])
+	const fabOpen = ref(false)
+	const isCatExpanded = ref(false)
+	const isHeadCollapsed = ref(false)
+	let lastScrollTop = 0
+	let lastScrollHandleAt = 0
+	const channelTabs: ChannelTab[] = [
+		{ key: 'all', label: '全部' },
+		{ key: 'test', label: '测试分类' }
+	]
+
+	const headStackClass = computed((): string => {
+		return isHeadCollapsed.value ? 'head-stack head-stack-collapsed' : 'head-stack'
+	})
+	const headStackShellClass = computed((): string => {
+		return isHeadCollapsed.value ? 'head-stack-shell head-stack-shell-collapsed' : 'head-stack-shell'
+	})
+	const headGlassClass = computed((): string => {
+		return isHeadCollapsed.value ? 'head-stack-glass head-stack-glass-collapsed' : 'head-stack-glass'
+	})
+	const feedScrollClass = computed((): string => {
+		return isHeadCollapsed.value ? 'feed-scroll feed-scroll-open' : 'feed-scroll'
+	})
+	const feedPadClass = computed((): string => {
+		return isHeadCollapsed.value ? 'feed-pad feed-pad-open uni-row' : 'feed-pad uni-row'
+	})
+	const statusBarClass = computed((): string => {
+		return isHeadCollapsed.value ? 'status-bar status-bar-desk' : 'status-bar'
+	})
+	const searchPullLabel = computed((): string => {
+		return isHeadCollapsed.value ? '展开' : '收起'
+	})
+	const searchPullBtnClass = computed((): string => {
+		return isHeadCollapsed.value ? 'search-pull-btn uni-column' : 'search-pull-btn search-pull-btn-live uni-column'
+	})
+	const searchPullRowClass = computed((): string => {
+		return isHeadCollapsed.value ? 'search-pull-row search-pull-row-compact' : 'search-pull-row'
+	})
+	const hasHeadFilter = computed((): boolean => {
+		if (keyword.value.trim().length > 0) return true
+		return activeChannel.value !== 'all'
+	})
+	const expandArrowClass = computed((): string => {
+		return isCatExpanded.value ? 'expand-arrow-icon arrow-rotate' : 'expand-arrow-icon'
+	})
+	const categoryScrollClass = computed((): string => {
+		return isCatExpanded.value ? 'tab-scroll category-scroll-hidden' : 'tab-scroll'
+	})
+	const expandGridClass = computed((): string => {
+		return isCatExpanded.value ? 'expand-grid-panel expand-grid-panel-on' : 'expand-grid-panel'
+	})
+	const filterAllTitleClass = computed((): string => {
+		return isCatExpanded.value ? 'filter-all-title filter-all-title-on' : 'filter-all-title'
+	})
+
+	const toggleHeadCollapsed = () => {
+		const next = !isHeadCollapsed.value
+		isHeadCollapsed.value = next
+		if (next) isCatExpanded.value = false
+	}
+	const toggleCatExpanded = () => {
+		isCatExpanded.value = !isCatExpanded.value
+	}
+	const handleGridSelect = (key: string) => {
+		activeChannel.value = key
+		isCatExpanded.value = false
+		reload()
+	}
+
+	const leftPosts = computed((): CommunityPost[] => {
+		const list = posts.value
+		const out: CommunityPost[] = []
+		for (let i = 0; i < list.length; i += 2) out.push(list[i])
+		return out
+	})
+
+	const rightPosts = computed((): CommunityPost[] => {
+		const list = posts.value
+		const out: CommunityPost[] = []
+		for (let i = 1; i < list.length; i += 2) out.push(list[i])
+		return out
+	})
+
+	const showPlayBadge = (item: CommunityPost): boolean => {
+		if (item.channel === 'video') return true
+		if (item.videoUrl.length > 0) return true
+		return postHasVideoFile(item.images, item.coverUrl, item.content)
+	}
+
+	const reload = () => {
+		fetchCommunityPosts(activeChannel.value, keyword.value).then((list) => {
+			posts.value = list
+		}).catch((_err) => {
+			posts.value = []
+		})
+	}
+
+	const selectChannel = (key: string) => {
+		activeChannel.value = key
+		isCatExpanded.value = false
+		reload()
+	}
+
+	const openPost = (item: CommunityPost) => {
+		uni.navigateTo({ url: '/pages/index/post-detail?id=' + item.id })
+	}
+
+	const closeFab = () => {
+		fabOpen.value = false
+	}
+
+	const ensureFeedLogin = (): boolean => {
+		if (getAuthToken().length > 0) return true
+		closeFab()
+		promptLoginThenGoMine('请先登录后再发文章')
+		return false
+	}
+
+	const toggleFab = () => {
+		if (!fabOpen.value && getAuthToken().length === 0) {
+			ensureFeedLogin()
+			return
+		}
+		fabOpen.value = !fabOpen.value
+	}
+
+	const goCompose = () => {
+		if (!ensureFeedLogin()) return
+		closeFab()
+		uni.navigateTo({ url: '/pages/index/post-compose' })
+	}
+
+	const goDrafts = () => {
+		if (!ensureFeedLogin()) return
+		closeFab()
+		uni.navigateTo({ url: '/pages/index/post-drafts' })
+	}
+
+	const goMine = () => {
+		if (!ensureFeedLogin()) return
+		closeFab()
+		uni.navigateTo({ url: '/pages/index/post-mine' })
+	}
+
+	const onScroll = (e : UniScrollEvent) => {
+		const now = Date.now()
+		if (now - lastScrollHandleAt < 80) return
+		lastScrollHandleAt = now
+
+		const scrollTop = e.detail.scrollTop
+		const delta = scrollTop - lastScrollTop
+
+		if (scrollTop < 10) {
+			if (isHeadCollapsed.value) isHeadCollapsed.value = false
+			lastScrollTop = scrollTop
+			return
+		}
+
+		const scrollHeight = e.detail.scrollHeight
+		const isNearBottom = (scrollTop + 900) > scrollHeight
+		if (!isNearBottom) {
+			if (delta > 8) {
+				if (!isHeadCollapsed.value) {
+					isHeadCollapsed.value = true
+					isCatExpanded.value = false
+				}
+			}
+		}
+		lastScrollTop = scrollTop
+	}
+
+	onShow(() => {
+		ensureNativeTabBarHidden()
+		fabOpen.value = false
+		reload()
+	})
+</script>
+
+<style>
+	.page {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		height: 100%;
+		width: 100%;
+		position: relative;
+		overflow: visible;
+		background-color: #F5F7FB;
+	}
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #F5F7FB; position: relative; z-index: 1; }
+	.status-bar-desk { background-color: transparent; }
+	.head-stack-shell {
+		width: 100%;
+		position: relative;
+		overflow: visible;
+		z-index: 20;
+		background-color: transparent;
+		box-shadow: none;
+		border-radius: 0;
+		padding-bottom: 16px;
+	}
+	.head-stack-glass {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-bottom-left-radius: 24px;
+		border-bottom-right-radius: 24px;
+		background-color: rgba(255, 255, 255, 0.95);
+		overflow: visible;
+		z-index: 0;
+		pointer-events: none;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.head-stack-glass-collapsed {
+		opacity: 0;
+		box-shadow: none;
+	}
+	.head-stack-shell-collapsed {
+		padding-bottom: 0;
+	}
+
+	.head-stack {
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		overflow: hidden;
+		max-height: 480px;
+		background-color: transparent;
+		border-radius: 0;
+		transition: max-height 0.35s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.25s;
+		box-shadow: none;
+	}
+
+	.head-stack-collapsed {
+		max-height: 0;
+		opacity: 0;
+		pointer-events: none;
+		box-shadow: none;
+		overflow: hidden;
+	}
+
+
+	.hero-header-section {
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		overflow: hidden;
+		padding-bottom: 4px;
+	}
+	.hero-bg-gradient {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: transparent;
+		background-image: none;
+	}
+	.hero-title-area {
+		padding: 20px 24px 6px 24px;
+		overflow: hidden;
+	}
+	.hero-main-title {
+		font-size: 24px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+		letter-spacing: 0;
+		padding-bottom: 8px;
+		border-bottom-width: 2px;
+		border-bottom-style: solid;
+		border-bottom-color: #1A73E8;
+		align-self: flex-start;
+	}
+	.hero-sub-title {
+		font-size: 14px;
+		color: #374151;
+		font-weight: 400;
+		margin-top: 8px;
+	}
+	.search-bar-container {
+		padding: 8px 16px 4px 16px;
+		position: relative;
+		z-index: 1;
+	}
+	.search-box-inner {
+		width: 100%;
+		height: 44px;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		border: 1px solid #E5E7EB;
+		align-items: center;
+		padding: 0 14px;
+	}
+	.search-icon-wrap {
+		width: 18px;
+		height: 18px;
+		margin-right: 10px;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+	}
+	.search-icon-img {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+	}
+	.search-input-field {
+		flex: 1;
+		font-size: 15px;
+		color: #1A1A1A;
+	}
+	.head-gold-edge {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 2px;
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		background-color: #1A73E8;
+	}
+	.hero-block {
+		padding: 8px 16px 8px 16px;
+		position: relative;
+		z-index: 1;
+	}
+	.hero-copy {
+		padding-right: 96px;
+		margin-bottom: 10px;
+	}
+	.hero-title {
+		font-size: 24px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+		letter-spacing: 0;
+		padding-bottom: 8px;
+		border-bottom-width: 2px;
+		border-bottom-style: solid;
+		border-bottom-color: #1A73E8;
+		align-self: flex-start;
+	}
+	.hero-sub-title {
+		font-size: 14px;
+		color: #374151;
+		font-weight: 400;
+		margin-top: 8px;
+	}
+	.search-mini {
+		width: 100%;
+		height: 44px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+		border: 1px solid #E5E7EB;
+		align-items: center;
+		padding: 0 14px;
+	}
+	.search-mini-icon-wrap {
+		width: 18px;
+		height: 18px;
+		margin-right: 10px;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+	}
+	.search-mini-icon { width: 18px; height: 18px; flex-shrink: 0; }
+	.search-mini-input { flex: 1; font-size: 15px; color: #1A1A1A; }
+	.filter-sticky-area { width: 100%; background-color: transparent; position: relative; z-index: 1; }
+	.filter-container {
+		height: 46px;
+		align-items: center;
+		padding-right: 4px;
+		padding-bottom: 2px;
+	}
+	.category-scroll-wrap {
+		flex: 1;
+		height: 40px;
+		min-width: 0;
+		position: relative;
+	}
+	.tab-scroll { width: 100%; height: 40px; opacity: 1; transition: opacity 0.28s ease; }
+	.category-scroll-hidden { opacity: 0; pointer-events: none; }
+	.tab-row { padding: 0 16px; align-items: center; height: 40px; }
+	.filter-all-title {
+		position: absolute;
+		left: 16px;
+		top: 0;
+		height: 40px;
+		line-height: 40px;
+		font-size: 13px;
+		font-weight: 600;
+		color: #1A73E8;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.28s ease;
+	}
+	.filter-all-title-on { opacity: 1; }
+	.filter-expand-btn {
+		width: 44px;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.expand-arrow-icon {
+		width: 30px;
+		height: 30px;
+		background-color: #F3F4F6;
+		border-radius: 15px;
+		border: 1px solid #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: transform 0.34s cubic-bezier(0.25, 0.1, 0.25, 1);
+	}
+	.expand-arrow-img {
+		width: 16px;
+		height: 16px;
+	}
+	.arrow-rotate { transform: rotate(180deg); }
+	.expand-grid-panel {
+		width: 100%;
+		padding: 0 18px;
+		max-height: 0;
+		opacity: 0;
+		overflow: hidden;
+		transition: max-height 0.34s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.28s ease, padding 0.34s cubic-bezier(0.25, 0.1, 0.25, 1);
+	}
+	.expand-grid-panel-on {
+		max-height: 180px;
+		opacity: 1;
+		padding: 0 18px 12px 18px;
+	}
+	.cat-grid-body { flex-direction: row; flex-wrap: wrap; margin: 0 -6px; }
+	.grid-pill-item { width: 25%; padding: 0 6px; margin-bottom: 10px; }
+	.grid-pill-txt {
+		height: 32px;
+		line-height: 32px;
+		background-color: #F3F4F6;
+		border-radius: 12px;
+		border: 1px solid #E5E7EB;
+		text-align: center;
+		font-size: 13px;
+		color: #374151;
+	}
+	.grid-pill-txt-on { background-color: #1A73E8; color: #FFFFFF; font-weight: 700; border-color: #1A73E8; }
+	.search-pull-row {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		width: 100%;
+		height: 16px;
+		align-items: center;
+		justify-content: center;
+		z-index: 3;
+		background-color: transparent;
+	}
+	.search-pull-row-compact {
+		position: relative;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		margin-top: 2px;
+		margin-bottom: 4px;
+	}
+	.search-pull-btn { padding: 4px 14px 6px 14px; align-items: center; background-color: transparent; }
+	.search-pull-btn-live {
+		animation-name: pullBob;
+		animation-duration: 1.8s;
+		animation-timing-function: ease-in-out;
+		animation-iteration-count: infinite;
+	}
+	@keyframes pullBob {
+		0% { transform: translateY(0); }
+		50% { transform: translateY(-3px); }
+		100% { transform: translateY(0); }
+	}
+	.search-pull-grab {
+		width: 36px;
+		height: 4px;
+		border-radius: 2px;
+		background-color: #1A73E8;
+	}
+	.search-pull-text {
+		font-size: 10px;
+		font-weight: 700;
+		color: #4B5563;
+		letter-spacing: 1px;
+	}
+	.search-pull-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		background-color: #1A73E8;
+		margin-top: 4px;
+	}
+	.chan-pill {
+		padding: 0 14px;
+		height: 28px;
+		border-radius: 14px;
+		margin-right: 8px;
+		background-color: #F3F4F6;
+		border: 1px solid #E5E7EB;
+		align-items: center;
+		justify-content: center;
+	}
+	.chan-pill-on { background-color: #1A73E8; border-color: #1A73E8; }
+	.chan-pill-text { font-size: 13px; color: #374151; font-weight: 600; }
+	.chan-pill-text-on { color: #FFFFFF; }
+
+	.feed-scroll {
+		flex: 1;
+		width: 100%;
+		position: relative;
+		z-index: 1;
+		background-color: transparent;
+		margin-top: -50px;
+	}
+	.feed-scroll-open {
+		margin-top: 0;
+	}
+	.feed-pad {
+		padding: 58px 12px 20px 12px;
+		align-items: flex-start;
+	}
+	.feed-col {
+		width: 50%;
+		padding: 0 6px;
+		overflow: visible;
+		background-color: transparent;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	.feed-pad-open {
+		padding-top: 12px;
+	}
+	.note-shell {
+		position: relative;
+		margin-bottom: 14px;
+		overflow: visible;
+		background-color: transparent;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	.note-glass {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		overflow: visible;
+		z-index: 0;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.note-line {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 16px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		z-index: 0;
+		pointer-events: none;
+	}
+	.note-hit {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 5;
+		background-color: rgba(255,255,255,0.01);
+	}
+	.note-card {
+		position: relative;
+		z-index: 1;
+		background-color: transparent;
+		border-radius: 16px;
+		overflow: hidden;
+	}
+	.note-cover {
+		width: 100%;
+		position: relative;
+		background-color: #F3F4F6;
+		overflow: hidden;
+	}
+	.note-cover-img { width: 100%; height: 180px; }
+	.play-badge {
+		position: absolute;
+		right: 8px;
+		bottom: 8px;
+		width: 22px;
+		height: 22px;
+		border-radius: 11px;
+		background-color: rgba(0,0,0,0.45);
+		align-items: center;
+		justify-content: center;
+	}
+	.play-badge-text { font-size: 10px; color: #FFFFFF; font-weight: 700; }
+	.note-tag-row {
+		padding: 8px 10px 0 10px;
+		flex-wrap: wrap;
+	}
+	.note-tag {
+		padding: 2px 8px;
+		border-radius: 6px;
+		align-self: flex-start;
+		margin-right: 4px;
+		margin-bottom: 4px;
+	}
+	.note-tag-txt {
+		font-size: 10px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.note-title {
+		font-size: 14px;
+		font-weight: 700;
+		color: #1A1A1A;
+		padding: 6px 10px 4px 10px;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.note-meta {
+		padding: 0 10px 10px 10px;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.note-author { font-size: 11px; color: #4B5563; flex: 1; lines: 1; overflow: hidden; }
+	.note-likes { font-size: 11px; color: #4B5563; margin-left: 6px; }
+
+	.empty { padding: 48px 24px; align-items: center; }
+	.empty-title { font-size: 16px; font-weight: 800; color: #1A1A1A; margin-bottom: 8px; }
+	.empty-desc { font-size: 13px; color: #4B5563; text-align: center; line-height: 20px; }
+	.feed-end { height: 140px; }
+
+	.fab-stack {
+		position: fixed;
+		right: 36px;
+		bottom: 132px;
+		width: 56px;
+		align-items: flex-end;
+		overflow: visible;
+		background-color: transparent;
+		z-index: 900;
+	}
+	.fab-actions {
+		align-items: flex-end;
+		margin-bottom: 12px;
+		overflow: visible;
+		background-color: transparent;
+		opacity: 0;
+		pointer-events: none;
+		transition-property: opacity;
+		transition-duration: 0.2s;
+	}
+	.fab-actions-on {
+		opacity: 1;
+		pointer-events: auto;
+	}
+	.fab-pop {
+		overflow: visible;
+		padding: 4px 16px 4px 16px;
+		margin-bottom: 2px;
+		background-color: transparent;
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	.fab-action {
+		position: relative;
+		min-width: 108px;
+		height: 40px;
+		padding: 0 16px;
+		align-items: center;
+		justify-content: center;
+		overflow: visible;
+		background-color: transparent;
+		box-shadow: none;
+	}
+	.fab-action-glass {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 20px;
+		background-color: #FFFFFF;
+		overflow: visible;
+		z-index: 0;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	.fab-action-line {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 20px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+		z-index: 1;
+		pointer-events: none;
+	}
+	.fab-actions-on .fab-a3 {
+		animation-name: fabFadeIn;
+		animation-duration: 0.32s;
+		animation-timing-function: ease;
+		animation-fill-mode: forwards;
+		animation-delay: 0s;
+	}
+	.fab-actions-on .fab-a2 {
+		animation-name: fabFadeIn;
+		animation-duration: 0.32s;
+		animation-timing-function: ease;
+		animation-fill-mode: forwards;
+		animation-delay: 0.07s;
+	}
+	.fab-actions-on .fab-a1 {
+		animation-name: fabFadeIn;
+		animation-duration: 0.32s;
+		animation-timing-function: ease;
+		animation-fill-mode: forwards;
+		animation-delay: 0.14s;
+	}
+	@keyframes fabFadeIn {
+		0% { opacity: 0; transform: translateY(10px); }
+		100% { opacity: 1; transform: translateY(0); }
+	}
+	.fab-action-txt {
+		position: relative;
+		z-index: 2;
+		font-size: 14px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.fab-shell {
+		width: 56px;
+		height: 56px;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+		overflow: visible;
+		background-color: transparent;
+	}
+	.fab {
+		position: relative;
+		z-index: 1;
+		width: 52px;
+		height: 52px;
+		border-radius: 50%;
+		background-color: #1A73E8;
+		overflow: visible;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 8px 16px rgba(0, 0, 0, 0.22);
+	}
+	.fab-glyph {
+		width: 52px;
+		height: 52px;
+		border-width: 0;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		background-color: transparent;
+		transition-property: transform;
+		transition-duration: 0.45s;
+		transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.fab-plus {
+		font-size: 32px;
+		font-weight: 400;
+		color: #F8F9FA;
+		line-height: 32px;
+	}
+	.fab-open {
+		transform: rotate(405deg);
+	}
+
+</style>

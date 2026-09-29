@@ -1,0 +1,4066 @@
+<template>
+	<view class="page-wrapper uni-column">
+		<view class="header-section uni-column">
+			<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">填写预约</text>
+			</view>
+			<view class="project-banner uni-column" v-if="project != null">
+				<text class="project-kicker">STUDY BOOKING</text>
+				<text class="project-title">{{ project.title }}</text>
+				<text class="project-sub">{{ project.location != null && project.location.length > 0 ? project.location : project.subtitle }}</text>
+			</view>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="scroll-inner">
+				<!-- 1. 选择游客 -->
+				<view class="section-card uni-column">
+					<view class="section-gold-edge"></view>
+					<view class="section-head uni-column">
+						<view class="section-head-row uni-row">
+							<text class="section-kicker">01 GUESTS</text>
+							<view class="section-link" @click="goAddTraveler">
+								<text class="section-link-text">添加</text>
+							</view>
+						</view>
+						<text class="section-title">选择游客</text>
+						<text class="section-desc">勾选参与人；可代约，对方实名一致后自动获得预约</text>
+					</view>
+
+					<view
+						v-for="item in travelers"
+						:key="item.id"
+						:class="['traveler-row uni-row', isTravelerSelected(item.id) ? 'traveler-row-on' : '']"
+						@click="toggleTraveler(item.id)"
+					>
+						<view :class="['check-dot', isTravelerSelected(item.id) ? 'check-dot-on' : '']">
+							<image v-if="isTravelerSelected(item.id)" src="/static/icon-check.svg" class="check-dot-icon" mode="aspectFit"></image>
+						</view>
+						<view class="traveler-info uni-column">
+							<view class="traveler-name-row uni-row">
+								<text class="traveler-name">{{ item.name }}</text>
+								<view v-if="item.isSelf" class="self-tag">
+									<text class="self-tag-text">本人</text>
+								</view>
+							</view>
+							<text class="traveler-phone">{{ maskPhone(item.phone) }}</text>
+						</view>
+					</view>
+
+					<view v-if="travelers.length === 0" class="empty-block uni-column">
+						<text class="empty-title">暂无常用游客</text>
+						<text class="empty-desc">先添加游客，或完成实名后自动生成本人</text>
+						<view class="empty-btn" @click="goAddTraveler">
+							<text class="empty-btn-text">去添加游客</text>
+						</view>
+					</view>
+				</view>
+
+				<!-- 2. 日历选日期 + 每日路线 -->
+				<view class="section-card uni-column">
+					<view class="section-gold-edge"></view>
+					<view class="section-head uni-column">
+						<text class="section-kicker">02 DATE</text>
+						<text class="section-title">研学日期与点位</text>
+						<text class="section-desc">每天都可以预约，可多选；每天显示开放–截止，点位可不同</text>
+					</view>
+
+					<!-- 月切换 -->
+					<view class="cal-nav uni-row">
+						<view class="cal-nav-btn" @click="shiftMonth(-1)">
+							<text class="cal-nav-btn-text">‹</text>
+						</view>
+						<text class="cal-month-title">{{ calendarTitle }}</text>
+						<view class="cal-nav-btn" @click="shiftMonth(1)">
+							<text class="cal-nav-btn-text">›</text>
+						</view>
+					</view>
+
+					<view class="cal-week-row uni-row">
+						<text v-for="w in weekLabels" :key="w" class="cal-week-cell">{{ w }}</text>
+					</view>
+
+					<view class="cal-grid">
+						<view
+							v-for="cell in calendarCells"
+							:key="cell.key"
+							:class="['cal-cell', cell.inMonth ? '' : 'cal-cell-muted', cell.open ? '' : 'cal-cell-closed', cell.full ? 'cal-cell-full' : '', cell.selected ? 'cal-cell-on' : '', cell.isToday ? 'cal-cell-today' : '']"
+							@click="toggleDay(cell)"
+						>
+							<text :class="['cal-day-num', cell.selected ? 'cal-day-num-on' : '']">{{ cell.day > 0 ? cell.day.toString() : '' }}</text>
+							<text v-if="cell.open && cell.inMonth && cell.full" class="cal-day-hours cal-day-hours-full">已满</text>
+							<text v-else-if="cell.open && cell.inMonth" class="cal-day-hours">{{ cell.openLabel }}</text>
+							<text v-else-if="cell.inMonth && cell.day > 0 && cell.paused" class="cal-day-hours cal-day-hours-off">暂停</text>
+							<text v-else-if="cell.inMonth && cell.day > 0 && !cell.open" class="cal-day-hours cal-day-hours-off">休</text>
+							<text v-if="cell.open && cell.inMonth && !cell.full && cell.enrollLabel.length > 0" class="cal-day-enroll">{{ cell.enrollLabel }}</text>
+						</view>
+					</view>
+
+					<view class="selected-days-bar uni-row" v-if="selectedDayKeys.length > 0">
+						<text class="selected-days-label">已选 {{ selectedDayKeys.length }} 天</text>
+						<scroll-view class="selected-days-scroll" scroll-x="true" :show-scrollbar="false" :enable-flex="true">
+							<view class="selected-days-inner">
+								<view
+									v-for="dk in selectedDayKeys"
+									:key="dk"
+									:class="['day-pill', activeDayKey === dk ? 'day-pill-on' : '']"
+									@click="setActiveDay(dk)"
+								>
+									<text :class="['day-pill-text', activeDayKey === dk ? 'day-pill-text-on' : '']">{{ dayShortLabel(dk) }}</text>
+								</view>
+							</view>
+						</scroll-view>
+					</view>
+					<text v-else class="cal-hint">点选日期（可多选）；选 2 天即两天行程</text>
+
+					<!-- 当前日期的路线编辑 -->
+					<view class="day-route-block uni-column" v-if="activeDayKey.length > 0">
+						<view class="day-route-head uni-column">
+							<view class="day-route-title-row uni-row">
+								<text class="day-route-title">{{ dayFullLabel(activeDayKey) }} 已选点位</text>
+								<text class="card-more-link" v-if="spotsForActiveDay.length > 0" @click="goSpotListPage">查看更多</text>
+							</view>
+							<text class="day-route-hours">开放时间 {{ dayOpenCloseText(activeDayKey) }}</text>
+						</view>
+
+						<!-- 分区筛选 -->
+						<view class="zone-row uni-row">
+							<view
+								v-for="z in zoneFilters"
+								:key="z.key"
+								:class="['zone-chip', selectedZoneKey === z.key ? 'zone-chip-on' : '']"
+								@click="selectZone(z.key)"
+							>
+								<text :class="['zone-chip-text', selectedZoneKey === z.key ? 'zone-chip-text-on' : '']">{{ z.label }}</text>
+							</view>
+						</view>
+
+						<view class="ai-entry uni-row" @click="openAiChat">
+							<view class="ai-entry-dot">
+								<image src="/static/icon-assistant.svg" class="ai-entry-icon" mode="aspectFit"></image>
+							</view>
+							<view class="ai-entry-copy uni-column">
+								<text class="ai-entry-title">{{ aiPlanning ? '正在规划…' : '研学行程小助手' }}</text>
+								<text class="ai-entry-sub">帮你推荐点位搭配、人数节奏与是否叫车</text>
+							</view>
+							<text class="ai-entry-go">打开</text>
+						</view>
+						<view class="ai-row uni-row">
+							<view class="ai-btn ai-btn-ghost" @click="selectAllSpotsForActiveDay">
+								<text class="ai-btn-ghost-text">全选本区</text>
+							</view>
+							<view class="ai-btn ai-btn-ghost" @click="clearSpotsForActiveDay">
+								<text class="ai-btn-ghost-text">清空</text>
+							</view>
+						</view>
+						<text v-if="aiPlanHint.length > 0" class="ai-hint">{{ aiPlanHint }}</text>
+
+						<view v-if="spotsForActiveDay.length === 0" class="empty-block uni-column">
+							<text class="empty-title">{{ selectedZoneKey === 'all' ? '本日暂无可选区域' : '本分区暂无点位' }}</text>
+							<text class="empty-desc">{{ selectedZoneKey === 'all' ? '可换一天或联系项目方配置点位' : '可切换其他分区查看' }}</text>
+						</view>
+
+						<view v-else class="route-map-block uni-column">
+							<view class="route-map-wrap">
+								<map
+									id="study-route-map"
+									class="route-map"
+									:latitude="routeMapLatitude"
+									:longitude="routeMapLongitude"
+									:scale="routeMapScale"
+									:markers="routeMapMarkers"
+									:include-points="routeMapIncludePoints"
+									:enable-scroll="true"
+									:enable-zoom="true"
+									:show-location="false"
+									@markertap="onRouteMarkerTap"
+									@callouttap="onRouteCalloutTap"
+								></map>
+								<view class="spot-guide uni-column" @touchmove.stop>
+									<view class="spot-guide-head uni-row" @click="toggleSpotGuide">
+										<text class="spot-guide-kicker">GUIDE</text>
+										<text class="spot-guide-title">站点</text>
+										<text class="spot-guide-count">{{ spotsForActiveDay.length }}</text>
+									</view>
+									<scroll-view v-if="spotGuideOpen" class="spot-guide-scroll" scroll-y="true" :show-scrollbar="false" :enable-flex="true">
+										<view
+											v-for="(spot, gIdx) in spotsForActiveDay"
+											:key="'g-'+spot.id"
+											:class="['spot-guide-item', focusedSpotId === spot.id ? 'spot-guide-item-on' : '']"
+											@click="focusSpotOnMap(spot)"
+										>
+											<view :class="['spot-guide-idx', isSpotSelectedOnActiveDay(spot.id) ? 'spot-guide-idx-on' : '']">
+												<text :class="['spot-guide-idx-txt', isSpotSelectedOnActiveDay(spot.id) ? 'spot-guide-idx-txt-on' : '']">{{ isSpotSelectedOnActiveDay(spot.id) ? '✓' : (gIdx + 1).toString() }}</text>
+											</view>
+											<text class="spot-guide-name route-marker-name">{{ spot.title }}</text>
+										</view>
+									</scroll-view>
+								</view>
+							</view>
+							<view class="route-legend uni-row">
+								<view class="legend-item uni-row">
+									<view class="legend-dot legend-dot-college"></view>
+									<text class="legend-txt">点位</text>
+								</view>
+								<view class="legend-item uni-row">
+									<view class="legend-dot legend-dot-on"></view>
+									<text class="legend-txt">已选站点</text>
+								</view>
+							</view>
+							<text class="route-map-hint">点地图标注选择该点位，再点一次取消。蓝色为已选点位（无先后顺序，研学时可自选前往）。</text>
+						</view>
+
+						<!-- 本日已选：无先后，卡片集合而非路线时间轴 -->
+						<view class="picked-block uni-column" v-if="activeDaySchedule.length > 0">
+							<view class="picked-head uni-row">
+								<text class="route-preview-title">本日已选点位</text>
+								<text class="picked-count">{{ activeDaySchedule.length }} 站</text>
+							</view>
+							<view class="picked-wrap">
+								<view
+									v-for="item in activeDaySchedule"
+									:key="item.id"
+									class="picked-chip uni-column"
+									@click="openSpotDetailById(item.id)"
+								>
+									<text class="picked-chip-title">{{ item.title }}</text>
+									<text class="picked-chip-meta">{{ item.stayText }}</text>
+								</view>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<!-- 预约页不再含租车选车型/选司机，改走浮动叫车入口 -->
+				<view class="section-card uni-column">
+					<view class="section-gold-edge"></view>
+					<view class="section-head uni-column">
+						<text class="section-kicker">03 RIDE</text>
+						<text class="section-title">用车提示</text>
+						<text class="section-desc">需要用车请点页面浮动叫车，发单后由司机接单议价；本页只预约研学行程</text>
+					</view>
+					<view class="ride-tip-btn" @click="goRentalCreateFromBooking">
+						<text class="ride-tip-btn-text">去发租车需求</text>
+					</view>
+				</view>
+
+				<view class="bottom-safe-spacer"></view>
+			</view>
+		</scroll-view>
+
+		<view class="bottom-bar uni-column" style="background-color:#FFFFFF;border-width:0;border-top-width:1px;border-top-style:solid;border-top-color:#E5E7EB;">
+			<view class="summary-row uni-row">
+				<view class="summary-col uni-column">
+					<text class="summary-label">参与 · 行程</text>
+					<text class="summary-value">{{ participantCount }} 人 · {{ selectedDayKeys.length }} 天 · {{ totalSelectedStops }} 站</text>
+				</view>
+				<view class="summary-col uni-column summary-col-right">
+					<text class="summary-label">应付金额</text>
+					<text class="summary-price">¥{{ bookingTotalAmount }}</text>
+				</view>
+			</view>
+			<view :class="['submit-btn', isSubmitting ? 'submit-btn-disabled' : '']" @click="submitBooking">
+				<text class="submit-btn-text">{{ isSubmitting ? '提交中…' : '立即预约' }}</text>
+			</view>
+		</view>
+
+		<!-- 路线区域详情 -->
+		<view v-if="showSpotDetail" class="spot-detail-mask" @click="closeSpotDetail" @touchmove.stop.prevent="onDetailMaskTouchMove"></view>
+		<view v-if="showSpotDetail && detailSpot != null" class="spot-detail-sheet uni-column" @touchmove.stop="onDetailSheetTouchMove">
+			<view class="spot-detail-handle"></view>
+			<view class="spot-detail-top uni-row">
+				<view class="spot-detail-titles uni-column">
+					<text class="spot-detail-title">{{ detailSpot.title }}</text>
+					<text class="spot-detail-zone">{{ detailSpot.zoneLabel }} · 预计 {{ detailSpot.durationText }}</text>
+				</view>
+				<view class="spot-detail-close" @click="closeSpotDetail">
+					<text class="spot-detail-close-text">关闭</text>
+				</view>
+			</view>
+			<scroll-view
+				class="spot-detail-scroll"
+				scroll-y="true"
+				:show-scrollbar="true"
+				:enhanced="true"
+				:bounces="true"
+				:enable-flex="true"
+			>
+				<view class="spot-detail-inner">
+					<view class="spot-photo-card" :style="detailSpot.coverStyle">
+						<text class="spot-photo-caption">{{ detailSpot.photoCaption }}</text>
+					</view>
+					<view v-for="sec in detailSpot.sections" :key="sec.key">
+						<view v-if="sectionHasBody(sec.html)" class="spot-detail-section uni-column">
+							<text class="spot-detail-sec-title">{{ sec.title }}</text>
+							<rich-text v-if="sectionIsHtml(sec.html)" class="spot-detail-rich" :nodes="sec.html"></rich-text>
+							<text v-else class="spot-detail-sec-body">{{ sec.html }}</text>
+						</view>
+					</view>
+					<view class="spot-detail-scroll-pad"></view>
+				</view>
+			</scroll-view>
+			<view class="spot-detail-footer uni-row">
+				<view class="spot-detail-secondary" @click="closeSpotDetail">
+					<text class="spot-detail-secondary-text">关闭</text>
+				</view>
+				<view class="spot-detail-primary" @click="toggleDetailSpotSelect">
+					<text class="spot-detail-primary-text">{{ detailSpotSelected ? '取消选择' : '选择该点位' }}</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- AI 行程小助手对话 -->
+		<view v-if="showAiChat" class="ai-chat-mask" @click="closeAiChat" @touchmove.stop.prevent="onDetailMaskTouchMove"></view>
+		<view v-if="showAiChat" class="ai-chat-sheet uni-column">
+			<view class="ai-chat-handle"></view>
+			<view class="ai-chat-top uni-row">
+				<view class="ai-chat-avatar">
+					<image src="/static/icon-assistant.svg" class="ai-chat-avatar-icon" mode="aspectFit"></image>
+				</view>
+				<view class="ai-chat-titles uni-column">
+					<text class="ai-chat-kicker">STUDY ASSISTANT</text>
+					<text class="ai-chat-title">研学行程小助手</text>
+				</view>
+				<view class="ai-chat-aud-top" @click="goAudiencePlansFromAi">
+					<text class="ai-chat-aud-top-txt">分层点位</text>
+				</view>
+				<view class="ai-chat-close" @click="closeAiChat">
+					<text class="ai-chat-close-text">关闭</text>
+				</view>
+			</view>
+
+			<scroll-view
+				class="ai-chat-scroll"
+				scroll-y="true"
+				:scroll-into-view="aiScrollInto"
+				:show-scrollbar="false"
+				:enhanced="true"
+				:bounces="true"
+				:enable-flex="true"
+				@touchmove.stop="onDetailSheetTouchMove"
+			>
+				<view class="ai-chat-inner">
+					<view
+						v-for="(msg, mIdx) in aiMessages"
+						:key="msg.id"
+						:id="msg.id"
+						:class="['ai-msg-row', msg.role === 'user' ? 'ai-msg-row-user' : 'ai-msg-row-bot']"
+					>
+						<view v-if="msg.role !== 'user'" class="ai-msg-bot-dot">
+							<image src="/static/icon-assistant.svg" class="ai-msg-bot-icon" mode="aspectFit"></image>
+						</view>
+						<view :class="['ai-bubble', msg.role === 'user' ? 'ai-bubble-user' : 'ai-bubble-bot', msg.isPlan || msg.spots.length > 0 || msg.drivers.length > 0 ? 'ai-bubble-plan' : '']">
+							<text :class="['ai-bubble-text', msg.role === 'user' ? 'ai-bubble-text-user' : '']">{{ msg.text }}</text>
+							<view v-if="mIdx === 0 && msg.role !== 'user'" class="ai-aud-wrap uni-column">
+								<view class="ai-aud-btn uni-row" @click.stop="goAudiencePlansFromAi">
+									<text class="ai-aud-btn-txt">打开分层点位</text>
+								</view>
+								<text class="ai-aud-hint">亲子 / 高校 / 商务或自定义人群，选一套推荐点位</text>
+							</view>
+
+							<!-- 分日行程摘要 -->
+							<view v-if="msg.days.length > 0" class="ai-day-list uni-column">
+								<text class="ai-block-label">行程安排</text>
+								<view v-for="d in msg.days" :key="msg.id + '-d-' + d.dayKey" class="ai-day-card uni-column">
+									<view class="ai-day-head uni-row">
+										<text class="ai-day-label">{{ d.label }}</text>
+										<text class="ai-day-stops">{{ d.stopCount.toString() }} 个点位</text>
+									</view>
+									<text class="ai-day-route">{{ d.routeText }}</text>
+									<view v-if="msg.isPlan" class="ai-day-ops uni-row">
+										<text class="ai-mini-link" @click.stop="applyAiOneDay(d.dayKey)">只应用这天</text>
+										<text class="ai-mini-link" @click.stop="focusAiDay(d.dayKey)">设为编辑日</text>
+									</view>
+								</view>
+							</view>
+
+							<!-- 推荐点位图文卡 -->
+							<view v-if="msg.spots.length > 0" class="ai-spot-block uni-column">
+								<text class="ai-block-label">推荐点位 · 点开看详情</text>
+								<scroll-view class="ai-spot-scroll" scroll-x="true" :show-scrollbar="false" :enable-flex="true">
+									<view class="ai-spot-scroll-inner">
+										<view
+											v-for="sp in msg.spots"
+											:key="msg.id + '-s-' + sp.id + '-' + sp.dayKey"
+											class="ai-spot-card uni-column"
+											@click.stop="openAiSpotDetail(sp.id)"
+										>
+											<view class="ai-spot-cover" :style="sp.coverStyle">
+												<text class="ai-spot-cover-cap">{{ sp.photoCaption }}</text>
+											</view>
+											<text class="ai-spot-title">{{ sp.title }}</text>
+											<text class="ai-spot-meta">{{ sp.zoneLabel }} · {{ sp.durationText }}</text>
+											<text class="ai-spot-desc">{{ sp.desc }}</text>
+											<view class="ai-spot-ops uni-row">
+												<text class="ai-mini-link" @click.stop="openAiSpotDetail(sp.id)">详情</text>
+												<text class="ai-mini-link" @click.stop="addAiSpotToActiveDay(sp.id)">选择该点位</text>
+											</view>
+										</view>
+										<view class="ai-spot-tail"></view>
+									</view>
+								</scroll-view>
+							</view>
+
+							<!-- 用车引导：不写入预约，去浮动叫车发单 -->
+							<view v-if="msg.showRental" class="ai-rental-block uni-column">
+								<text class="ai-block-label">用车建议</text>
+								<view class="ai-rental-card uni-row">
+									<view class="ai-rental-body uni-column">
+										<text class="ai-rental-name">{{ msg.rentalName }}</text>
+										<text class="ai-rental-desc">{{ msg.rentalHint }}</text>
+									</view>
+									<view class="ai-rental-pick" @click.stop="goRentalCreateFromAi">
+										<text class="ai-rental-pick-text">去发单</text>
+									</view>
+								</view>
+							</view>
+
+							<!-- 不再在预约对话里列司机选入 booking -->
+							<view v-if="msg.needDrivers" class="ai-driver-tip uni-column">
+								<text class="ai-driver-tip-text">{{ msg.driverTip.length > 0 ? msg.driverTip : '用车请走浮动叫车发单，司机接单后议价' }}</text>
+								<view class="ai-driver-tip-btn" @click.stop="goRentalCreateFromAi">
+									<text class="ai-driver-tip-btn-text">去发租车需求</text>
+								</view>
+							</view>
+
+							<view v-if="msg.isPlan && aiHasPendingPlan" class="ai-plan-actions uni-row">
+								<view class="ai-plan-apply" @click="applyAiPendingPlan">
+									<text class="ai-plan-apply-text">{{ aiPlanning ? '应用中…' : '应用点位方案' }}</text>
+								</view>
+								<view class="ai-plan-retry" @click="requestAiReplan">
+									<text class="ai-plan-retry-text">再改一版</text>
+								</view>
+							</view>
+						</view>
+					</view>
+					<view v-if="aiThinking" class="ai-msg-row ai-msg-row-bot">
+						<view class="ai-msg-bot-dot">
+							<image src="/static/icon-assistant.svg" class="ai-msg-bot-icon" mode="aspectFit"></image>
+						</view>
+						<view class="ai-bubble ai-bubble-bot">
+							<text class="ai-bubble-text">正在为你梳理行程…</text>
+						</view>
+					</view>
+					<view id="ai-msg-end" class="ai-chat-end-anchor"></view>
+				</view>
+			</scroll-view>
+
+			<view class="ai-composer uni-column" style="background-color:#FFFFFF;border-width:0;border-top-width:1px;border-top-style:solid;border-top-color:#E5E7EB;">
+								<scroll-view class="ai-quick-scroll" scroll-x="true" :show-scrollbar="false" :enable-flex="true">
+					<view class="ai-quick-inner uni-row">
+						<view
+							v-for="chip in aiQuickChips"
+							:key="chip.id"
+							class="ai-quick-chip uni-row"
+							@click="sendAiQuick(chip.text)"
+						>
+							<text class="ai-quick-chip-text">{{ chip.label }}</text>
+						</view>
+						<view class="ai-quick-tail"></view>
+					</view>
+				</scroll-view>
+				<view class="ai-field uni-row" style="background-color:#F5F7FB;border-width:0;">
+					<input
+						class="ai-input" style="background-color:#F5F7FB;border-width:0;color:#1A1A1A;"
+						v-model="aiInputText"
+						placeholder="说说人数、想去哪、要不要叫车…"
+						placeholder-style="color:#9CA3AF;"
+						confirm-type="send"
+						:disabled="aiThinking"
+						@confirm="sendAiInput"
+					/>
+					<view :class="['ai-send-btn', aiThinking || aiInputText.length === 0 ? 'ai-send-btn-off' : '']" @click="sendAiInput">
+						<text class="ai-send-btn-text">{{ aiThinking ? '…' : '发送' }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 租车浮动入口 -->
+		<taxi-fab :projectId="projectId" />
+
+	</view>
+
+</template>
+
+<script setup lang="uts">
+	import { ref, computed, watch } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { addProjectBooking, isStudyBookingPendingStatus, isStudyBookingUnpaidStatus, syncStudyBookingsFromApi } from '../../utils/study-booking.uts'
+	import {
+		createStudyBooking,
+		fetchStudyAiPlan,
+		fetchStudyProjectDetail,
+		fetchStudyProjectRoutePoints,
+		payStudyBooking,
+		type StudyAiPlanResult,
+		type StudyAiPlanSpotInput,
+		type StudyAiPlanHistoryItem,
+		type StudyBookingRecord,
+		type StudyProjectMeta,
+		type AudienceSpotTemplate
+	} from '../../utils/study-projects.uts'
+	import { fetchTravelers } from '../../utils/user-services.uts'
+	import { buildRouteZoneFilters, parseRouteZoneFilters, parseStudyRouteSpots, routeSectionHasBody, studyRouteZoneLabelOf, type StudyRouteZoneFilter, type StudyRouteZoneSpot } from './utils/study-route-zones.uts'
+	import { isHtmlContent } from '../../utils/html-content.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+
+	type Traveler = {
+		id: string
+		name: string
+		phone: string
+		idCard: string
+		isSelf: boolean
+	}
+
+	type SpotOption = StudyRouteZoneSpot
+
+	type DaySlot = {
+		key: string
+		year: number
+		month: number
+		day: number
+		weekday: number
+		openMin: number
+		closeMin: number
+		openLabel: string
+		closeLabel: string
+		spotIds: string[]
+		enrolled: number
+		capacity: number
+		full: boolean
+		paused: boolean
+	}
+
+	type CalCell = {
+		key: string
+		day: number
+		inMonth: boolean
+		open: boolean
+		full: boolean
+		paused: boolean
+		selected: boolean
+		isToday: boolean
+		openLabel: string
+		enrollLabel: string
+		year: number
+		month: number
+	}
+
+	type ScheduleItem = {
+		id: string
+		title: string
+		stayText: string
+	}
+
+	type DayRouteEntry = {
+		dayKey: string
+		spotIds: string[]
+	}
+
+	const weekLabels: string[] = ['日', '一', '二', '三', '四', '五', '六']
+
+	const projectId = ref('')
+	const project = ref<StudyProjectMeta | null>(null)
+	const travelers = ref<Traveler[]>([])
+	const selectedTravelerIds = ref<string[]>([])
+	const allSpots = ref<SpotOption[]>([])
+	const daySlots = ref<DaySlot[]>([])
+	/** 已选日期 key，按选择顺序 */
+	const selectedDayKeys = ref<string[]>([])
+	/** 每天已选点位（无顺序） */
+	const dayRoutes = ref<DayRouteEntry[]>([])
+	const activeDayKey = ref('')
+	const selectedZoneKey = ref('all')
+	const focusedSpotId = ref('')
+	const spotGuideOpen = ref(true)
+	const routeMapScale = ref(16)
+	const routeMapNudge = ref(0)
+	const SPOT_LIST_PREVIEW = 3
+	const showSpotDetail = ref(false)
+	const detailSpot = ref<SpotOption | null>(null)
+	const viewYear = ref(2026)
+	const viewMonth = ref(1)
+
+	const zoneFilters = ref<StudyRouteZoneFilter[]>(buildRouteZoneFilters([] as StudyRouteZoneSpot[], [] as StudyRouteZoneFilter[]))
+	const zoneLabelOf = (key: string): string => {
+		const list = zoneFilters.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].key === key) return list[i].label
+		}
+		return studyRouteZoneLabelOf(key)
+	}
+
+	const isSubmitting = ref(false)
+	const aiPlanning = ref(false)
+	const aiPlanHint = ref('')
+	const calendarTick = ref(0)
+
+	/** AI 对话规划 */
+	type AiSpotCard = {
+		id: string
+		title: string
+		zoneLabel: string
+		durationText: string
+		desc: string
+		coverStyle: string
+		coverIcon: string
+		photoCaption: string
+		dayKey: string
+	}
+	type AiDriverCard = {
+		id: string
+		name: string
+		avatar: string
+		vehicleName: string
+		vehicleType: string
+		plateNo: string
+		phone: string
+		wechat: string
+		seats: number
+		priceText: string
+		statusLabel: string
+		available: boolean
+		distanceText: string
+		price: number
+	}
+	type AiDayCard = {
+		dayKey: string
+		label: string
+		routeText: string
+		stopCount: number
+	}
+	type AiChatMsg = {
+		id: string
+		role: string
+		text: string
+		isPlan: boolean
+		spots: AiSpotCard[]
+		drivers: AiDriverCard[]
+		days: AiDayCard[]
+		rentalId: string
+		rentalName: string
+		rentalHint: string
+		showRental: boolean
+		needDrivers: boolean
+		driverTip: string
+		showAudienceEntry: boolean
+	}
+	type AiQuickChip = {
+		id: string
+		label: string
+		text: string
+	}
+	const showAiChat = ref(false)
+	const aiThinking = ref(false)
+	const aiInputText = ref('')
+	const aiScrollInto = ref('')
+	const aiMsgSeq = ref(0)
+	const aiMessages = ref<AiChatMsg[]>([])
+	const aiHasPendingPlan = ref(false)
+	const aiPendingDayKeys = ref<string[]>([])
+	const aiPendingSpotIdsByDay = ref<string[]>([])
+	const aiPendingRentalId = ref('none')
+	const aiPendingRentalName = ref('不租车')
+	const aiPendingSummary = ref('')
+	const aiPrefZone = ref('all')
+	const aiPrefPace = ref('balanced')
+	const aiPrefNeedCar = ref('auto')
+	const aiPrefKids = ref(false)
+	const aiPrefTeam = ref(false)
+	const aiPlanVariant = ref(0)
+	const aiActiveTemplateId = ref('')
+	const pendingAudienceTplId = ref('')
+	const audienceTemplates = computed((): AudienceSpotTemplate[] => {
+		const proj = project.value
+		if (proj == null) return [] as AudienceSpotTemplate[]
+		const src = proj.audienceTemplates
+		if (src == null) return [] as AudienceSpotTemplate[]
+		const out: AudienceSpotTemplate[] = []
+		for (let i = 0; i < src.length; i++) {
+			if (src[i].enabled !== false) out.push(src[i])
+		}
+		return out
+	})
+	const applyPendingAudienceIfReady = () => {
+		const id = pendingAudienceTplId.value
+		if (id.length === 0) return
+		const list = audienceTemplates.value
+		let tpl: AudienceSpotTemplate | null = null
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].id === id) tpl = list[i]
+		}
+		if (tpl == null) return
+		if (selectedDayKeys.value.length === 0) return
+		if (allSpots.value.length === 0) return
+		pendingAudienceTplId.value = ''
+		applyAudienceTemplate(tpl)
+	}
+	const goAudiencePlans = () => {
+		const id = projectId.value
+		if (id.length === 0) return
+		uni.navigateTo({ url: '/pages/appointment/audience-plans?projectId=' + id + '&from=booking' })
+	}
+	const goAudiencePlansFromAi = () => {
+		showAiChat.value = false
+		goAudiencePlans()
+	}
+	const aiQuickChips = ref<AiQuickChip[]>([
+		{ id: 'q1', label: '亲子轻松', text: '一家带小孩，想轻松好玩，每天少选几个点，先出方案并带点位图' },
+		{ id: 'q2', label: '高校研学', text: '学生团队，偏职业和实验室方向，节奏可以紧凑些，按已选日期推荐点位' },
+		{ id: 'q3', label: '商务接待', text: '接待客户，想看展陈和产线观摩，节奏适中，按已选日期推荐点位' },
+		{ id: 'q4', label: '一键出方案', text: '按我已选的日期，直接给每天的点位推荐，带图文；顺便提一句要不要叫车' },
+		{ id: 'q5', label: '只要点位', text: '先不用车，只帮我把多日点位搭配好，展示详情就行' },
+		{ id: 'q6', label: '怎么叫车', text: '想叫车的话怎么发单？司机会怎么接单议价？简单说下步骤' },
+		{ id: 'q7', label: '人多稳妥', text: '我们大概十五人以上，点位别排太满，节奏稳一点' },
+		{ id: 'q8', label: '两天混搭', text: '两天想混着来：一天偏亲子轻松，一天偏商务或高校，请按天给点位' },
+		{ id: 'q9', label: '再轻松点', text: '上一版有点赶，帮我改轻松些，每天少几个点' },
+		{ id: 'q10', label: '按人数来', text: '按页面上已选的人数，帮我看看每天选几个点比较合适' }
+	])
+
+
+
+	const pad2 = (n: number): string => {
+		return n < 10 ? '0' + n.toString() : n.toString()
+	}
+
+	const dayKeyOf = (y: number, m: number, d: number): string => {
+		return y.toString() + '-' + pad2(m) + '-' + pad2(d)
+	}
+
+	const chinaDateKeyNow = (): string => {
+		const now = new Date()
+		const utc = now.getTime() + now.getTimezoneOffset() * 60000
+		const china = new Date(utc + 8 * 3600000)
+		const y = china.getFullYear()
+		const m = china.getMonth() + 1
+		const d = china.getDate()
+		return dayKeyOf(y, m, d)
+	}
+
+	const todayKey = (): string => {
+		return chinaDateKeyNow()
+	}
+
+	const addDaysKey = (key: string, days: number): string => {
+		const parts = key.split('-')
+		if (parts.length < 3) return key
+		const y = parseInt(parts[0])
+		const m = parseInt(parts[1])
+		const d = parseInt(parts[2])
+		const dt = new Date(y, m - 1, d)
+		dt.setDate(dt.getDate() + days)
+		return dayKeyOf(dt.getFullYear(), dt.getMonth() + 1, dt.getDate())
+	}
+
+	const projectBookableDays = (): number => {
+		const p = project.value
+		if (p == null) return 7
+		const n = Math.floor(Number(p.bookableDays))
+		if (!Number.isFinite(n) || n <= 0) return 7
+		if (n > 365) return 365
+		return n
+	}
+
+	const dayOpsOf = (key: string): any => {
+		const p = project.value
+		if (p == null || p.dayOps == null) return null
+		const map = p.dayOps as any
+		return map[key]
+	}
+
+		const scheduleDayOf = (key: string): any => {
+		const p = project.value
+		if (p == null) return null
+		const list = (p as any).scheduleDays as any
+		if (list == null || !Array.isArray(list)) return null
+		for (let i = 0; i < list.length; i++) {
+			const d = list[i]
+			if (d != null && String(d['date'] || '') == key) return d
+		}
+		return null
+	}
+const isDayPaused = (key: string): boolean => {
+		const ops = dayOpsOf(key)
+		return ops != null && ops['paused'] == true
+	}
+
+	const dayCapacityOf = (key: string): number => {
+		const ops = dayOpsOf(key)
+		if (ops != null && ops['capacity'] != null) {
+			const c = Math.floor(Number(ops['capacity']))
+			if (Number.isFinite(c) && c >= 0) return c
+		}
+		const p = project.value
+		if (p != null && p.maxCapacity > 0) return p.maxCapacity
+		return 99
+	}
+
+	const spotVisibleOnSelectedDay = (spotId: string): boolean => {
+		const key = activeDayKey.value
+		if (key == null || String(key).length < 8) return true
+		const sd = scheduleDayOf(String(key))
+		if (sd == null) return true
+		const closed = sd['closedSpotIds'] as any
+		if (closed != null && Array.isArray(closed)) {
+			for (let i = 0; i < closed.length; i++) {
+				if (String(closed[i]) == spotId) return false
+			}
+		}
+		if (sd['spotsConfigured'] == true) {
+			const ids = sd['enabledSpotIds'] as any
+			if (ids != null && Array.isArray(ids)) {
+				for (let i = 0; i < ids.length; i++) {
+					if (String(ids[i]) == spotId) return true
+				}
+				return false
+			}
+		}
+		return true
+	}
+
+	const isWithinBookableWindow = (key: string): boolean => {
+		const today = todayKey()
+		const end = addDaysKey(today, projectBookableDays())
+		return key >= today && key < end
+	}
+
+	const formatClock = (totalMinutes: number): string => {
+		let m = totalMinutes
+		if (m < 0) m = 0
+		if (m >= 24 * 60) m = 24 * 60 - 1
+		const hh = Math.floor(m / 60)
+		const mm = m - hh * 60
+		return pad2(hh) + ':' + pad2(mm)
+	}
+	const compactClock = (totalMinutes: number): string => {
+		let m = totalMinutes
+		if (m < 0) m = 0
+		if (m >= 24 * 60) m = 24 * 60 - 1
+		const hh = Math.floor(m / 60)
+		const mm = m - hh * 60
+		if (mm === 0) return hh.toString()
+		return hh.toString() + ':' + pad2(mm)
+	}
+	const compactRange = (openMin: number, closeMin: number): string => {
+		return compactClock(openMin) + '–' + compactClock(closeMin)
+	}
+
+	const formatStay = (mins: number): string => {
+		if (mins < 60) return mins.toString() + ' 分钟'
+		const h = Math.floor(mins / 60)
+		const r = mins - h * 60
+		if (r === 0) return h.toString() + ' 小时'
+		return h.toString() + ' 小时 ' + r.toString() + ' 分'
+	}
+
+	const findSpot = (id: string): SpotOption | null => {
+		const list = allSpots.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].id === id) return list[i]
+		}
+		return null
+	}
+
+	const findDaySlot = (key: string): DaySlot | null => {
+		const list = daySlots.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].key === key) return list[i]
+		}
+		return null
+	}
+
+	const getRouteIds = (dayKey: string): string[] => {
+		const list = dayRoutes.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].dayKey === dayKey) {
+				const ids = list[i].spotIds
+				const out: string[] = []
+				for (let j = 0; j < ids.length; j++) out.push(ids[j])
+				return out
+			}
+		}
+		return [] as string[]
+	}
+
+	const setRouteIds = (dayKey: string, ids: string[]) => {
+		const list = dayRoutes.value
+		const next: DayRouteEntry[] = []
+		let found = false
+		const copyIds: string[] = []
+		for (let j = 0; j < ids.length; j++) copyIds.push(ids[j])
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].dayKey === dayKey) {
+				next.push({ dayKey: dayKey, spotIds: copyIds })
+				found = true
+			} else {
+				const oldIds = list[i].spotIds
+				const keep: string[] = []
+				for (let j = 0; j < oldIds.length; j++) keep.push(oldIds[j])
+				next.push({ dayKey: list[i].dayKey, spotIds: keep })
+			}
+		}
+		if (!found) next.push({ dayKey: dayKey, spotIds: copyIds })
+		dayRoutes.value = next
+		calendarTick.value++
+	}
+
+	const participantCount = computed((): number => selectedTravelerIds.value.length)
+
+
+	const remainingSeats = computed((): number => {
+		const p = project.value
+		if (p == null || p.maxCapacity <= 0) return 999999
+		const left = p.maxCapacity - p.enrolled
+		return left > 0 ? left : 0
+	})
+
+	const bookingTotalAmount = computed((): string => {
+		const p = project.value
+		if (p == null) return '0.00'
+		const price = parseFloat(p.price)
+		const days = selectedDayKeys.value.length
+		const dayMul = days > 0 ? days : 1
+		const seats = isNaN(price) ? 0 : price * participantCount.value * dayMul
+		return seats.toFixed(2) // 预约金额不含租车
+	})
+
+	const totalSelectedStops = computed((): number => {
+		const _t = calendarTick.value
+		let n = 0
+		const keys = selectedDayKeys.value
+		for (let i = 0; i < keys.length; i++) {
+			n += getRouteIds(keys[i]).length
+		}
+		return n
+	})
+
+	const calendarTitle = computed((): string => {
+		return viewYear.value.toString() + '年' + viewMonth.value.toString() + '月'
+	})
+
+	const isDaySelected = (key: string): boolean => {
+		const list = selectedDayKeys.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i] === key) return true
+		}
+		return false
+	}
+
+	const calendarCells = computed((): CalCell[] => {
+		const _t = calendarTick.value
+		const y = viewYear.value
+		const m = viewMonth.value
+		const first = new Date(y, m - 1, 1)
+		const startWeek = first.getDay()
+		const daysInMonth = new Date(y, m, 0).getDate()
+		const tkToday = todayKey()
+		const tkParts = tkToday.split("-")
+		const ty = parseInt(tkParts[0])
+		const tm = parseInt(tkParts[1])
+		const td = parseInt(tkParts[2])
+		const cells: CalCell[] = []
+		// leading blanks from prev month
+		const prevDays = new Date(y, m - 1, 0).getDate()
+		for (let i = 0; i < startWeek; i++) {
+			const d = prevDays - startWeek + 1 + i
+			const pm = m === 1 ? 12 : m - 1
+			const py = m === 1 ? y - 1 : y
+			cells.push({
+				key: 'p-' + dayKeyOf(py, pm, d),
+				day: d,
+				inMonth: false,
+				open: false,
+				full: false,
+				paused: false,
+				selected: false,
+				isToday: false,
+				openLabel: '',
+				enrollLabel: '',
+				year: py,
+				month: pm
+			})
+		}
+		for (let d = 1; d <= daysInMonth; d++) {
+			const key = dayKeyOf(y, m, d)
+			const slot = findDaySlot(key)
+			const paused = isDayPaused(key)
+			const inWindow = isWithinBookableWindow(key)
+			const sd = scheduleDayOf(key)
+			let scheduleOpen = true
+			if (sd != null) {
+				scheduleOpen = sd['open'] == true
+			}
+			const open = slot != null && inWindow && !paused && scheduleOpen
+			const full = open && slot != null ? slot.full : false
+			let enrollLabel = ''
+			if (open && slot != null && !full) {
+				enrollLabel = slot.enrolled.toString() + '/' + slot.capacity.toString()
+			}
+			cells.push({
+				key: key,
+				day: d,
+				inMonth: true,
+				open: open,
+				full: full,
+				paused: paused,
+				selected: isDaySelected(key),
+				isToday: y === ty && m === tm && d === td,
+				openLabel: open && slot != null ? compactRange(slot.openMin, slot.closeMin) : '',
+				enrollLabel: enrollLabel,
+				year: y,
+				month: m
+			})
+		}
+		// trailing to fill 6 weeks max
+		while (cells.length % 7 !== 0) {
+			const n = cells.length - startWeek - daysInMonth + 1
+			const nm = m === 12 ? 1 : m + 1
+			const ny = m === 12 ? y + 1 : y
+			cells.push({
+				key: 'n-' + dayKeyOf(ny, nm, n),
+				day: n,
+				inMonth: false,
+				open: false,
+				full: false,
+				paused: false,
+				selected: false,
+				isToday: false,
+				openLabel: '',
+				enrollLabel: '',
+				year: ny,
+				month: nm
+			})
+		}
+		return cells
+	})
+
+	const activeDaySpotIds = computed((): string[] => {
+		const _t = calendarTick.value
+		if (activeDayKey.value.length === 0) return [] as string[]
+		return getRouteIds(activeDayKey.value)
+	})
+
+	const spotsForActiveDayBase = computed((): SpotOption[] => {
+		const slot = findDaySlot(activeDayKey.value)
+		const out: SpotOption[] = []
+		if (slot == null) {
+			const list = allSpots.value
+			for (let i = 0; i < list.length; i++) out.push(list[i])
+			return out
+		}
+		for (let i = 0; i < slot.spotIds.length; i++) {
+			const s = findSpot(slot.spotIds[i])
+			if (s != null) out.push(s)
+		}
+		if (out.length === 0) {
+			const list = allSpots.value
+			for (let i = 0; i < list.length; i++) out.push(list[i])
+		}
+		return out
+	})
+
+	const spotsForActiveDay = computed((): SpotOption[] => {
+		const base0 = spotsForActiveDayBase.value
+		const base: SpotOption[] = []
+		for (let bi = 0; bi < base0.length; bi++) {
+			if (spotVisibleOnSelectedDay(base0[bi].id)) base.push(base0[bi])
+		}
+		const zone = selectedZoneKey.value
+		if (zone === 'all') return base
+		const out: SpotOption[] = []
+		for (let i = 0; i < base.length; i++) {
+			if (base[i].zoneKey === zone) out.push(base[i])
+		}
+		return out
+	})
+
+	const routeMapLatitude = computed((): number => {
+		const list = spotsForActiveDay.value
+		const fid = focusedSpotId.value
+		if (fid.length > 0) {
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].id === fid) return list[i].latitude + routeMapNudge.value
+			}
+		}
+		if (list.length === 0) return 40.509204
+		let sum = 0
+		for (let j = 0; j < list.length; j++) sum = sum + list[j].latitude
+		return sum / list.length
+	})
+
+	const routeMapLongitude = computed((): number => {
+		const list = spotsForActiveDay.value
+		const fid = focusedSpotId.value
+		if (fid.length > 0) {
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].id === fid) return list[i].longitude
+			}
+		}
+		if (list.length === 0) return 111.826493
+		let sum = 0
+		for (let j = 0; j < list.length; j++) sum = sum + list[j].longitude
+		return sum / list.length
+	})
+
+	const routeMapIncludePoints = computed((): any[] => {
+		if (focusedSpotId.value.length > 0) {
+			const empty: any[] = []
+			return empty
+		}
+		const list = spotsForActiveDay.value
+		const pts: any[] = []
+		for (let i = 0; i < list.length; i++) {
+			pts.push({ latitude: list[i].latitude, longitude: list[i].longitude })
+		}
+		return pts
+	})
+
+	const routeMapMarkers = computed((): any[] => {
+		const _t = calendarTick.value
+		const list = spotsForActiveDay.value
+		const selected = getRouteIds(activeDayKey.value)
+		const markers: any[] = []
+		for (let i = 0; i < list.length; i++) {
+			const s = list[i]
+			let selectedOn = false
+			for (let j = 0; j < selected.length; j++) {
+				if (selected[j] === s.id) {
+					selectedOn = true
+					break
+				}
+			}
+			let bg = '#FFFFFF'
+			let color = '#1A1A1A'
+			let label = s.title
+			if (selectedOn) {
+				bg = '#1A73E8'
+				color = '#FFFFFF'
+				label = '\u2713 ' + s.title
+			}
+			const marker: any = {
+				id: i + 1,
+				latitude: s.latitude,
+				longitude: s.longitude,
+				title: s.title,
+				iconPath: selectedOn ? '/static/map-pin-on.png' : '/static/map-pin.png',
+				width: 28,
+				height: 36,
+				callout: {
+					content: label,
+					display: 'ALWAYS',
+					padding: 6,
+					borderRadius: 8,
+					borderWidth: 0,
+					fontSize: 11,
+					color: color,
+					bgColor: bg
+				}
+			}
+			markers.push(marker)
+		}
+		return markers
+	})
+
+	const goSpotListPage = () => {
+		const key = activeDayKey.value
+		if (key.length === 0) {
+			uni.showToast({ title: '请先选择日期', icon: 'none' })
+			return
+		}
+		const ids = getRouteIds(key)
+		let selected = ''
+		for (let i = 0; i < ids.length; i++) {
+			if (i > 0) selected = selected + ','
+			selected = selected + ids[i]
+		}
+		let url = '/pages/appointment/route-list?mode=pick&dayKey=' + encodeURIComponent(key)
+		const pid = projectId.value
+		if (pid.length > 0) url = url + '&projectId=' + encodeURIComponent(pid)
+		if (selectedZoneKey.value.length > 0 && selectedZoneKey.value !== 'all') {
+			url = url + '&zone=' + encodeURIComponent(selectedZoneKey.value)
+		}
+		if (selected.length > 0) url = url + '&selected=' + encodeURIComponent(selected)
+		uni.navigateTo({ url: url })
+	}
+
+
+	const selectZone = (key: string) => {
+		selectedZoneKey.value = key
+		aiPlanHint.value = ''
+		clearRouteMapFocus()
+	}
+
+	const toggleSpotGuide = () => {
+		spotGuideOpen.value = !spotGuideOpen.value
+	}
+
+	const clearRouteMapFocus = () => {
+		focusedSpotId.value = ''
+		routeMapNudge.value = 0
+		routeMapScale.value = 16
+	}
+
+	const isSpotSelectedOnActiveDay = (id: string): boolean => {
+		const ids = getRouteIds(activeDayKey.value)
+		for (let i = 0; i < ids.length; i++) {
+			if (ids[i] === id) return true
+		}
+		return false
+	}
+
+	const focusSpotOnMap = (spot: SpotOption) => {
+		focusedSpotId.value = spot.id
+		routeMapScale.value = 18
+		routeMapNudge.value = 0.00004
+		setTimeout(() => {
+			routeMapNudge.value = 0
+		}, 40)
+	}
+
+	watch(activeDayKey, () => {
+		clearRouteMapFocus()
+	})
+
+	const openSpotDetail = (spot: SpotOption) => {
+		detailSpot.value = spot
+		showSpotDetail.value = true
+	}
+
+	const openSpotDetailById = (id: string) => {
+		const s = findSpot(id)
+		if (s == null) return
+		openSpotDetail(s)
+	}
+
+	const onRouteMarkerTap = (e: any) => {
+		const detail = e != null ? e.detail : null
+		if (detail == null) return
+		const mid = Number(detail.markerId)
+		const list = spotsForActiveDay.value
+		if (mid < 1 || mid > list.length) return
+		toggleSpotOnActiveDay(list[mid - 1].id)
+	}
+
+	const onRouteCalloutTap = (e: any) => {
+		onRouteMarkerTap(e)
+	}
+
+	const closeSpotDetail = () => {
+		showSpotDetail.value = false
+	}
+
+	/** 阻止遮罩层滚动穿透；sheet 内交给 scroll-view */
+	const onDetailMaskTouchMove = () => {}
+	const onDetailSheetTouchMove = () => {}
+
+	const sectionHasBody = (html: string): boolean => {
+		return routeSectionHasBody(html)
+	}
+	const sectionIsHtml = (html: string): boolean => {
+		return isHtmlContent(html)
+	}
+	const detailSpotSelected = computed((): boolean => {
+		const spot = detailSpot.value
+		if (spot == null) return false
+		return isSpotSelectedOnActiveDay(spot.id)
+	})
+
+	const toggleDetailSpotSelect = () => {
+		const spot = detailSpot.value
+		if (spot == null) return
+		toggleSpotOnActiveDay(spot.id)
+	}
+
+	const durationLabelOf = (spot: SpotOption | null): string => {
+		if (spot != null) {
+			const t = spot.durationText.trim()
+			if (t.length > 0) {
+				if (t.indexOf('约') === 0) return t
+				return '约 ' + t
+			}
+			if (spot.durationMin > 0) return '约 ' + formatStay(spot.durationMin)
+		}
+		return '约 20 分钟'
+	}
+
+	const activeDaySchedule = computed((): ScheduleItem[] => {
+		const _t = calendarTick.value
+		const key = activeDayKey.value
+		const ids = getRouteIds(key)
+		const out: ScheduleItem[] = []
+		for (let i = 0; i < ids.length; i++) {
+			const sid = ids[i]
+			const spot = findSpot(sid)
+			out.push({
+				id: sid,
+				title: spot != null ? spot.title : '点位',
+				stayText: durationLabelOf(spot)
+			})
+		}
+		return out
+	})
+
+
+
+
+
+
+
+
+
+
+
+
+
+	const goBack = () => { uni.navigateBack() }
+
+	const maskPhone = (phone: string): string => {
+		if (phone == null || phone.length < 7) return phone != null ? phone : ''
+		if (phone.length === 11) return phone.substring(0, 3) + ' **** ' + phone.substring(7)
+		return phone
+	}
+
+	const isTravelerSelected = (id: string): boolean => {
+		const list = selectedTravelerIds.value
+		for (let i = 0; i < list.length; i++) if (list[i] === id) return true
+		return false
+	}
+
+	const toggleTraveler = (id: string) => {
+		const next: string[] = []
+		let found = false
+		const list = selectedTravelerIds.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i] === id) found = true
+			else next.push(list[i])
+		}
+		if (!found) next.push(id)
+		selectedTravelerIds.value = next
+	}
+
+	const shiftMonth = (delta: number) => {
+		let y = viewYear.value
+		let m = viewMonth.value + delta
+		if (m < 1) {
+			m = 12
+			y--
+		} else if (m > 12) {
+			m = 1
+			y++
+		}
+		viewYear.value = y
+		viewMonth.value = m
+		ensureMonthSlots(y, m, allSpots.value)
+		calendarTick.value++
+	}
+
+	/** 两日期间隔天数（按自然日） */
+	const toggleDay = (cell: CalCell) => {
+		if (!cell.inMonth || cell.day <= 0) return
+		if (!cell.open) {
+			if (cell.key < todayKey()) {
+				uni.showToast({ title: '不能预约过去的日期', icon: 'none' })
+				return
+			}
+			if (cell.paused) {
+				uni.showToast({ title: '该日已暂停预约', icon: 'none' })
+				return
+			}
+			if (!isWithinBookableWindow(cell.key)) {
+				uni.showToast({ title: '仅可预约未来 ' + projectBookableDays().toString() + ' 天', icon: 'none' })
+				return
+			}
+			uni.showToast({ title: '该日未开放', icon: 'none' })
+			return
+		}
+		if (cell.full) {
+			uni.showToast({ title: '该日报名已满', icon: 'none' })
+			return
+		}
+		const key = cell.key
+		const list = selectedDayKeys.value
+		let found = false
+		for (let i = 0; i < list.length; i++) {
+			if (list[i] === key) {
+				found = true
+				break
+			}
+		}
+
+		if (found) {
+			const next: string[] = []
+			for (let i = 0; i < list.length; i++) {
+				if (list[i] !== key) next.push(list[i])
+			}
+			setRouteIds(key, [] as string[])
+			selectedDayKeys.value = next
+			if (activeDayKey.value === key) {
+				activeDayKey.value = next.length > 0 ? next[next.length - 1] : ''
+			}
+		} else {
+			const next: string[] = []
+			for (let i = 0; i < list.length; i++) next.push(list[i])
+			next.push(key)
+			if (getRouteIds(key).length === 0) setRouteIds(key, [] as string[])
+			selectedDayKeys.value = next
+			activeDayKey.value = key
+			applyPendingAudienceIfReady()
+		}
+		aiPlanHint.value = ''
+		calendarTick.value++
+	}
+
+	const setActiveDay = (key: string) => {
+		activeDayKey.value = key
+		// 换日保留分区筛选，仅清提示
+		aiPlanHint.value = ''
+	}
+
+	const dayShortLabel = (key: string): string => {
+		const parts = key.split('-')
+		if (parts.length < 3) return key
+		return parseInt(parts[1]).toString() + '/' + parseInt(parts[2]).toString()
+	}
+
+	const dayFullLabel = (key: string): string => {
+		const parts = key.split('-')
+		if (parts.length < 3) return key
+		const m = parseInt(parts[1])
+		const d = parseInt(parts[2])
+		const slot = findDaySlot(key)
+		const wd = slot != null ? weekLabels[slot.weekday] : ''
+		return m.toString() + '月' + d.toString() + '日' + (wd.length > 0 ? ' 周' + wd : '')
+	}
+
+	const dayOpenCloseText = (key: string): string => {
+		const slot = findDaySlot(key)
+		if (slot == null) return '—'
+		return slot.openLabel + ' – ' + slot.closeLabel
+	}
+
+
+	const toggleSpotOnActiveDay = (id: string) => {
+		const key = activeDayKey.value
+		if (key.length === 0) return
+		const ids = getRouteIds(key)
+		const next: string[] = []
+		let found = false
+		for (let i = 0; i < ids.length; i++) {
+			if (ids[i] === id) found = true
+			else next.push(ids[i])
+		}
+		if (!found) next.push(id)
+		setRouteIds(key, next)
+		aiPlanHint.value = ''
+		uni.showToast({ title: found ? '取消选择' : '已选择', icon: 'none' })
+	}
+
+
+	const selectAllSpotsForActiveDay = () => {
+		const key = activeDayKey.value
+		if (key.length === 0) return
+		// 全选当前分区可见点；保留其他分区已选
+		const visible = spotsForActiveDay.value
+		const prev = getRouteIds(key)
+		const next: string[] = []
+		// 先保留不在当前列表里的（其他分区）
+		for (let i = 0; i < prev.length; i++) {
+			let inVisible = false
+			for (let j = 0; j < visible.length; j++) {
+				if (visible[j].id === prev[i]) {
+					inVisible = true
+					break
+				}
+			}
+			// 若当前是「全部」分区，visible 即全部，inVisible 恒真；若筛选分区，保留区外已选
+			const spot = findSpot(prev[i])
+			if (selectedZoneKey.value !== 'all') {
+				if (spot != null && spot.zoneKey !== selectedZoneKey.value) next.push(prev[i])
+			}
+		}
+		for (let i = 0; i < visible.length; i++) next.push(visible[i].id)
+		setRouteIds(key, next)
+		const zoneName = selectedZoneKey.value === 'all' ? '本日全部' : zoneLabelOf(selectedZoneKey.value)
+		aiPlanHint.value = '已选' + zoneName + '点位，可点 AI 规划'
+	}
+
+	const clearSpotsForActiveDay = () => {
+		const key = activeDayKey.value
+		if (key.length === 0) return
+		// 仅清空当前分区可见点，其它分区已选保留
+		if (selectedZoneKey.value === 'all') {
+			setRouteIds(key, [] as string[])
+			aiPlanHint.value = ''
+			return
+		}
+		const visible = spotsForActiveDay.value
+		const prev = getRouteIds(key)
+		const next: string[] = []
+		for (let i = 0; i < prev.length; i++) {
+			let inVisible = false
+			for (let j = 0; j < visible.length; j++) {
+				if (visible[j].id === prev[i]) {
+					inVisible = true
+					break
+				}
+			}
+			if (!inVisible) next.push(prev[i])
+		}
+		setRouteIds(key, next)
+		aiPlanHint.value = ''
+	}
+
+	const dist2 = (a: SpotOption, b: SpotOption): number => {
+		const dLat = a.latitude - b.latitude
+		const dLng = a.longitude - b.longitude
+		return dLat * dLat + dLng * dLng
+	}
+
+	const nearestOrderSpots = (seed: SpotOption[]): SpotOption[] => {
+		if (seed.length === 0) return [] as SpotOption[]
+		let startIdx = 0
+		for (let i = 1; i < seed.length; i++) {
+			if (seed[i].sortOrder < seed[startIdx].sortOrder) startIdx = i
+		}
+		// 再规划时换起点，避免每次同一条
+		if (seed.length > 1 && aiPlanVariant.value > 0) {
+			startIdx = (startIdx + aiPlanVariant.value) % seed.length
+		}
+		const used: boolean[] = []
+		for (let i = 0; i < seed.length; i++) used.push(false)
+		const ordered: SpotOption[] = []
+		ordered.push(seed[startIdx])
+		used[startIdx] = true
+		while (ordered.length < seed.length) {
+			const curS = ordered[ordered.length - 1]
+			let best = -1
+			let bestD = 0
+			for (let i = 0; i < seed.length; i++) {
+				if (used[i]) continue
+				const d = dist2(curS, seed[i])
+				if (best < 0 || d < bestD) {
+					best = i
+					bestD = d
+				}
+			}
+			if (best < 0) break
+			ordered.push(seed[best])
+			used[best] = true
+		}
+		return ordered
+	}
+
+	const filterSpotsByZonePref = (pool: SpotOption[], zonePref: string, dayIndex: number, dayCount: number): SpotOption[] => {
+		const out: SpotOption[] = []
+		if (zonePref === 'mixed' && dayCount > 1) {
+			const orderKeys: string[] = ['family', 'college', 'business']
+			const primary = orderKeys[dayIndex % orderKeys.length]
+			for (let i = 0; i < pool.length; i++) {
+				if (pool[i].zoneKey === primary) out.push(pool[i])
+			}
+			if (out.length >= 2) return out
+		}
+		if (zonePref === 'family' || zonePref === 'college' || zonePref === 'business') {
+			for (let i = 0; i < pool.length; i++) {
+				if (pool[i].zoneKey === zonePref) out.push(pool[i])
+			}
+			if (out.length > 0) return out
+		}
+		for (let i = 0; i < pool.length; i++) out.push(pool[i])
+		return out
+	}
+
+	const pickSpotsForDayWindow = (candidates: SpotOption[], openMin: number, closeMin: number, pace: string): string[] => {
+		const windowMin = closeMin > openMin ? (closeMin - openMin) : 240
+		let targetStay = Math.floor(windowMin * 0.72)
+		if (pace === 'light') targetStay = Math.floor(windowMin * 0.48)
+		if (pace === 'full') targetStay = Math.floor(windowMin * 0.88)
+		if (targetStay < 40) targetStay = 40
+		const ordered = nearestOrderSpots(candidates)
+		const ids: string[] = []
+		let used = 0
+		const transfer = 12
+		for (let i = 0; i < ordered.length; i++) {
+			const stay = ordered[i].durationMin > 0 ? ordered[i].durationMin : 40
+			const extra = ids.length > 0 ? transfer : 0
+			if (ids.length > 0 && used + extra + stay > targetStay) {
+				if (pace !== 'full' || used + extra + 25 > windowMin) break
+			}
+			if (used + extra + stay > windowMin && ids.length > 0) break
+			ids.push(ordered[i].id)
+			used = used + extra + stay
+			if (pace === 'light' && ids.length >= 2) break
+			if (pace === 'balanced' && ids.length >= 4) break
+			if (pace === 'full' && ids.length >= 6) break
+		}
+		if (ids.length === 0 && ordered.length > 0) ids.push(ordered[0].id)
+		return ids
+	}
+
+
+
+
+
+
+
+
+	const aiNextMsgId = (): string => {
+		aiMsgSeq.value = aiMsgSeq.value + 1
+		return 'ai-m-' + aiMsgSeq.value.toString()
+	}
+
+	const emptyAiMsg = (role: string, text: string, isPlan: boolean): AiChatMsg => {
+		return {
+			id: aiNextMsgId(),
+			role: role,
+			text: text,
+			isPlan: isPlan,
+			spots: [] as AiSpotCard[],
+			drivers: [] as AiDriverCard[],
+			days: [] as AiDayCard[],
+			rentalId: '',
+			rentalName: '',
+			rentalHint: '',
+			showRental: false,
+			needDrivers: false,
+			driverTip: '',
+			showAudienceEntry: false
+		}
+	}
+
+	const cloneAiMsg = (m: AiChatMsg): AiChatMsg => {
+		const spots: AiSpotCard[] = []
+		for (let i = 0; i < m.spots.length; i++) {
+			const s = m.spots[i]
+			spots.push({
+				id: s.id, title: s.title, zoneLabel: s.zoneLabel, durationText: s.durationText,
+				desc: s.desc, coverStyle: s.coverStyle, coverIcon: s.coverIcon,
+				photoCaption: s.photoCaption, dayKey: s.dayKey
+			})
+		}
+		const drivers: AiDriverCard[] = []
+		for (let i = 0; i < m.drivers.length; i++) {
+			const d = m.drivers[i]
+			drivers.push({
+				id: d.id, name: d.name, avatar: d.avatar, vehicleName: d.vehicleName,
+				vehicleType: d.vehicleType, plateNo: d.plateNo, phone: d.phone, wechat: d.wechat,
+				seats: d.seats, priceText: d.priceText, statusLabel: d.statusLabel, available: d.available,
+				distanceText: d.distanceText, price: d.price
+			})
+		}
+		const days: AiDayCard[] = []
+		for (let i = 0; i < m.days.length; i++) {
+			const d = m.days[i]
+			days.push({ dayKey: d.dayKey, label: d.label, routeText: d.routeText, stopCount: d.stopCount })
+		}
+		return {
+			id: m.id, role: m.role, text: m.text, isPlan: m.isPlan,
+			spots: spots, drivers: drivers, days: days,
+			rentalId: m.rentalId, rentalName: m.rentalName, rentalHint: m.rentalHint,
+			showRental: m.showRental, needDrivers: m.needDrivers, driverTip: m.driverTip, showAudienceEntry: m.showAudienceEntry
+		}
+	}
+
+	const pushAiMessage = (role: string, text: string, isPlan: boolean): string => {
+		const list = aiMessages.value
+		const next: AiChatMsg[] = []
+		for (let i = 0; i < list.length; i++) next.push(cloneAiMsg(list[i]))
+		const msg = emptyAiMsg(role, text, isPlan)
+		next.push(msg)
+		aiMessages.value = next
+		aiScrollInto.value = ''
+		setTimeout(() => {
+			aiScrollInto.value = 'ai-msg-end'
+		}, 30)
+		return msg.id
+	}
+
+	const updateAiMessageById = (id: string, patcher: (m: AiChatMsg) => void) => {
+		const list = aiMessages.value
+		const next: AiChatMsg[] = []
+		for (let i = 0; i < list.length; i++) {
+			const c = cloneAiMsg(list[i])
+			if (c.id === id) patcher(c)
+			next.push(c)
+		}
+		aiMessages.value = next
+		setTimeout(() => {
+			aiScrollInto.value = 'ai-msg-end'
+		}, 20)
+	}
+
+	const buildAiSpotCards = (dayKeys: string[], spotLists: any[]): AiSpotCard[] => {
+		const out: AiSpotCard[] = []
+		const seen: string[] = []
+		for (let di = 0; di < dayKeys.length; di++) {
+			const dk = dayKeys[di]
+			const ids = spotLists[di]
+			for (let j = 0; j < ids.length; j++) {
+				const id = ids[j]
+				let dup = false
+				for (let s = 0; s < seen.length; s++) {
+					if (seen[s] === id) { dup = true; break }
+				}
+				if (dup) continue
+				seen.push(id)
+				const spot = findSpot(id)
+				if (spot == null) continue
+				out.push({
+					id: spot.id,
+					title: spot.title,
+					zoneLabel: spot.zoneLabel,
+					durationText: spot.durationText,
+					desc: spot.desc,
+					coverStyle: spot.coverStyle,
+					coverIcon: spot.coverIcon,
+					photoCaption: spot.photoCaption,
+					dayKey: dk
+				})
+				if (out.length >= 12) return out
+			}
+		}
+		return out
+	}
+
+	const buildAiDayCards = (dayKeys: string[], spotLists: any[]): AiDayCard[] => {
+		const out: AiDayCard[] = []
+		for (let di = 0; di < dayKeys.length; di++) {
+			const dk = dayKeys[di]
+			const ids = spotLists[di]
+			const names: string[] = []
+			for (let j = 0; j < ids.length; j++) {
+				const s = findSpot(ids[j])
+				if (s != null) names.push(s.title)
+			}
+			let routeText = '（暂无点位）'
+			if (names.length > 0) {
+				routeText = names[0]
+				for (let n = 1; n < names.length; n++) routeText = routeText + '、' + names[n]
+			}
+			out.push({
+				dayKey: dk,
+				label: dayShortLabel(dk) + ' · ' + dayOpenCloseText(dk),
+				routeText: routeText,
+				stopCount: ids.length
+			})
+		}
+		return out
+	}
+
+
+
+	const enrichPlanMessage = (msgId: string, reply: string, dayKeys: string[], spotLists: string[][], rentalId: string, loadDrv: boolean) => {
+		void loadDrv
+		const spots = buildAiSpotCards(dayKeys, spotLists)
+		const days = buildAiDayCards(dayKeys, spotLists)
+		const people = participantCount.value
+		const needCarHint = rentalId !== 'none' || aiPrefNeedCar.value === 'yes'
+		updateAiMessageById(msgId, (m) => {
+			m.text = reply
+			m.isPlan = true
+			m.spots = spots
+			m.days = days
+			m.rentalId = 'none'
+			m.rentalName = needCarHint ? '建议叫车' : '可自行前往'
+			m.rentalHint = needCarHint
+				? ((people > 0 ? people.toString() + ' 人，' : '') + '提交预约后可用页面浮动叫车发单，司机接单后议价')
+				: '不叫车也可自行前往；需要用车时点浮动叫车发单'
+			m.showRental = true
+			m.needDrivers = needCarHint
+			m.driverTip = needCarHint ? '不在预约里选车型或司机，请用浮动叫车发单' : ''
+			m.drivers = [] as AiDriverCard[]
+		})
+	}
+
+
+	const openAiSpotDetail = (spotId: string) => {
+		const s = findSpot(spotId)
+		if (s == null) {
+			uni.showToast({ title: '点位不存在', icon: 'none' })
+			return
+		}
+		openSpotDetail(s)
+	}
+
+	const addAiSpotToActiveDay = (spotId: string) => {
+		const key = activeDayKey.value
+		if (key.length === 0) {
+			uni.showToast({ title: '请先选择日期', icon: 'none' })
+			return
+		}
+		const prev = getRouteIds(key)
+		for (let i = 0; i < prev.length; i++) {
+			if (prev[i] === spotId) {
+				uni.showToast({ title: '本日已选择', icon: 'none' })
+				return
+			}
+		}
+		const next: string[] = []
+		for (let i = 0; i < prev.length; i++) next.push(prev[i])
+		next.push(spotId)
+		setRouteIds(key, next)
+		uni.showToast({ title: '已选择', icon: 'success' })
+	}
+
+	const applyAiOneDay = (dayKey: string) => {
+		const flat = aiPendingSpotIdsByDay.value
+		for (let i = 0; i < flat.length; i++) {
+			const row = flat[i]
+			const sep = row.indexOf('|||')
+			if (sep < 0) continue
+			const dk = row.substring(0, sep)
+			if (dk !== dayKey) continue
+			const idsPart = row.substring(sep + 3)
+			const ids: string[] = []
+			if (idsPart.length > 0) {
+				let rest = idsPart
+				while (rest.length > 0) {
+					const c = rest.indexOf(',')
+					if (c < 0) {
+						if (rest.length > 0) ids.push(rest)
+						break
+					}
+					const piece = rest.substring(0, c)
+					if (piece.length > 0) ids.push(piece)
+					rest = rest.substring(c + 1)
+				}
+			}
+			setRouteIds(dk, ids)
+			activeDayKey.value = dk
+			uni.showToast({ title: '已写入该日点位', icon: 'success' })
+			return
+		}
+		uni.showToast({ title: '未找到该日方案', icon: 'none' })
+	}
+
+	const focusAiDay = (dayKey: string) => {
+		activeDayKey.value = dayKey
+		uni.showToast({ title: '已切换到 ' + dayShortLabel(dayKey), icon: 'none' })
+	}
+
+	const goRentalCreateFromAi = () => {
+		showAiChat.value = false
+		goRentalCreateFromBooking()
+	}
+
+	const goRentalCreateFromBooking = () => {
+		const pid = projectId.value
+		let url = '/pages/appointment/rental-create'
+		if (pid != null && pid.length > 0) {
+			url = url + '?projectId=' + encodeURIComponent(pid)
+		}
+		uni.navigateTo({ url: url })
+	}
+
+
+
+
+
+	const parsePendingFlatToLists = (): any => {
+		const flat = aiPendingSpotIdsByDay.value
+		const dayKeys: string[] = []
+		const spotLists: any[] = []
+		for (let i = 0; i < flat.length; i++) {
+			const row = flat[i]
+			const sep = row.indexOf('|||')
+			if (sep < 0) continue
+			const dk = row.substring(0, sep)
+			const idsPart = row.substring(sep + 3)
+			const ids: string[] = []
+			if (idsPart.length > 0) {
+				let rest = idsPart
+				while (rest.length > 0) {
+					const c = rest.indexOf(',')
+					if (c < 0) {
+						if (rest.length > 0) ids.push(rest)
+						break
+					}
+					const piece = rest.substring(0, c)
+					if (piece.length > 0) ids.push(piece)
+					rest = rest.substring(c + 1)
+				}
+			}
+			dayKeys.push(dk)
+			spotLists.push(ids)
+		}
+		return { dayKeys: dayKeys, spotLists: spotLists }
+	}
+
+
+	const clearAiPendingPlan = () => {
+		aiHasPendingPlan.value = false
+		aiPendingDayKeys.value = [] as string[]
+		aiPendingSpotIdsByDay.value = [] as string[]
+		aiPendingRentalId.value = 'none'
+		aiPendingRentalName.value = '不租车'
+		aiPendingSummary.value = ''
+	}
+
+	const storeAiPendingPlanFlat = (flatRows: string[], rentalId: string, summary: string) => {
+		const keys: string[] = []
+		for (let i = 0; i < flatRows.length; i++) {
+			const row = flatRows[i]
+			const sep = row.indexOf('|||')
+			if (sep > 0) keys.push(row.substring(0, sep))
+		}
+		aiPendingDayKeys.value = keys
+		aiPendingSpotIdsByDay.value = flatRows
+		aiPendingRentalId.value = rentalId
+		aiPendingRentalName.value = '不租车'
+		aiPendingSummary.value = summary
+		aiHasPendingPlan.value = true
+	}
+
+	const parsePrefsFromText = (raw: string) => {
+		const t = raw
+		if (t.indexOf('亲子') >= 0 || t.indexOf('家庭') >= 0 || t.indexOf('小孩') >= 0 || t.indexOf('儿童') >= 0 || t.indexOf('带娃') >= 0) {
+			aiPrefZone.value = 'family'
+			aiPrefKids.value = true
+		}
+		if (t.indexOf('高校') >= 0 || t.indexOf('大学') >= 0 || t.indexOf('学生') >= 0 || t.indexOf('职业') >= 0 || t.indexOf('实验室') >= 0) {
+			aiPrefZone.value = 'college'
+			aiPrefTeam.value = true
+		}
+		if (t.indexOf('商务') >= 0 || t.indexOf('企业') >= 0 || t.indexOf('接待') >= 0 || t.indexOf('展陈') >= 0 || t.indexOf('产线') >= 0 || t.indexOf('客户') >= 0) {
+			aiPrefZone.value = 'business'
+			aiPrefTeam.value = true
+		}
+		if (t.indexOf('都想') >= 0 || t.indexOf('混合') >= 0 || t.indexOf('搭配') >= 0 || t.indexOf('多种') >= 0 || t.indexOf('全部区域') >= 0) {
+			aiPrefZone.value = 'mixed'
+		}
+		if (t.indexOf('轻松') >= 0 || t.indexOf('少点') >= 0 || t.indexOf('不要太赶') >= 0 || t.indexOf('悠闲') >= 0) {
+			aiPrefPace.value = 'light'
+		}
+		if (t.indexOf('多排') >= 0 || t.indexOf('紧凑') >= 0 || t.indexOf('丰富') >= 0 || t.indexOf('尽量多') >= 0) {
+			aiPrefPace.value = 'full'
+		}
+		if (t.indexOf('适中') >= 0 || t.indexOf('平衡') >= 0) {
+			aiPrefPace.value = 'balanced'
+		}
+		if (t.indexOf('不租') >= 0 || t.indexOf('不用车') >= 0 || t.indexOf('自己去') >= 0 || t.indexOf('自行') >= 0 || t.indexOf('不需要租') >= 0) {
+			aiPrefNeedCar.value = 'no'
+		}
+		if (t.indexOf('要租') >= 0 || t.indexOf('租车') >= 0 || t.indexOf('大巴') >= 0 || t.indexOf('中巴') >= 0 || t.indexOf('商务车') >= 0 || t.indexOf('需要车') >= 0 || t.indexOf('大一点的车') >= 0 || t.indexOf('人比较多') >= 0) {
+			if (aiPrefNeedCar.value !== 'no') aiPrefNeedCar.value = 'yes'
+		}
+		if (t.indexOf('团队') >= 0 || t.indexOf('团建') >= 0 || t.indexOf('集体') >= 0) {
+			aiPrefTeam.value = true
+		}
+		if (t.indexOf('改一版') >= 0 || t.indexOf('换一版') >= 0 || t.indexOf('再来') >= 0) {
+			aiPlanVariant.value = aiPlanVariant.value + 1
+		}
+	}
+
+	const wantsImmediatePlan = (raw: string): boolean => {
+		if (raw.indexOf('直接') >= 0) return true
+		if (raw.indexOf('规划') >= 0) return true
+		if (raw.indexOf('方案') >= 0) return true
+		if (raw.indexOf('安排') >= 0) return true
+		if (raw.indexOf('推荐') >= 0) return true
+		if (raw.indexOf('帮我') >= 0) return true
+		if (raw.indexOf('出一份') >= 0) return true
+		if (raw.indexOf('生成') >= 0) return true
+		if (raw.indexOf('改一版') >= 0) return true
+		if (raw.indexOf('亲子') >= 0 || raw.indexOf('高校') >= 0 || raw.indexOf('商务') >= 0) return true
+		if (raw.indexOf('不租') >= 0 || raw.indexOf('要租') >= 0 || raw.indexOf('大巴') >= 0) return true
+		return false
+	}
+
+	const buildMultiDayPlanText = (): string => {
+		const keys = selectedDayKeys.value
+		if (keys.length === 0) {
+			return '你还没选研学日期。先在日历里点选开放日（可多选），再让我规划全部行程～'
+		}
+		const people = participantCount.value
+		const zonePref = aiPrefZone.value
+		const pace = aiPrefPace.value
+		const needCar = aiPrefNeedCar.value
+		const all = allSpots.value
+		const dayFlatRows: string[] = []
+		let totalStops = 0
+		const lines: string[] = []
+		const usedGlobal: string[] = []
+
+		for (let di = 0; di < keys.length; di++) {
+			const dk = keys[di]
+			const slot = findDaySlot(dk)
+			const openMin = slot != null ? slot.openMin : 9 * 60
+			const closeMin = slot != null ? slot.closeMin : 17 * 60
+			const pool = filterSpotsByZonePref(all, zonePref, di, keys.length)
+			const fresh: SpotOption[] = []
+			const reused: SpotOption[] = []
+			for (let i = 0; i < pool.length; i++) {
+				let seen = false
+				for (let u = 0; u < usedGlobal.length; u++) {
+					if (usedGlobal[u] === pool[i].id) {
+						seen = true
+						break
+					}
+				}
+				if (seen) reused.push(pool[i])
+				else fresh.push(pool[i])
+			}
+			let candidates = fresh.length > 0 ? fresh : pool
+			if (candidates.length < 2 && reused.length > 0) {
+				const merged: SpotOption[] = []
+				for (let i = 0; i < fresh.length; i++) merged.push(fresh[i])
+				for (let i = 0; i < reused.length; i++) merged.push(reused[i])
+				candidates = merged
+			}
+			const ids = pickSpotsForDayWindow(candidates, openMin, closeMin, pace)
+			for (let i = 0; i < ids.length; i++) {
+				let exists = false
+				for (let u = 0; u < usedGlobal.length; u++) {
+					if (usedGlobal[u] === ids[i]) {
+						exists = true
+						break
+					}
+				}
+				if (!exists) usedGlobal.push(ids[i])
+			}
+			let joined = ''
+			for (let j = 0; j < ids.length; j++) {
+				if (j > 0) joined = joined + ','
+				joined = joined + ids[j]
+			}
+			dayFlatRows.push(dk + '|||' + joined)
+			totalStops = totalStops + ids.length
+
+			const nameParts: string[] = []
+			for (let i = 0; i < ids.length; i++) {
+				const s = findSpot(ids[i])
+				if (s != null) nameParts.push(s.title)
+			}
+			const hours = dayOpenCloseText(dk)
+			const label = dayShortLabel(dk)
+			let routeLine = '（暂无合适点位）'
+			if (nameParts.length > 0) {
+				routeLine = nameParts[0]
+				for (let ni = 1; ni < nameParts.length; ni++) {
+					routeLine = routeLine + '、' + nameParts[ni]
+				}
+			}
+			lines.push((di + 1).toString() + ') ' + label + '（' + hours + '）')
+			lines.push('   ' + routeLine + ' · 共 ' + ids.length.toString() + ' 个点位')
+		}
+
+		const suggestCar = needCar === 'yes' || (needCar !== 'no' && (people >= 3 || aiPrefKids.value || aiPrefTeam.value))
+		const rentalId = 'none'
+		let zoneLabel = '综合'
+		if (zonePref === 'family') zoneLabel = '家庭亲子'
+		else if (zonePref === 'college') zoneLabel = '高校研学'
+		else if (zonePref === 'business') zoneLabel = '企业商务'
+		else if (zonePref === 'mixed') zoneLabel = '多日混搭'
+		let paceLabel = '节奏适中'
+		if (pace === 'light') paceLabel = '轻松少选'
+		if (pace === 'full') paceLabel = '紧凑丰富'
+
+		let peopleText = people > 0 ? (people.toString() + ' 位游客') : '未选游客'
+		let carReason = ''
+		if (needCar === 'no' || !suggestCar) carReason = '可不叫车，自行前往集合点；园区内可按导航自选前往已选点位。'
+		else carReason = '建议叫车：提交预约后点页面浮动叫车发单，司机接单后议价（不在预约里选车型）。'
+
+		let routeBlock = ''
+		for (let li = 0; li < lines.length; li++) {
+			if (li > 0) routeBlock = routeBlock + '\n'
+			routeBlock = routeBlock + lines[li]
+		}
+		const summary =
+			'已按「' + zoneLabel + ' · ' + paceLabel + '」为 ' + keys.length.toString() + ' 天行程做好规划，共 ' + totalStops.toString() + ' 个点位。\n' +
+			'游客：' + peopleText + '\n' +
+			'用车：' + carReason + '\n\n' +
+			'每日推荐点位：\n' + routeBlock + '\n\n' +
+			'点「应用点位方案」会写入每一天的已选点位；之后仍可手动微调。到场后可自选前往顺序。若要换风格，直接说「再偏亲子 / 紧凑一点 / 不要车」就行。需要用车请用浮动叫车发单。'
+
+		aiPrefNeedCar.value = suggestCar ? (needCar === 'no' ? 'no' : 'yes') : (needCar === 'no' ? 'no' : aiPrefNeedCar.value)
+		storeAiPendingPlanFlat(dayFlatRows, rentalId, summary)
+		return summary
+	}
+
+	const openAiChat = () => {
+		showAiChat.value = true
+		if (aiMessages.value.length === 0) {
+			const days = selectedDayKeys.value.length
+			const people = participantCount.value
+			let hello = '嗨，我是研学行程小助手。'
+			if (days > 0) {
+				hello = hello + '你已选 ' + days.toString() + ' 天'
+				if (people > 0) hello = hello + '、' + people.toString() + ' 人'
+				hello = hello + '。'
+			} else {
+				hello = hello + '先在日历选好开放日（可多选），再来找我更方便。'
+			}
+			hello = hello + '\n点下面「打开分层点位」可选企业配好的人群方案；也可以直接跟我说「少两个点 / 换成商务」。租车请用页面上的「叫车」。'
+			pushAiMessage('bot', hello, false)
+		}
+		setTimeout(() => {
+			aiScrollInto.value = 'ai-msg-end'
+		}, 80)
+	}
+
+	const closeAiChat = () => {
+		showAiChat.value = false
+	}
+
+	const runAiReplyPipeline = (userText: string) => {
+		if (aiThinking.value) return
+		const raw = userText
+		if (raw.length === 0) return
+		pushAiMessage('user', raw, false)
+		parsePrefsFromText(raw)
+		aiThinking.value = true
+
+		const keys = selectedDayKeys.value
+		if (keys.length === 0) {
+			aiThinking.value = false
+			pushAiMessage('bot', '还没选开放日。先关掉窗口，在日历点选日期（可多选），再回来找我出方案。', false)
+			return
+		}
+
+		// 组装点位目录
+		const all = allSpots.value
+		const spots: StudyAiPlanSpotInput[] = []
+		for (let si = 0; si < all.length; si++) {
+			const s = all[si]
+			spots.push({
+				id: s.id,
+				title: s.title,
+				zoneKey: s.zoneKey,
+				zoneLabel: s.zoneLabel,
+				durationMin: s.durationMin,
+				desc: s.desc
+			})
+		}
+
+		// 历史（不含刚 push 的可以包含；发给服务端时用近几条）
+		const hist: StudyAiPlanHistoryItem[] = []
+		const msgs = aiMessages.value
+		// 跳过欢迎语后的对话，最多 10 条，且不含最后一条 user（会作为 message）
+		const end = msgs.length > 0 ? msgs.length - 1 : 0
+		const start = end > 10 ? end - 10 : 0
+		for (let hi = start; hi < end; hi++) {
+			const m = msgs[hi]
+			if (m.isPlan) continue
+			const role = m.role === 'user' ? 'user' : 'assistant'
+			hist.push({ role: role, content: m.text })
+		}
+
+		const prefs: any = {
+			zonePref: aiPrefZone.value,
+			pace: aiPrefPace.value,
+			needCar: aiPrefNeedCar.value,
+			kids: aiPrefKids.value,
+			team: aiPrefTeam.value,
+			templateId: aiActiveTemplateId.value
+		}
+
+		const pid = projectId.value
+		fetchStudyAiPlan(pid, raw, keys, participantCount.value, spots, hist, prefs).then((res: StudyAiPlanResult) => {
+			aiThinking.value = false
+			if (res.zonePref != null && res.zonePref.length > 0) aiPrefZone.value = res.zonePref
+			if (res.pace != null && res.pace.length > 0) aiPrefPace.value = res.pace
+			if (res.needCar != null && res.needCar.length > 0) aiPrefNeedCar.value = res.needCar
+
+			const wantDrivers = raw.indexOf('司机') >= 0 || raw.indexOf('报价') >= 0 || raw.indexOf('电话') >= 0 || raw.indexOf('微信') >= 0 || raw.indexOf('租车') >= 0 || raw.indexOf('用车') >= 0 || raw.indexOf('叫车') >= 0 || raw.indexOf('大巴') >= 0 || raw.indexOf('中巴') >= 0
+
+			if (res.isPlan && res.days != null && res.days.length > 0) {
+				const flat: string[] = []
+				const dayKeysOut: string[] = []
+				const spotLists: any[] = []
+				for (let di = 0; di < res.days.length; di++) {
+					const d = res.days[di]
+					dayKeysOut.push(d.dayKey)
+					const ids = d.spotIds
+					const idCopy: string[] = []
+					let joined = ''
+					for (let j = 0; j < ids.length; j++) {
+						if (j > 0) joined = joined + ','
+						joined = joined + ids[j]
+						idCopy.push(ids[j])
+					}
+					flat.push(d.dayKey + '|||' + joined)
+					spotLists.push(idCopy)
+				}
+				aiPendingDayKeys.value = dayKeysOut
+				aiPendingSpotIdsByDay.value = flat
+				const ridAdv = res.rentalId != null && res.rentalId.length > 0 ? res.rentalId : 'none'
+				aiPendingRentalId.value = 'none'
+				aiPendingRentalName.value = '不写入预约'
+				aiPendingSummary.value = res.reply
+				aiHasPendingPlan.value = true
+				const msgId = pushAiMessage('bot', res.reply, true)
+				const hintRid = (res.needCar === 'yes' || (ridAdv !== 'none' && ridAdv.length > 0)) ? 'need' : 'none'
+				enrichPlanMessage(msgId, res.reply, dayKeysOut, spotLists, hintRid, false)
+			} else {
+				let replyText = res.reply
+				if (wantDrivers || raw.indexOf('叫车') >= 0) {
+					replyText = replyText + '\n\n用车请点页面浮动叫车发单，司机接单后议价；不在预约里选车型或司机。'
+				}
+				const msgId = pushAiMessage('bot', replyText, false)
+				if (wantDrivers || res.needCar === 'yes' || raw.indexOf('叫车') >= 0) {
+					updateAiMessageById(msgId, (m) => {
+						m.rentalId = 'none'
+						m.rentalName = '建议叫车'
+						m.rentalHint = '用浮动叫车发单，司机接单议价'
+						m.showRental = true
+						m.needDrivers = true
+						m.driverTip = '去发租车需求，不要写入预约选车'
+						m.drivers = [] as AiDriverCard[]
+					})
+				}
+			}
+		}).catch((err) => {
+			// 失败回退本地规则引擎
+			const msg = err != null && err.message != null ? err.message.toString() : ''
+			// 本地仍可规划
+			if (!wantsImmediatePlan(raw) && aiMessages.value.length <= 3) {
+				aiThinking.value = false
+				let zoneHint = '综合'
+				if (aiPrefZone.value === 'family') zoneHint = '家庭亲子'
+				else if (aiPrefZone.value === 'college') zoneHint = '高校研学'
+				else if (aiPrefZone.value === 'business') zoneHint = '企业商务'
+				else if (aiPrefZone.value === 'mixed') zoneHint = '多日混搭'
+				let paceHint = '适中'
+				if (aiPrefPace.value === 'light') paceHint = '轻松'
+				if (aiPrefPace.value === 'full') paceHint = '紧凑'
+				let carHint = '按人数推荐'
+				if (aiPrefNeedCar.value === 'no') carHint = '不租'
+				if (aiPrefNeedCar.value === 'yes') carHint = '需要'
+				const tip = msg.length > 0 ? '（云端助手暂不可用，先用本地规划）\n' : ''
+				pushAiMessage('bot', tip + '收到。当前理解：偏好「' + zoneHint + '」，节奏「' + paceHint + '」，用车「' + carHint + '」。\n可以说得更细，或直接回「给我出方案」。', false)
+				return
+			}
+			const planText = buildMultiDayPlanText()
+			aiThinking.value = false
+			const tip = msg.length > 0 ? '（云端助手暂不可用，已用本地规划）\n' : ''
+			const msgId = pushAiMessage('bot', tip + planText, true)
+			const flat = aiPendingSpotIdsByDay.value
+			const dk2: string[] = []
+			const sl2: any[] = []
+			for (let fi = 0; fi < flat.length; fi++) {
+				const row = flat[fi]
+				const sep = row.indexOf('|||')
+				if (sep < 0) continue
+				const dkey = row.substring(0, sep)
+				const idsPart = row.substring(sep + 3)
+				const idarr: string[] = []
+				if (idsPart.length > 0) {
+					let rest = idsPart
+					while (rest.length > 0) {
+						const c = rest.indexOf(',')
+						if (c < 0) {
+							if (rest.length > 0) idarr.push(rest)
+							break
+						}
+						const piece = rest.substring(0, c)
+						if (piece.length > 0) idarr.push(piece)
+						rest = rest.substring(c + 1)
+					}
+				}
+				dk2.push(dkey)
+				sl2.push(idarr)
+			}
+			enrichPlanMessage(msgId, tip + planText, dk2, sl2, aiPendingRentalId.value, true)
+		})
+	}
+
+	const sendAiInput = () => {
+		if (aiThinking.value) return
+		const t = aiInputText.value
+		if (t == null) return
+		const trimmed = t.trim()
+		if (trimmed.length === 0) return
+		aiInputText.value = ''
+		runAiReplyPipeline(trimmed)
+	}
+
+	const sendAiQuick = (text: string) => {
+		if (aiThinking.value) return
+		runAiReplyPipeline(text)
+	}
+
+	const requestAiReplan = () => {
+		if (aiThinking.value) return
+		aiPlanVariant.value = aiPlanVariant.value + 1
+		runAiReplyPipeline('再帮我改一版方案，可以换点位搭配')
+	}
+
+	const applyAudienceTemplate = (tpl: AudienceSpotTemplate) => {
+		const keys = selectedDayKeys.value
+		if (keys.length === 0) {
+			pendingAudienceTplId.value = tpl.id
+			uni.showToast({ title: '已记住这套点位，选好日期后自动写入', icon: 'none' })
+			return
+		}
+		const valid: string[] = []
+		const src = tpl.spotIds
+		for (let i = 0; i < src.length; i++) {
+			if (findSpot(src[i]) != null) valid.push(src[i])
+		}
+		if (valid.length === 0) {
+			uni.showToast({ title: '该模板还没有可用点位', icon: 'none' })
+			return
+		}
+		aiActiveTemplateId.value = tpl.id
+		if (tpl.audience === 'family' || tpl.audience === 'college' || tpl.audience === 'business') {
+			aiPrefZone.value = tpl.audience
+		}
+		if (tpl.pace === 'light' || tpl.pace === 'balanced' || tpl.pace === 'full') aiPrefPace.value = tpl.pace
+		const flat: string[] = []
+		for (let i = 0; i < keys.length; i++) {
+			setRouteIds(keys[i], valid)
+			let joined = ''
+			for (let j = 0; j < valid.length; j++) {
+				if (j > 0) joined = joined + ','
+				joined = joined + valid[j]
+			}
+			flat.push(keys[i] + '|||' + joined)
+		}
+		storeAiPendingPlanFlat(flat, 'none', '已选用「' + tpl.name + '」')
+aiPlanHint.value = '已选用「' + tpl.name + '」'
+		uni.showToast({ title: '已选用 ' + tpl.name, icon: 'success' })
+	}
+
+	const applyAiPendingPlan = () => {
+		if (!aiHasPendingPlan.value) {
+			uni.showToast({ title: '暂无待应用方案', icon: 'none' })
+			return
+		}
+		if (aiPlanning.value) return
+		aiPlanning.value = true
+		const flat = aiPendingSpotIdsByDay.value
+		for (let i = 0; i < flat.length; i++) {
+			const row = flat[i]
+			const sep = row.indexOf('|||')
+			if (sep < 0) continue
+			const dk = row.substring(0, sep)
+			const idsPart = row.substring(sep + 3)
+			const ids: string[] = []
+			if (idsPart.length > 0) {
+				let rest = idsPart
+				while (rest.length > 0) {
+					const c = rest.indexOf(',')
+					if (c < 0) {
+						if (rest.length > 0) ids.push(rest)
+						break
+					}
+					const piece = rest.substring(0, c)
+					if (piece.length > 0) ids.push(piece)
+					rest = rest.substring(c + 1)
+				}
+			}
+			setRouteIds(dk, ids)
+		}
+		aiPendingRentalId.value = 'none'
+		const keys = aiPendingDayKeys.value
+		if (keys.length > 0) {
+			activeDayKey.value = keys[0]
+		}
+		const stopCount = totalSelectedStops.value
+		aiPlanHint.value = 'AI 已规划 ' + keys.length.toString() + ' 天 · ' + stopCount.toString() + ' 个点位'
+		aiPlanning.value = false
+		pushAiMessage('bot', '已写入各天点位。要用车就点页面「叫车」发单，司机接单后再议价。想改某一天，继续跟我说就行。', false)
+		uni.showToast({ title: '已写入点位', icon: 'success' })
+		setTimeout(() => {
+			showAiChat.value = false
+		}, 700)
+	}
+
+	/** 旧入口：打开对话规划（覆盖全部已选日期） */
+	const runAiPlanForActiveDay = () => {
+		openAiChat()
+	}
+
+
+
+
+
+
+
+
+
+	const goAddTraveler = () => {
+		uni.navigateTo({ url: '/pages/mine/add-traveler' })
+	}
+
+	const loadTravelers = () => {
+		fetchTravelers<Traveler>().then((list) => {
+			travelers.value = list
+			const next: string[] = []
+			for (let i = 0; i < selectedTravelerIds.value.length; i++) {
+				const id = selectedTravelerIds.value[i]
+				for (let j = 0; j < list.length; j++) {
+					if (list[j].id === id) { next.push(id); break }
+				}
+			}
+			if (next.length === 0) {
+				for (let j = 0; j < list.length; j++) {
+					if (list[j].isSelf) { next.push(list[j].id); break }
+				}
+			}
+			selectedTravelerIds.value = next
+		}).catch((_e) => { travelers.value = [] })
+	}
+
+	const daysInMonthOf = (year: number, month: number): number => {
+		return new Date(year, month, 0).getDate()
+	}
+
+	const makeOpenSlot = (year: number, month: number, day: number, spots: SpotOption[]): DaySlot => {
+		const dt = new Date(year, month - 1, day)
+		const openMin = 9 * 60
+		const closeMin = 16 * 60 + 30
+		const daySpotIds: string[] = []
+		for (let k = 0; k < spots.length; k++) daySpotIds.push(spots[k].id)
+		const key = dayKeyOf(year, month, day)
+		const capacity = dayCapacityOf(key)
+		const paused = isDayPaused(key)
+		return {
+			key: key,
+			year: year,
+			month: month,
+			day: day,
+			weekday: dt.getDay(),
+			openMin: openMin,
+			closeMin: closeMin,
+			openLabel: formatClock(openMin),
+			closeLabel: formatClock(closeMin),
+			spotIds: daySpotIds,
+			enrolled: 0,
+			capacity: capacity,
+			full: paused,
+			paused: paused
+		}
+	}
+
+	const ensureMonthSlots = (year: number, month: number, spots: SpotOption[]) => {
+		const last = daysInMonthOf(year, month)
+		const existing = daySlots.value
+		const seen: string[] = []
+		for (let i = 0; i < existing.length; i++) seen.push(existing[i].key)
+		const next: DaySlot[] = []
+		for (let i = 0; i < existing.length; i++) next.push(existing[i])
+		for (let d = 1; d <= last; d++) {
+			const key = dayKeyOf(year, month, d)
+			let has = false
+			for (let s = 0; s < seen.length; s++) {
+				if (seen[s] === key) {
+					has = true
+					break
+				}
+			}
+			if (has) continue
+			next.push(makeOpenSlot(year, month, d, spots))
+		}
+		daySlots.value = next
+	}
+
+	/** 从当月起生成可预约日：仅当天及未来 */
+	const buildDaySlots = (spots: SpotOption[]) => {
+		const tk = todayKey()
+		const parts = tk.split("-")
+		const year = parseInt(parts[0])
+		const month = parseInt(parts[1])
+		daySlots.value = []
+		for (let i = 0; i < 12; i++) {
+			let y = year
+			let m = month + i
+			while (m > 12) {
+				m = m - 12
+				y++
+			}
+			ensureMonthSlots(y, m, spots)
+		}
+		viewYear.value = year
+		viewMonth.value = month
+		calendarTick.value++
+	}
+
+	const loadProject = (id: string) => {
+		fetchStudyProjectDetail(id).then((p) => {
+			project.value = p
+			if (allSpots.value.length > 0) buildDaySlots(allSpots.value)
+			else buildDaySlots([] as SpotOption[])
+			calendarTick.value++
+			applyPendingAudienceIfReady()
+		}).catch((err) => {
+			const msg = err != null && err.message != null ? err.message.toString() : '项目加载失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+
+		fetchStudyProjectRoutePoints(id).then((res) => {
+			const catalogSpots = parseStudyRouteSpots(res)
+			allSpots.value = catalogSpots
+			zoneFilters.value = buildRouteZoneFilters(catalogSpots, parseRouteZoneFilters(res != null ? res['zones'] : null))
+			buildDaySlots(catalogSpots)
+			applyPendingAudienceIfReady()
+		}).catch((_e) => {
+			allSpots.value = [] as SpotOption[]
+			buildDaySlots([] as SpotOption[])
+		})
+	}
+
+	const collectAllRoutePointIds = (): string[] => {
+		const seen: string[] = []
+		const keys = selectedDayKeys.value
+		for (let i = 0; i < keys.length; i++) {
+			const ids = getRouteIds(keys[i])
+			for (let j = 0; j < ids.length; j++) {
+				let exists = false
+				for (let k = 0; k < seen.length; k++) {
+					if (seen[k] === ids[j]) { exists = true; break }
+				}
+				if (!exists) seen.push(ids[j])
+			}
+		}
+		return seen
+	}
+
+	const submitBooking = () => {
+		const p = project.value
+		if (p == null || isSubmitting.value) return
+		if (selectedTravelerIds.value.length === 0) {
+			uni.showToast({ title: '请至少选择一位游客', icon: 'none' })
+			return
+		}
+		if (selectedDayKeys.value.length === 0) {
+			uni.showToast({ title: '请至少选择一个研学日期', icon: 'none' })
+			return
+		}
+		if (participantCount.value > remainingSeats.value) {
+			uni.showToast({ title: '所选人数超过剩余名额', icon: 'none' })
+			return
+		}
+
+		isSubmitting.value = true
+		// 预约强制不带租车；用车走浮动叫车 / rental-create
+		const rentalId = 'none'
+		const rentalFee = 0
+		const driverId = ''
+		const routeIds = collectAllRoutePointIds()
+		const tripDays: any[] = []
+		const dayKeys = selectedDayKeys.value
+		for (let di = 0; di < dayKeys.length; di++) {
+			const dk = dayKeys[di]
+			const ids = getRouteIds(dk)
+			tripDays.push({ dayKey: dk, spotIds: ids })
+		}
+		const tripPlan = { dayKeys: dayKeys, days: tripDays }
+		const extra = {
+			tripPlan: tripPlan,
+			pickupAddress: '',
+			pickupLatitude: null,
+			pickupLongitude: null,
+			rentalDriverName: '',
+			rentalDriverPhone: '',
+			rentalDriverWechat: '',
+			rentalVehicleName: '',
+			rentalPlateNo: ''
+		} as any
+		createStudyBooking(p.id, selectedTravelerIds.value, rentalId, rentalFee, routeIds, driverId, extra).then((booking) => {
+			isSubmitting.value = false
+			if (isStudyBookingUnpaidStatus(booking.status)) {
+				confirmPayBooking(booking)
+			} else if (isStudyBookingPendingStatus(booking.status)) {
+				syncStudyBookingsFromApi().then((_ids) => {}).catch((_e) => {})
+				uni.showToast({ title: '订单已创建', icon: 'success' })
+				setTimeout(() => {
+					uni.redirectTo({ url: '/pages/appointment/booking-detail?id=' + booking.id })
+				}, 400)
+			} else {
+				addProjectBooking(p.id)
+				syncStudyBookingsFromApi().then((_ids) => {}).catch((_e) => {})
+				uni.showToast({ title: '预约成功', icon: 'success' })
+				// 进订单详情（用 booking.id；详情接口同时支持 groupId），避免返回项目页误显「结算」
+				setTimeout(() => {
+					uni.redirectTo({ url: '/pages/appointment/booking-detail?id=' + booking.id })
+				}, 400)
+			}
+		}).catch((err) => {
+			isSubmitting.value = false
+			const msg = err != null && err.message != null ? err.message.toString() : '预约失败，请稍后重试'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	const confirmPayBooking = (booking: StudyBookingRecord) => {
+		if (!booking.isBooker) {
+			uni.showToast({ title: '请联系预约发起人完成支付', icon: 'none' })
+			return
+		}
+		uni.showModal({
+			title: '确认支付',
+			content: '当前为模拟支付。行程 ' + selectedDayKeys.value.length.toString() + ' 天，应付 ¥' + bookingTotalAmount.value,
+			confirmText: '确认支付',
+			cancelText: '稍后支付',
+			success: (res) => {
+				if (!res.confirm) {
+					uni.showToast({ title: '可在我的订单-待支付继续', icon: 'none' })
+					setTimeout(() => {
+						uni.redirectTo({ url: '/pages/mine/my-orders?status=unpaid' })
+					}, 400)
+					return
+				}
+				payStudyBooking(booking.id).then((paid) => {
+					addProjectBooking(paid.projectId)
+					syncStudyBookingsFromApi().then((_ids) => {}).catch((_e) => {})
+					uni.showToast({ title: '支付成功', icon: 'success' })
+					setTimeout(() => { uni.navigateBack() }, 500)
+				}).catch((err) => {
+					const msg = err != null && err.message != null ? err.message.toString() : '支付失败'
+					uni.showToast({ title: msg, icon: 'none' })
+				})
+			}
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const idParam = options['id']
+		const id = idParam != null ? idParam.toString() : ''
+		if (id.length === 0) {
+			uni.showToast({ title: '缺少项目ID', icon: 'none' })
+			return
+		}
+		projectId.value = id
+		const tplParam = options['tpl']
+		if (tplParam != null && tplParam.toString().length > 0) pendingAudienceTplId.value = tplParam.toString()
+		// 开放档期在 9 月，日历默认落在 9 月
+		viewYear.value = 2026
+		viewMonth.value = 9
+		loadProject(id)
+		loadTravelers()
+	})
+
+	onShow(() => {
+		if (projectId.value.length > 0) loadTravelers()
+		// 从路径列表页回写选中站点
+		try {
+			const raw = uni.getStorageSync('mqlt_booking_route_pick')
+			if (raw != null) {
+				const s = raw.toString()
+				if (s.length > 0) {
+					uni.removeStorageSync('mqlt_booking_route_pick')
+					const sep = s.indexOf('|||')
+					if (sep > 0) {
+						const dk = s.substring(0, sep)
+						const idsPart = s.substring(sep + 3)
+						const ids: string[] = []
+						if (idsPart.length > 0) {
+							let rest = idsPart
+							while (rest.length > 0) {
+								const c = rest.indexOf(',')
+								if (c < 0) {
+									if (rest.length > 0) ids.push(rest)
+									break
+								}
+								const piece = rest.substring(0, c)
+								if (piece.length > 0) ids.push(piece)
+								rest = rest.substring(c + 1)
+							}
+						}
+						setRouteIds(dk, ids)
+						activeDayKey.value = dk
+						aiPlanHint.value = '已从路径列表更新本日站点'
+						uni.showToast({ title: '路线已更新', icon: 'success' })
+					}
+				}
+			}
+		} catch (_e) {}
+		try {
+			const rawTpl = uni.getStorageSync('mqlt_booking_audience_tpl')
+			if (rawTpl != null) {
+				const s = rawTpl.toString()
+				if (s.length > 0) {
+					uni.removeStorageSync('mqlt_booking_audience_tpl')
+					pendingAudienceTplId.value = s
+				}
+			}
+		} catch (_e2) {}
+		applyPendingAudienceIfReady()
+	})
+</script>
+
+<style>
+	.page-wrapper { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.header-section {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-bottom-width: 1px;
+		border-bottom-style: solid;
+		border-bottom-color: #E5E7EB;
+	}
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+	.nav-back { flex-direction: row; align-items: center; z-index: 1; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { font-size: 16px; color: #1A1A1A; font-weight: 500; }
+	.nav-title {
+		position: absolute; left: 0; right: 0; text-align: center;
+		font-size: 17px; font-weight: 700; color: #1A1A1A;
+	}
+	.project-banner { padding: 2px 16px 14px 16px; }
+	.project-kicker {
+		font-size: 10px; font-weight: 800; color: #1A73E8;
+		letter-spacing: 1.4px; margin-bottom: 6px;
+	}
+	.project-title { font-size: 18px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px; }
+	.project-sub { font-size: 12px; color: #374151; }
+
+	.main-scroll { flex: 1; height: 0; min-height: 0; width: 100%; background-color: #F5F7FB; }
+	.scroll-inner { padding: 14px 16px 8px 16px; }
+
+	.section-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 12px;
+		overflow: hidden;
+		position: relative;
+	}
+	.section-gold-edge {
+		position: absolute;
+		left: 0; right: 0; top: 0;
+		height: 3px;
+		background-color: #1A73E8;
+	}
+	.section-head { margin-bottom: 14px; padding-top: 2px; }
+	.section-head-row { align-items: center; margin-bottom: 6px; }
+	.section-kicker {
+		flex: 1;
+		font-size: 10px; font-weight: 800; color: #1A73E8;
+		letter-spacing: 1.2px;
+	}
+	.section-title { font-size: 17px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px; }
+	.section-desc { font-size: 12px; color: #374151; line-height: 18px; }
+	.section-link {
+		padding: 4px 12px; border-radius: 12px; background-color: #1A73E8;
+		flex-shrink: 0;
+	}
+	.section-link-text { font-size: 12px; font-weight: 800; color: #FFFFFF; }
+
+	.traveler-row {
+		flex-direction: row; align-items: center; padding: 12px; border-radius: 12px;
+		background-color: #F5F7FB; border-width: 1px; border-style: solid;
+		border-color: #E5E7EB; margin-bottom: 8px;
+	}
+	.traveler-row-on { background-color: #FFFFFF; border-color: #1A73E8; }
+	.check-dot {
+		width: 22px; height: 22px; border-radius: 11px; border-width: 1px; border-style: solid;
+		border-color: #E5E7EB; align-items: center; justify-content: center;
+		margin-right: 10px; background-color: #FFFFFF; flex-shrink: 0;
+	}
+	.check-dot-on { background-color: #1A73E8; border-color: #1A73E8; }
+	.check-dot-icon { width: 12px; height: 12px; }
+	.traveler-info { flex: 1; min-width: 0; }
+	.traveler-name-row { align-items: center; margin-bottom: 2px; }
+	.traveler-name { font-size: 15px; font-weight: 700; color: #1A1A1A; margin-right: 8px; }
+	.self-tag { padding: 1px 6px; border-radius: 5px; background-color: #1A73E8; }
+	.self-tag-text { font-size: 10px; color: #FFFFFF; font-weight: 800; }
+	.traveler-phone { font-size: 12px; color: #374151; }
+
+	.empty-block { align-items: center; padding: 20px 8px; }
+	.empty-title { font-size: 14px; font-weight: 700; color: #1A1A1A; margin-bottom: 4px; }
+	.empty-desc { font-size: 12px; color: #9CA3AF; text-align: center; margin-bottom: 12px; }
+	.empty-btn { padding: 8px 16px; border-radius: 16px; background-color: #1A73E8; }
+	.empty-btn-text { font-size: 13px; font-weight: 700; color: #FFFFFF; }
+
+	/* 日历 */
+	.cal-nav {
+		align-items: center; justify-content: space-between; margin-bottom: 10px;
+	}
+	.page-wrapper .cal-nav-btn {
+		width: 36px; height: 36px; border-radius: 18px; background-color: #E8EEF8;
+		align-items: center; justify-content: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.cal-nav-btn-text { font-size: 22px; color: #1A1A1A; font-weight: 600; line-height: 24px; }
+	.cal-month-title { font-size: 16px; font-weight: 800; color: #1A1A1A; }
+	.cal-week-row { flex-direction: row; margin-bottom: 4px; }
+	.cal-week-cell {
+		width: 14.28%; text-align: center; font-size: 11px; color: #9CA3AF; font-weight: 600;
+		padding: 4px 0;
+	}
+	.cal-grid {
+		flex-direction: row; flex-wrap: wrap;
+	}
+	.cal-cell {
+		width: 14.2%;
+		height: 62px;
+		padding: 3px 0 2px 0;
+		align-items: center;
+		justify-content: flex-start;
+		border-radius: 8px;
+		margin-bottom: 4px;
+		overflow: hidden;
+	}
+	.cal-cell-muted { opacity: 0.28; }
+	.cal-cell-closed { opacity: 0.45; }
+	.cal-cell-full { opacity: 0.55; }
+	.cal-cell-today {
+		background-color: #FFFFFF;
+	}
+	.cal-cell-on {
+		background-color: #1A73E8;
+		opacity: 1;
+	}
+	.cal-day-num {
+		font-size: 14px; font-weight: 700; color: #1A1A1A; margin-bottom: 1px;
+	}
+	.cal-day-num-on { color: #FFFFFF; }
+	.cal-day-hours {
+		font-size: 9px;
+		color: #4B5563;
+		text-align: center;
+		lines: 1;
+		line-height: 12px;
+		width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.cal-day-hours-off { color: #9CA3AF; }
+	.cal-day-hours-full { color: #DC2626; font-weight: 700; }
+	.cal-day-enroll {
+		font-size: 9px;
+		color: #6B7280;
+		font-weight: 700;
+		text-align: center;
+		margin-top: 1px;
+		lines: 1;
+		width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.cal-cell-on .cal-day-hours { color: #FFFFFF; }
+	.cal-cell-on .cal-day-enroll { color: #FFFFFF; }
+	.cal-cell-on .cal-day-hours-full { color: #FECACA; }
+	.cal-hint {
+		font-size: 12px; color: #9CA3AF; margin-top: 8px; line-height: 17px;
+	}
+
+	.selected-days-bar {
+		align-items: center; margin-top: 12px; margin-bottom: 4px;
+	}
+	.selected-days-label {
+		font-size: 12px; font-weight: 700; color: #1A1A1A; margin-right: 8px; flex-shrink: 0;
+	}
+	.selected-days-scroll { flex: 1; height: 34px; }
+	.selected-days-inner { flex-direction: row; align-items: center; height: 34px; }
+	.day-pill {
+		padding: 6px 12px; border-radius: 14px; background-color: #E8EEF8;
+		border-width: 1px; border-style: solid; border-color: #C5D0E0;
+		margin-right: 6px; flex-shrink: 0;
+	}
+	.day-pill-on { background-color: #1A73E8; }
+	.day-pill-text { font-size: 12px; font-weight: 700; color: #374151; }
+	.day-pill-text-on { color: #FFFFFF; }
+
+	.day-route-block {
+		margin-top: 14px; padding-top: 14px;
+		border-top-width: 0.5px; border-top-color: #E5E7EB;
+	}
+	.day-route-head { margin-bottom: 10px; }
+	.day-route-title { font-size: 15px; font-weight: 800; color: #1A1A1A; margin-bottom: 2px; }
+	.day-route-hours { font-size: 12px; color: #1A73E8; font-weight: 600; }
+
+.day-route-title-row {
+	align-items: center;
+	margin-bottom: 2px;
+}
+.day-route-title-row .day-route-title {
+	flex: 1;
+	min-width: 0;
+	margin-bottom: 0;
+}
+.card-more-link {
+	margin-left: auto;
+	font-size: 14px;
+	color: #1A73E8;
+	font-weight: 500;
+	flex-shrink: 0;
+	padding-left: 10px;
+}
+
+
+	.zone-row {
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-bottom: 10px;
+	}
+	.zone-chip {
+		padding: 7px 12px;
+		border-radius: 16px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		margin-right: 8px;
+		margin-bottom: 6px;
+	}
+	.zone-chip-on {
+		background-color: #1A73E8;
+	}
+	.zone-chip-text {
+		font-size: 12px;
+		font-weight: 700;
+		color: #374151;
+	}
+	.zone-chip-text-on{
+		color: #FFFFFF;
+	}
+
+	.ai-aud-wrap { margin-top: 10px; width: 220px; }
+	.ai-aud-btn {
+		width: 220px;
+		height: 40px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		border-radius: 8px;
+	}
+	.ai-aud-btn-txt { font-size: 14px; font-weight: 800; color: #FFFFFF; }
+	.ai-aud-hint { font-size: 11px; color: #6B7280; margin-top: 6px; width: 220px; }
+	.ai-chat-aud-top {
+		padding: 0 10px;
+		height: 28px;
+		margin-right: 8px;
+		border-radius: 8px;
+		background-color: #E8EEF8;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.ai-chat-aud-top-txt { font-size: 12px; font-weight: 800; color: #1A73E8; }
+	.ai-entry {
+		align-items: center;
+		padding: 12px;
+		border-radius: 14px;
+		background-color: #1A73E8;
+		margin-bottom: 10px;
+	}
+	.ai-entry-dot {
+		width: 36px; height: 36px; border-radius: 18px;
+		background-color: #1A73E8;
+		align-items: center; justify-content: center;
+		margin-right: 10px; flex-shrink: 0;
+		overflow: hidden;
+	}
+	.ai-entry-icon { width: 26px; height: 26px; }
+	.ai-entry-copy { flex: 1; min-width: 0; }
+	.ai-entry-title { font-size: 15px; font-weight: 800; color: #FFFFFF; margin-bottom: 2px; }
+	.ai-entry-sub { font-size: 11px; color: #FFFFFF; }
+	.ai-entry-go { font-size: 12px; font-weight: 800; color: #FFFFFF; flex-shrink: 0; }
+	.ai-row { align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+	.ai-btn {
+		height: 34px; padding: 0 14px; border-radius: 17px; background-color: #1A73E8;
+		align-items: center; justify-content: center; margin-right: 8px; margin-bottom: 6px;
+	}
+	.ai-btn-text{ font-size: 13px; font-weight: 700; color: #FFFFFF; }
+	.page-wrapper .ai-btn-ghost { background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+	.ai-btn-ghost-text { font-size: 13px; font-weight: 700; color: #1A1A1A; }
+	.ai-hint { font-size: 12px; color: #1A1A1A; margin-bottom: 10px; line-height: 17px; }
+
+.ai-chat-mask {
+	position: fixed;
+	left: 0; right: 0; top: 0; bottom: 0;
+	background-color: rgba(32, 33, 36, 0.42);
+	z-index: 940;
+}
+.ai-chat-sheet {
+	position: fixed;
+	left: 0; right: 0; bottom: 0;
+	height: 82%;
+	max-height: 82%;
+	background-color: #FFFFFF;
+	border-top-left-radius: 20px;
+	border-top-right-radius: 20px;
+	z-index: 941;
+	overflow: hidden;
+}
+.ai-chat-handle {
+	width: 36px; height: 4px; border-radius: 2px;
+	background-color: #1A73E8; align-self: center;
+	margin-top: 10px; margin-bottom: 6px;
+	flex-shrink: 0;
+}
+.ai-chat-top {
+	align-items: center;
+	padding: 6px 16px 12px 16px;
+	background-color: #1A73E8;
+	flex-shrink: 0;
+}
+.ai-chat-avatar {
+	width: 40px; height: 40px; border-radius: 20px;
+	background-color: #1A73E8;
+	align-items: center; justify-content: center;
+	flex-shrink: 0; margin-right: 10px;
+}
+.ai-chat-avatar-icon { width: 28px; height: 28px; }
+.ai-chat-titles { flex: 1; min-width: 0; }
+.ai-chat-kicker {
+	font-size: 9px; font-weight: 800; color: #FFFFFF;
+	letter-spacing: 1.2px; margin-bottom: 2px;
+}
+.ai-chat-title {
+	font-size: 16px; font-weight: 800; color: #FFFFFF;
+}
+.ai-chat-close {
+	padding: 6px 12px; border-radius: 14px; background-color: #FFFFFF;
+	border-width: 0;
+	flex-shrink: 0; margin-left: 8px;
+}
+.ai-chat-close-text { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+.ai-chat-scroll {
+	width: 100%;
+	flex: 1;
+	height: 0;
+	min-height: 0;
+	background-color: #F5F7FB;
+}
+.ai-chat-inner {
+	padding: 14px 14px 8px 14px;
+	flex-direction: column;
+}
+.ai-chat-end-anchor { height: 8px; width: 100%; }
+.ai-msg-row {
+	margin-bottom: 12px;
+	align-items: flex-end;
+}
+.ai-msg-row-bot {
+	flex-direction: row;
+	align-items: flex-start;
+}
+.ai-msg-row-user {
+	flex-direction: row;
+	justify-content: flex-end;
+}
+.ai-msg-bot-dot {
+	width: 28px; height: 28px; border-radius: 14px;
+	background-color: #1A73E8;
+	align-items: center; justify-content: center;
+	margin-right: 8px; flex-shrink: 0; margin-top: 2px;
+}
+.ai-msg-bot-icon { width: 18px; height: 18px; }
+.ai-bubble {
+	max-width: 78%;
+	padding: 10px 12px;
+	border-radius: 14px;
+}
+.ai-bubble-bot {
+	background-color: #FFFFFF;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #E5E7EB;
+	border-top-left-radius: 4px;
+}
+.ai-bubble-user {
+	background-color: #1A73E8;
+	border-top-right-radius: 4px;
+}
+.ai-bubble-plan {
+	max-width: 88%;
+	background-color: #FFFFFF;
+	border-color: #E5E7EB;
+}
+.ai-bubble-text {
+	font-size: 13px;
+	color: #1A1A1A;
+	line-height: 20px;
+}
+.ai-bubble-text-user {
+	color: #FFFFFF;
+}
+
+.ai-block-label {
+	font-size: 12px;
+	font-weight: 800;
+	color: #1A1A1A;
+	margin-top: 12px;
+	margin-bottom: 8px;
+}
+.ai-day-list { margin-top: 4px; }
+.ai-day-card {
+	padding: 10px 12px;
+	border-radius: 12px;
+	background-color: #F5F7FB;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #E5E7EB;
+	margin-bottom: 8px;
+}
+.ai-day-head { align-items: center; margin-bottom: 4px; }
+.ai-day-label { flex: 1; font-size: 13px; font-weight: 800; color: #1A1A1A; }
+.ai-day-stops { font-size: 11px; font-weight: 700; color: #374151; }
+.ai-day-route { font-size: 12px; color: #374151; line-height: 18px; }
+.ai-day-ops { margin-top: 8px; align-items: center; }
+.ai-mini-link {
+	font-size: 12px;
+	font-weight: 700;
+	color: #1A73E8;
+	margin-right: 14px;
+}
+.ai-spot-block { margin-top: 4px; }
+.ai-spot-scroll { width: 100%; height: 210px; }
+.ai-spot-scroll-inner {
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: stretch;
+	padding: 2px 0 6px 0;
+	height: 204px;
+}
+.ai-spot-card {
+	width: 148px;
+	height: 196px;
+	margin-right: 10px;
+	border-radius: 14px;
+	background-color: #FFFFFF;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #E5E7EB;
+	overflow: visible;
+	flex-shrink: 0;
+}
+.ai-spot-tail { width: 4px; height: 1px; flex-shrink: 0; }
+.ai-spot-cover {
+	width: 148px;
+	height: 78px;
+	align-items: center;
+	justify-content: center;
+}
+.ai-spot-cover-cap { font-size: 10px; font-weight: 700; color: #FFFFFF; }
+.ai-spot-title {
+	font-size: 13px;
+	font-weight: 800;
+	color: #1A1A1A;
+	padding: 8px 10px 2px 10px;
+	lines: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ai-spot-meta {
+	font-size: 11px;
+	color: #9CA3AF;
+	padding: 0 10px;
+	font-weight: 600;
+}
+.ai-spot-desc {
+	font-size: 11px;
+	color: #374151;
+	padding: 4px 10px 0 10px;
+	lines: 2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex: 1;
+}
+.ai-spot-ops {
+	padding: 6px 10px 10px 10px;
+	align-items: center;
+}
+.ride-tip-btn {
+	margin-top: 10px;
+	align-self: flex-start;
+	padding: 8px 14px;
+	border-radius: 999px;
+	background-color: #1A73E8;
+	border-width: 0;
+}
+.ride-tip-btn-text { font-size: 13px; font-weight: 700; color: #FFFFFF; }
+.ai-rental-block { margin-top: 4px; }
+.ai-rental-card {
+	align-items: center;
+	padding: 10px;
+	border-radius: 12px;
+	background-color: #F5F7FB;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #E5E7EB;
+}
+.ai-rental-icon-wrap {
+	width: 36px; height: 36px; border-radius: 18px;
+	background-color: #FFFFFF;
+	align-items: center; justify-content: center;
+	margin-right: 10px; flex-shrink: 0;
+}
+.ai-rental-icon { width: 24px; height: 24px; }
+.ai-rental-body { flex: 1; min-width: 0; }
+.ai-rental-name { font-size: 14px; font-weight: 800; color: #1A1A1A; margin-bottom: 2px; }
+.ai-rental-desc { font-size: 11px; color: #374151; lines: 2; }
+.ai-rental-pick {
+	padding: 6px 12px; border-radius: 14px; background-color: #1A73E8;
+	flex-shrink: 0; margin-left: 8px;
+}
+.ai-rental-pick-text{ font-size: 12px; font-weight: 800; color: #FFFFFF; }
+.ai-driver-block { margin-top: 4px; }
+.ai-driver-card {
+	padding: 10px;
+	border-radius: 12px;
+	background-color: #FFFFFF;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #E5E7EB;
+	margin-bottom: 8px;
+}
+.ai-driver-top { align-items: flex-start; }
+.ai-driver-avatar {
+	width: 36px; height: 36px; border-radius: 18px;
+	background-color: #1A73E8;
+	align-items: center; justify-content: center;
+	margin-right: 10px; flex-shrink: 0;
+}
+.ai-driver-avatar-text { font-size: 14px; font-weight: 800; color: #FFFFFF; }
+.ai-driver-main { flex: 1; min-width: 0; }
+.ai-driver-name-row { align-items: center; margin-bottom: 2px; }
+.ai-driver-name { font-size: 14px; font-weight: 800; color: #1A1A1A; margin-right: 6px; }
+.ai-driver-status {
+	padding: 1px 6px; border-radius: 8px; background-color: #ECFDF5;
+}
+.ai-driver-status-ok { background-color: #ECFDF5; }
+.ai-driver-status-bad { background-color: #FEE2E2; }
+.ai-driver-status-text { font-size: 10px; font-weight: 700; }
+.ai-driver-status-text-ok { color: #059669; }
+.ai-driver-status-text-bad { color: #DC2626; }
+.ai-driver-plate { font-size: 12px; color: #374151; margin-bottom: 2px; }
+.ai-driver-dist { font-size: 11px; color: #9CA3AF; }
+.ai-driver-price-col { align-items: flex-end; flex-shrink: 0; margin-left: 6px; }
+.ai-driver-price { font-size: 16px; font-weight: 800; color: #1A1A1A; }
+.ai-driver-price-hint { font-size: 10px; color: #9CA3AF; margin-top: 2px; }
+.ai-driver-contact {
+	margin-top: 10px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.ai-contact-chip {
+	padding: 6px 12px;
+	border-radius: 14px;
+	background-color: #1A73E8;
+	margin-right: 8px;
+	margin-bottom: 4px;
+}
+.ai-contact-chip-text{ font-size: 12px; font-weight: 700; color: #FFFFFF; }
+.ai-contact-chip-ghost { background-color: #FFFFFF; }
+.ai-contact-chip-text-ghost { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+.ai-contact-chip-primary { background-color: #1A73E8; }
+.ai-contact-chip-text-primary { font-size: 12px; font-weight: 800; color: #FFFFFF; }
+.ai-driver-tip {
+	margin-top: 8px;
+	padding: 10px 12px;
+	border-radius: 12px;
+	background-color: #E8F0FE;
+}
+.ai-driver-tip-text { font-size: 12px; color: #4B5563; line-height: 18px; margin-bottom: 8px; }
+.ai-driver-tip-btn {
+	align-self: flex-start;
+	padding: 6px 12px;
+	border-radius: 14px;
+	background-color: #1A73E8;
+}
+.ai-driver-tip-btn-text { font-size: 12px; font-weight: 700; color: #FFFFFF; }
+.ai-bubble-plan {
+	max-width: 92%;
+}
+
+.ai-plan-actions {
+	margin-top: 12px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.ai-plan-apply {
+	height: 34px; padding: 0 14px; border-radius: 17px;
+	background-color: #1A73E8;
+	align-items: center; justify-content: center;
+	margin-right: 8px; margin-bottom: 4px;
+}
+.ai-plan-apply-text{
+	font-size: 13px; font-weight: 800; color: #FFFFFF;
+}
+.ai-plan-retry {
+	height: 34px; padding: 0 12px; border-radius: 17px;
+	background-color: #FFFFFF;
+	border-width: 1px; border-style: solid; border-color: rgba(26, 115, 232, 0.2);
+	align-items: center; justify-content: center;
+	margin-bottom: 4px;
+}
+.ai-plan-retry-text {
+	font-size: 13px; font-weight: 700; color: #1A1A1A;
+}
+.ai-composer {
+	flex-shrink: 0;
+	padding: 10px 12px 22px 12px;
+	background-color: #FFFFFF;
+	border-width: 0;
+	border-top-width: 1px;
+	border-top-style: solid;
+	border-top-color: #E5E7EB;
+}
+.ai-quick-scroll {
+	width: 100%;
+	height: 36px;
+	margin-bottom: 10px;
+}
+.ai-quick-inner {
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	height: 36px;
+	padding-right: 4px;
+	flex-grow: 0;
+	flex-shrink: 0;
+	align-self: flex-start;
+}
+	.ai-tpl-scroll {
+		width: 100%;
+		height: 86px;
+		margin-bottom: 8px;
+	}
+	.ai-tpl-inner {
+		padding: 0 16px;
+		height: 86px;
+		align-items: stretch;
+		flex-direction: row;
+	}
+	.ai-tpl-card {
+		width: 148px;
+		padding: 10px 12px;
+		margin-right: 8px;
+		border-radius: 14px;
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+		flex-shrink: 0;
+	}
+	.ai-tpl-card-on {
+		background-color: #1A73E8;
+		border-color: #1A73E8;
+	}
+	.ai-tpl-kicker {
+		font-size: 10px;
+		font-weight: 700;
+		color: #1A73E8;
+		margin-bottom: 4px;
+	}
+	.ai-tpl-card-on .ai-tpl-kicker,
+	.ai-tpl-card-on .ai-tpl-name,
+	.ai-tpl-card-on .ai-tpl-meta {
+		color: #FFFFFF;
+	}
+	.ai-tpl-name {
+		font-size: 14px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+		lines: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.ai-tpl-meta {
+		font-size: 11px;
+		color: #374151;
+		font-weight: 600;
+	}
+.ai-quick-chip {
+	height: 28px;
+	padding: 0 12px;
+	border-radius: 14px;
+	background-color: #E8EEF8;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #C5D0E0;
+	margin-right: 8px;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	flex-grow: 0;
+}
+.ai-quick-tail {
+	width: 12px;
+	height: 1px;
+	flex-shrink: 0;
+}
+.ai-quick-chip-text {
+	font-size: 12px;
+	font-weight: 700;
+	color: #1A1A1A;
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+.ai-field {
+	height: 48px;
+	padding: 4px 4px 4px 14px;
+	border-radius: 24px;
+	background-color: #F5F7FB;
+	align-items: center;
+}
+.ai-input {
+	flex: 1;
+	height: 40px;
+	font-size: 14px;
+	color: #1A1A1A;
+	background-color: #F5F7FB;
+	border-width: 0;
+}
+.ai-send-btn {
+	height: 40px;
+	padding: 0 16px;
+	border-radius: 20px;
+	background-color: #1A73E8;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.ai-send-btn-off {
+	background-color: #E5E7EB;
+	border-width: 0;
+}
+.ai-send-btn-text{
+	font-size: 14px;
+	font-weight: 800;
+	color: #FFFFFF;
+}
+
+
+	.spot-row {
+		flex-direction: row; align-items: flex-start; padding: 12px; border-radius: 12px;
+		background-color: #F5F7FB; border-width: 1px; border-style: solid;
+		border-color: #E5E7EB; margin-bottom: 8px;
+	}
+	.spot-row-on { background-color: #E8F0FE; border-color: rgba(26, 115, 232, 0.28); }
+	.spot-body { flex: 1; min-width: 0; }
+	.spot-title-row { align-items: center; margin-bottom: 2px; }
+	.spot-title { font-size: 14px; font-weight: 700; color: #1A1A1A; flex: 1; min-width: 0; }
+
+	.spot-duration {
+		font-size: 11px;
+		color: #9CA3AF;
+		margin-top: 4px;
+		font-weight: 600;
+	}
+	.spot-detail-btn {
+		padding: 8px 12px;
+		border-radius: 14px;
+		background-color: #FFFFFF;
+		flex-shrink: 0;
+		margin-left: 8px;
+		align-self: center;
+	}
+	.spot-detail-btn-text {
+		font-size: 12px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+
+
+	.spot-detail-mask {
+		position: fixed;
+		left: 0; right: 0; top: 0; bottom: 0;
+		background-color: rgba(0, 0, 0, 0.45);
+		z-index: 920;
+	}
+	.spot-detail-sheet {
+		position: fixed;
+		left: 0; right: 0; bottom: 0;
+		height: 78%;
+		max-height: 78%;
+		background-color: #FFFFFF;
+		border-top-left-radius: 20px;
+		border-top-right-radius: 20px;
+		z-index: 921;
+		padding-bottom: 0;
+		overflow: hidden;
+	}
+	.spot-detail-handle {
+		width: 36px; height: 4px; border-radius: 2px;
+		background-color: #E5E7EB; align-self: center;
+		margin-top: 10px; margin-bottom: 8px;
+		flex-shrink: 0;
+	}
+	.spot-detail-top {
+		align-items: flex-start;
+		padding: 4px 16px 12px 16px;
+		flex-shrink: 0;
+	}
+	.spot-detail-titles { flex: 1; min-width: 0; }
+	.spot-detail-title {
+		font-size: 18px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px;
+	}
+	.spot-detail-zone {
+		font-size: 12px; color: #374151; font-weight: 600;
+	}
+	.spot-detail-close {
+		padding: 6px 12px; border-radius: 14px; background-color: #FFFFFF;
+		flex-shrink: 0; margin-left: 10px;
+	}
+	.spot-detail-close-text { font-size: 12px; font-weight: 700; color: #374151; }
+	/* 固定高度 scroll-view，微信小程序才能纵向滑动 */
+	.spot-detail-scroll {
+		width: 100%;
+		flex: 1;
+		min-height: 240px;
+	}
+	.spot-detail-inner {
+		padding: 0 16px 8px 16px;
+		flex-direction: column;
+	}
+	.spot-detail-scroll-pad { height: 24px; }
+	.spot-photo-card {
+		height: 160px; border-radius: 16px; align-items: center; justify-content: center;
+		margin-bottom: 16px; overflow: hidden;
+	}
+	.spot-photo-caption { font-size: 13px; font-weight: 700; color: #FFFFFF; }
+	.spot-detail-section { margin-bottom: 16px; }
+	.spot-detail-sec-title {
+		font-size: 14px; font-weight: 800; color: #1A1A1A; margin-bottom: 8px;
+	}
+	.spot-detail-sec-body { font-size: 13px; color: #374151; line-height: 20px; }
+	.spot-detail-rich { font-size: 13px; color: #374151; line-height: 22px; }
+	.spot-bullet-row { align-items: flex-start; margin-bottom: 6px; }
+	.spot-bullet-dot {
+		width: 6px; height: 6px; border-radius: 3px; background-color: #1A73E8;
+		margin-top: 7px; margin-right: 8px; flex-shrink: 0;
+	}
+	.spot-bullet-dot-blue { background-color: #1A73E8; }
+	.spot-bullet-text { flex: 1; font-size: 13px; color: #1A1A1A; line-height: 20px; }
+	.spot-gift-row { flex-direction: row; flex-wrap: wrap; }
+	.spot-gift-chip {
+		padding: 6px 10px; border-radius: 12px; background-color: #FFFFFF;
+		margin-right: 8px; margin-bottom: 8px;
+	}
+	.spot-gift-chip-text { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+	.spot-detail-footer {
+		flex-direction: row;
+		padding: 10px 16px 18px 16px;
+		border-top-width: 0.5px;
+		border-top-color: rgba(60,60,67,0.12);
+		flex-shrink: 0;
+		background-color: #FFFFFF;
+	}
+	.spot-detail-secondary {
+		height: 44px; padding: 0 18px; border-radius: 22px; background-color: #FFFFFF;
+		align-items: center; justify-content: center; margin-right: 10px;
+	}
+	.spot-detail-secondary-text { font-size: 14px; font-weight: 700; color: #1A1A1A; }
+	.spot-detail-primary {
+		flex: 1; height: 44px; border-radius: 22px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.spot-detail-primary-text { font-size: 14px; font-weight: 800; color: #FFFFFF; }
+
+	.spot-zone-tag {
+		padding: 2px 6px;
+		border-radius: 6px;
+		background-color: #FFFFFF;
+		margin-left: 6px;
+		flex-shrink: 0;
+	}
+	.spot-zone-tag-text {
+		font-size: 10px;
+		font-weight: 700;
+		color: #374151;
+	}
+	.spot-order {
+		font-size: 12px; font-weight: 800; color: #1A1A1A; background-color: #EFF6FF;
+		padding: 2px 8px; border-radius: 10px; margin-left: 8px; flex-shrink: 0;
+	}
+	.spot-desc { font-size: 12px; color: #374151; lines: 2; }
+
+	.route-map-block { margin-bottom: 8px; }
+	.route-map-wrap {
+		width: 100%;
+		height: 260px;
+		border-radius: 14px;
+		overflow: hidden;
+		background-color: #E5E7EB;
+		margin-bottom: 8px;
+		position: relative;
+	}
+	.route-map { width: 100%; height: 260px; }
+	.spot-guide {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		width: 132px;
+		z-index: 8;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		overflow: hidden;
+	}
+	.spot-guide-head {
+		align-items: center;
+		padding: 8px 10px 6px 10px;
+	}
+	.spot-guide-kicker {
+		font-size: 9px;
+		font-weight: 800;
+		color: #1A73E8;
+		letter-spacing: 0.8px;
+		margin-right: 6px;
+	}
+	.spot-guide-title {
+		flex: 1;
+		font-size: 12px;
+		font-weight: 800;
+		color: #1A1A1A;
+	}
+	.spot-guide-count {
+		font-size: 11px;
+		font-weight: 800;
+		color: #374151;
+	}
+	.spot-guide-scroll {
+		width: 132px;
+		height: 150px;
+	}
+	.spot-guide-item {
+		flex-direction: row;
+		align-items: center;
+		height: 30px;
+		padding: 0 10px;
+		flex-shrink: 0;
+	}
+	.spot-guide-item-on {
+		background-color: #FFFFFF;
+	}
+	.spot-guide-idx {
+		width: 18px;
+		height: 18px;
+		border-radius: 9px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		margin-right: 6px;
+		flex-shrink: 0;
+	}
+	.spot-guide-idx-on {
+		background-color: #1A73E8;
+	}
+	.spot-guide-idx-txt {
+		font-size: 10px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.spot-guide-idx-txt-on {
+		color: #FFFFFF;
+	}
+	.spot-guide-name {
+		flex: 1;
+		font-size: 11px;
+		font-weight: 700;
+		color: #1A1A1A;
+		lines: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.route-legend {
+		align-items: center;
+		flex-wrap: wrap;
+		margin-bottom: 6px;
+	}
+	.legend-item { align-items: center; margin-right: 12px; margin-bottom: 4px; }
+	.legend-dot { width: 8px; height: 8px; border-radius: 4px; margin-right: 4px; }
+	.legend-dot-family { background-color: #1A73E8; }
+	.legend-dot-college { background-color: #1A73E8; }
+	.legend-dot-business { background-color: #1A73E8; }
+	.legend-dot-on { background-color: #1A73E8; }
+	.legend-txt { font-size: 11px; color: #374151; font-weight: 700; }
+	.route-map-hint {
+		font-size: 11px;
+		color: #374151;
+		line-height: 16px;
+		margin-bottom: 8px;
+	}
+
+	.route-preview-title {
+		font-size: 13px; font-weight: 700; color: #1A1A1A; margin-bottom: 0;
+		flex: 1;
+	}
+	.picked-block {
+		margin-top: 10px; padding-top: 12px;
+		border-top-width: 0.5px; border-top-color: #E5E7EB;
+	}
+	.picked-head {
+		align-items: center;
+		margin-bottom: 10px;
+	}
+	.picked-count {
+		font-size: 12px;
+		font-weight: 700;
+		color: #374151;
+		flex-shrink: 0;
+	}
+	.picked-wrap {
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: space-between;
+	}
+	.picked-chip {
+		width: 48%;
+		padding: 10px 12px;
+		margin-bottom: 8px;
+		border-radius: 12px;
+		background-color: #F5F7FB;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.picked-chip-title {
+		font-size: 13px;
+		font-weight: 700;
+		color: #1A1A1A;
+		lines: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		margin-bottom: 4px;
+	}
+	.picked-chip-meta {
+		font-size: 12px;
+		color: #374151;
+		font-weight: 600;
+	}
+
+	.rental-scroll { width: 100%; height: 112px; flex-direction: row; }
+	.rental-scroll-inner {
+		flex-direction: row; flex-wrap: nowrap; align-items: stretch;
+		padding: 4px 0 8px 0; height: 104px;
+	}
+	.rental-card {
+		width: 104px; height: 96px; padding: 12px 10px; margin-right: 10px;
+		border-radius: 14px; background-color: #F5F7FB; border-width: 1px; border-style: solid;
+		border-color: #E5E7EB; align-items: center; justify-content: center;
+		flex-shrink: 0; flex-grow: 0;
+	}
+	.rental-tail { width: 8px; height: 1px; flex-shrink: 0; }
+	.rental-card-on { background-color: #FFFFFF; border-color: #1A73E8; }
+	.rental-icon-wrap {
+		width: 40px; height: 40px; border-radius: 20px; background-color: #FFFFFF;
+		align-items: center; justify-content: center; margin-bottom: 8px;
+		border-width: 1px; border-style: solid; border-color: #E5E7EB;
+	}
+	.rental-icon { width: 28px; height: 28px; }
+	.rental-name { font-size: 13px; font-weight: 800; color: #1A1A1A; margin-bottom: 2px; text-align: center; }
+	.rental-desc { font-size: 11px; color: #9CA3AF; margin-bottom: 6px; text-align: center; lines: 1; }
+
+
+
+	.block-label {
+		font-size: 13px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-top: 12px;
+		margin-bottom: 8px;
+	}
+	.block-label-inline {
+		margin-top: 0;
+		margin-bottom: 0;
+		margin-right: 8px;
+	}
+
+	.driver-block {
+		margin-top: 8px;
+		padding-top: 12px;
+		border-top-width: 0.5px;
+		border-top-color: #E5E7EB;
+	}
+	.driver-head {
+		align-items: center;
+		margin-bottom: 6px;
+	}
+	.driver-head-meta {
+		flex: 1;
+		font-size: 12px;
+		color: #9CA3AF;
+		font-weight: 600;
+	}
+	.driver-refresh {
+		padding: 4px 10px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+		flex-shrink: 0;
+	}
+	.driver-refresh-text {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+	.driver-subhint {
+		font-size: 11px;
+		color: #9CA3AF;
+		line-height: 16px;
+		margin-bottom: 10px;
+	}
+	.driver-empty {
+		align-items: center;
+		padding: 20px 8px;
+		background-color: #F5F7FB;
+		border-radius: 12px;
+	}
+	.driver-empty-title {
+		font-size: 14px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 4px;
+	}
+	.driver-empty-desc {
+		font-size: 12px;
+		color: #9CA3AF;
+		text-align: center;
+	}
+	.driver-card {
+		padding: 12px;
+		border-radius: 14px;
+		background-color: #F5F7FB;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		margin-bottom: 10px;
+	}
+	.driver-card-on {
+		background-color: #E8F0FE;
+		border-color: rgba(26, 115, 232, 0.35);
+	}
+	.driver-card-off {
+		opacity: 0.72;
+	}
+	.driver-top {
+		align-items: flex-start;
+		margin-bottom: 10px;
+	}
+	.driver-avatar {
+		width: 40px;
+		height: 40px;
+		border-radius: 20px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		margin-right: 10px;
+		flex-shrink: 0;
+	}
+	.driver-avatar-text {
+		font-size: 16px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+	.driver-main { flex: 1; min-width: 0; }
+	.driver-name-row { align-items: center; margin-bottom: 2px; flex-wrap: wrap; }
+	.driver-name {
+		font-size: 15px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-right: 8px;
+	}
+	.driver-status {
+		padding: 2px 7px;
+		border-radius: 8px;
+		background-color: #E5E7EB;
+	}
+	.driver-status-ok { background-color: #DCFCE7; }
+	.driver-status-bad { background-color: #FEE2E2; }
+	.driver-status-text { font-size: 10px; font-weight: 700; color: #374151; }
+	.driver-status-text-ok { color: #15803D; }
+	.driver-status-text-bad { color: #B91C1C; }
+	.driver-plate {
+		font-size: 12px;
+		color: #374151;
+		margin-bottom: 2px;
+	}
+	.driver-info-line {
+		font-size: 12px;
+		color: #374151;
+		margin-top: 2px;
+	}
+	.driver-dist {
+		font-size: 11px;
+		color: #9CA3AF;
+	}
+	.driver-price-col {
+		align-items: flex-end;
+		flex-shrink: 0;
+		margin-left: 8px;
+	}
+	.driver-price {
+		font-size: 18px;
+		font-weight: 800;
+		color: #DC2626;
+	}
+	.driver-price-hint {
+		font-size: 10px;
+		color: #9CA3AF;
+		margin-top: 2px;
+	}
+	.driver-contact {
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	.contact-chip {
+		padding: 6px 10px;
+		border-radius: 12px;
+		background-color: #1A73E8;
+		margin-right: 8px;
+		margin-bottom: 4px;
+	}
+	.contact-chip-text {
+		font-size: 12px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+	.contact-chip-ghost {
+		background-color: #FFFFFF;
+	}
+	.contact-chip-text-ghost {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.bottom-safe-spacer { height: 24px; }
+	.bottom-bar {
+		width: 100%;
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+		padding: 12px 16px 28px 16px;
+	}
+	.summary-row { align-items: center; margin-bottom: 12px; }
+	.summary-col { flex: 1; }
+	.summary-col-right { align-items: flex-end; }
+	.summary-label { font-size: 12px; color: #374151; margin-bottom: 2px; }
+	.summary-value { font-size: 14px; font-weight: 700; color: #1A1A1A; }
+	.summary-price { font-size: 22px; font-weight: 800; color: #1A1A1A; }
+	.submit-btn {
+		height: 50px; border-radius: 25px;
+		background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.submit-btn-disabled { background-color: #E5E7EB; }
+	.submit-btn-text { font-size: 16px; font-weight: 800; color: #FFFFFF; }
+
+	.page-wrapper view,
+	.page-wrapper scroll-view,
+	.page-wrapper image,
+	.page-wrapper input,
+	.page-wrapper text,
+	.page-wrapper map {
+		border-width: 0;
+	}
+	.page-wrapper .header-section {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-bottom-width: 1px;
+		border-bottom-style: solid;
+		border-bottom-color: #E5E7EB;
+	}
+	.page-wrapper .bottom-bar,
+	.page-wrapper .ai-composer,
+	.page-wrapper .day-route-block,
+	.page-wrapper .picked-block,
+	.page-wrapper .spot-detail-footer {
+		border-width: 0;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+	}
+	.page-wrapper .nav-back-text,
+	.page-wrapper .nav-title { color: #1A1A1A; }
+	.page-wrapper .traveler-row {
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		background-color: #F5F7FB;
+	}
+	.page-wrapper .traveler-row-on {
+		background-color: #FFFFFF;
+		border-color: #1A73E8;
+	}
+	.page-wrapper .check-dot {
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+		background-color: #FFFFFF;
+	}
+	.page-wrapper .check-dot-on {
+		background-color: #1A73E8;
+		border-color: #1A73E8;
+	}
+	.page-wrapper .zone-chip,
+	.page-wrapper .day-pill,
+	.page-wrapper .ai-quick-chip {
+		background-color: #E8EEF8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+	}
+	.page-wrapper .zone-chip-on,
+	.page-wrapper .day-pill-on {
+		background-color: #1A73E8;
+		border-color: #1A73E8;
+	}
+	.page-wrapper .zone-chip-text-on,
+	.page-wrapper .day-pill-text-on { color: #FFFFFF; }
+	.page-wrapper .cal-cell { background-color: #FFFFFF; }
+	.page-wrapper .cal-cell-on { background-color: #1A73E8; }
+	.page-wrapper .cal-day-num-on,
+	.page-wrapper .cal-cell-on .page-wrapper .cal-cell-on .cal-day-hours,
+	.page-wrapper .cal-cell-on .cal-day-enroll { color: #FFFFFF; }
+	.page-wrapper .main-scroll,
+	.page-wrapper .scroll-inner,
+	.page-wrapper .ai-chat-scroll { background-color: #F5F7FB; }
+	.page-wrapper .bottom-bar,
+	.page-wrapper .ai-composer { background-color: #FFFFFF; }
+	.page-wrapper .ai-field,
+	.page-wrapper .ai-input {
+		background-color: #F5F7FB;
+		border-width: 0;
+	}
+	.page-wrapper .ai-input { color: #1A1A1A; }
+	.page-wrapper .ai-send-btn,
+	.page-wrapper .submit-btn,
+	.page-wrapper .ride-tip-btn {
+		background-color: #1A73E8;
+		border-width: 0;
+	}
+	.page-wrapper .ai-send-btn-off,
+	.page-wrapper .submit-btn-disabled { background-color: #E5E7EB; }
+	.page-wrapper .ai-send-btn-text,
+	.page-wrapper .submit-btn-text,
+	.page-wrapper .ride-tip-btn-text { color: #FFFFFF; }
+	.page-wrapper .ai-bubble-bot {
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+	.page-wrapper .ai-bubble-user {
+		background-color: #1A73E8;
+		border-width: 0;
+	}
+	.page-wrapper .ai-bubble-text { color: #1A1A1A; }
+	.page-wrapper .ai-bubble-text-user { color: #FFFFFF; }
+	.page-wrapper .ai-bubble-plan { border-color: #E5E7EB; }
+
+</style>

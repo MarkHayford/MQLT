@@ -1,0 +1,153 @@
+<template>
+	<view :class="['cart-icon-badge', 'cart-icon-badge-' + size, muted ? 'cart-icon-badge-muted' : '']">
+		<view class="cart-icon-badge-stage">
+			<view class="cart-icon-badge-icon-box">
+				<image
+					src="/static/shop-nav-cart.svg"
+					class="cart-icon-badge-icon"
+					mode="aspectFit"
+				></image>
+			</view>
+			<view class="cart-icon-badge-count" v-if="count > 0">
+				<view class="cart-icon-badge-count-pill">
+					<text class="cart-icon-badge-count-txt">{{ badgeText }}</text>
+				</view>
+			</view>
+		</view>
+		<text
+			v-if="showLabel"
+			:class="['cart-icon-badge-label', active ? 'cart-icon-badge-label-active' : 'cart-icon-badge-label-muted']"
+		>{{ label }}</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed } from 'vue'
+
+	const props = defineProps({
+		count: {
+			type: Number,
+			default: 0
+		},
+		size: {
+			type: String,
+			default: 'nav'
+		},
+		muted: {
+			type: Boolean,
+			default: false
+		},
+		showLabel: {
+			type: Boolean,
+			default: false
+		},
+		label: {
+			type: String,
+			default: '购物车'
+		},
+		active: {
+			type: Boolean,
+			default: false
+		}
+	})
+
+	const badgeText = computed((): string => {
+		if (props.count > 99) return '99+'
+		return props.count.toString()
+	})
+</script>
+
+<style>
+	.cart-icon-badge {
+		align-items: center;
+		overflow: visible;
+	}
+
+	.cart-icon-badge-stage {
+		position: relative;
+		overflow: visible;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.cart-icon-badge-nav .cart-icon-badge-stage {
+		width: 36px;
+		height: 30px;
+		margin-bottom: 4px;
+	}
+
+	.cart-icon-badge-detail .cart-icon-badge-stage {
+		width: 24px;
+		height: 22px;
+		margin-bottom: 2px;
+	}
+
+	.cart-icon-badge-icon-box {
+		align-items: center;
+		justify-content: center;
+	}
+
+	.cart-icon-badge-nav .cart-icon-badge-icon {
+		width: 24px;
+		height: 24px;
+	}
+
+	.cart-icon-badge-detail .cart-icon-badge-icon {
+		width: 20px;
+		height: 20px;
+	}
+
+	.cart-icon-badge-muted .cart-icon-badge-icon {
+		opacity: 0.6;
+	}
+
+	/* 角标独立层：固定在图标容器右上角 */
+	.cart-icon-badge-count {
+		position: absolute;
+		top: 0;
+		right: 0;
+		z-index: 20;
+		overflow: visible;
+	}
+
+	.cart-icon-badge-count-pill {
+		min-width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		background-color: #DC2626;
+		border: 1.5px solid #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		padding: 0 4px;
+	}
+
+	.cart-icon-badge-count-txt {
+		color: #FFFFFF;
+		font-size: 9px;
+		font-weight: 800;
+		line-height: 12px;
+	}
+
+	.cart-icon-badge-label {
+		font-size: 11px;
+		font-weight: 600;
+	}
+
+	.cart-icon-badge-label-active {
+		color: #1A1A1A;
+	}
+
+	.cart-icon-badge-label-muted {
+		color: #9CA3AF;
+	}
+
+	.cart-icon-badge-detail .cart-icon-badge-label {
+		font-size: 11px;
+		color: #374151;
+		font-weight: 500;
+		line-height: 15px;
+		width: 44px;
+		text-align: center;
+		lines: 1;
+	}
+</style>

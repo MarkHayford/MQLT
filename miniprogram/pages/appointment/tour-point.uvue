@@ -1,0 +1,1187 @@
+<template>
+	<view class="page uni-column">
+		<view class="hud" :style="{ paddingTop: (statusBarHeight + 8) + 'px' }">
+			<view class="hud-back" @click="goBack"><text class="hud-back-txt">返回</text></view>
+			<text class="hud-title">本站研学</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" :show-scrollbar="false">
+			<view class="ticket uni-column">
+				<view class="ticket-gold"></view>
+				<view class="ticket-top uni-row">
+					<text class="ticket-kicker">研学点</text>
+					<text class="ticket-no">{{ stationNo }}</text>
+				</view>
+				<view class="ticket-hero uni-row">
+					<view class="ticket-seal">
+						<image :src="coverIcon" class="ticket-icon" mode="aspectFit"></image>
+					</view>
+					<view class="ticket-copy uni-column">
+						<text class="ticket-title">{{ pointTitle }}</text>
+						<text class="ticket-fun">{{ funTitle }}</text>
+					</view>
+				</view>
+				<text class="ticket-body">{{ funBody }}</text>
+				<view class="chip-row" v-if="rewardChips.length > 0">
+					<view v-for="chip in rewardChips" :key="chip.id" class="r-chip">
+						<text class="r-chip-txt">{{ chip.label }}</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="prog uni-row">
+				<text class="prog-txt">{{ progressLabel }}</text>
+				<text class="prog-pts">本站积分 {{ stationPoints.toString() }}</text>
+			</view>
+			<view class="prog-sub uni-row">
+				<text class="prog-sub-txt">本站积分仅计当前点位；导览总积分见地图页。</text>
+				<text class="prog-link" @click="openBackpack">卡券</text>
+			</view>
+
+			<!-- 视频 -->
+			<view class="stage uni-column" v-if="phase === 'video'">
+				<text class="stage-kicker">VIDEO</text>
+				<text class="stage-h">{{ currentTitle }}</text>
+				<text class="stage-p">看完本段讲解后继续下一项。</text>
+				<video
+					v-if="currentVideoUrl.length > 0 && !isAudioUrl"
+					class="lecture"
+					:src="currentVideoUrl"
+					controls
+					show-center-play-btn
+					object-fit="contain"
+					@ended="completeCurrent"
+				></video>
+				<audio
+					v-else-if="isAudioUrl"
+					class="lecture"
+					:src="currentVideoUrl"
+					controls
+					@ended="completeCurrent"
+				></audio>
+				<view class="cta" @click="completeCurrent">
+					<text class="cta-txt">看完了，继续</text>
+				</view>
+				<view class="skip" v-if="canSkip" @click="skipCurrent">
+					<text class="skip-txt">跳过本关 · 没有积分</text>
+				</view>
+			</view>
+
+			<!-- 答题 -->
+			<view class="stage uni-column" v-if="phase === 'quiz' && !quizReviewing">
+				<text class="stage-kicker">QUIZ {{ (qIndex + 1).toString() }} / {{ currentQuestions.length.toString() }}</text>
+				<text class="stage-h">{{ currentTitle }}</text>
+				<text class="stage-p">{{ quizInstruction }}</text>
+				<view class="note uni-column" v-if="currentQuestions.length > 0">
+					<view class="note-rule"></view>
+					<text class="note-q">{{ currentQuestion }}</text>
+					<text class="quiz-rule">{{ quizRuleLabel }}</text>
+					<view
+						v-for="(opt, oi) in currentOptions"
+						:key="oi"
+						:class="['opt', optClass(oi)]"
+						@click="selectOption(oi)"
+					>
+						<view class="opt-letter"><text class="opt-letter-txt">{{ letterOf(oi) }}</text></view>
+						<text class="opt-txt">{{ opt }}</text>
+						<text class="opt-check" v-if="isOptionSelected(oi)">✓</text>
+					</view>
+					<view class="quiz-nav uni-row">
+						<view :class="['cta', 'quiz-nav-btn', qIndex > 0 ? '' : 'disabled']" @click="goPrevQuestion">
+							<text class="cta-txt">上一题</text>
+						</view>
+						<view :class="['cta', 'quiz-nav-btn', selectedIndexes.length > 0 ? '' : 'disabled']" @click="goNextQuestion">
+							<text class="cta-txt">{{ answering ? '提交中…' : (qIndex >= currentQuestions.length - 1 ? '提交答题' : '下一题') }}</text>
+						</view>
+					</view>
+				</view>
+				<view class="skip" v-if="canSkip" @click="skipCurrent">
+					<text class="skip-txt">跳过答题 · 没有积分</text>
+				</view>
+			</view>
+
+			<view class="stage uni-column" v-if="phase === 'quiz' && quizReviewing">
+				<text class="stage-kicker">QUIZ REVIEW</text>
+				<text class="stage-h">答题回顾</text>
+				<text class="stage-p">{{ quizReviewSummary }}</text>
+				<view class="note uni-column" v-for="(rq, ri) in quizReviewRows" :key="ri">
+					<view class="note-rule"></view>
+					<text class="note-q">{{ (ri + 1).toString() }}. {{ rq.question }}</text>
+					<text class="quiz-rule">{{ rq.exact ? '答对' : '答错' }} · {{ rq.earned.toString() }}/{{ rq.max.toString() }} 分</text>
+					<view v-for="(opt, oi) in rq.options" :key="oi" :class="['opt', reviewOptClass(rq, oi)]">
+						<view class="opt-letter"><text class="opt-letter-txt">{{ letterOf(oi) }}</text></view>
+						<text class="opt-txt">{{ opt }}</text>
+					</view>
+				</view>
+				<view class="cta" @click="finishQuizReview">
+					<text class="cta-txt">继续</text>
+				</view>
+			</view>
+
+			<!-- 现场任务：扫本站研学码确认完成 -->
+			<view class="stage uni-column" v-if="phase === 'task'">
+				<text class="stage-kicker">FIELD TASK</text>
+				<text class="stage-h">{{ currentTitle }}</text>
+				<text class="stage-p">{{ currentTaskBody.length > 0 ? currentTaskBody : '按现场工作人员指引完成互动后，扫描本站研学码确认本项完成。入口日核销码不能用于本项。' }}</text>
+				<view class="offline-card uni-column">
+					<text class="offline-kicker">现场任务确认</text>
+					<text class="offline-name">请扫描本站研学码（点位码）</text>
+					<text class="offline-sub">由现场员工出示；仅用于确认本项现场任务，不再作为整站通关闸门</text>
+				</view>
+				<view class="cta" @click="scanTaskQr">
+					<text class="cta-txt">{{ checkBusy ? '确认中…' : '扫描研学码完成任务' }}</text>
+				</view>
+				<view class="skip" v-if="canSkip" @click="skipCurrent">
+					<text class="skip-txt">跳过任务 · 没有积分</text>
+				</view>
+			</view>
+
+			<!-- H5 小游戏 -->
+			<view class="stage uni-column" v-if="phase === 'game'">
+				<text class="stage-kicker">GAME</text>
+				<text class="stage-h">{{ currentTitle }}</text>
+				<text class="stage-p">{{ gameHint }}</text>
+				<view class="offline-card uni-column">
+					<text class="offline-kicker">{{ gameRetry ? '未合格' : 'H5 小游戏' }}</text>
+					<text class="offline-name">{{ currentTitle }}</text>
+					<text class="offline-sub" v-if="lastGameScore.length > 0">{{ lastGameScore }}</text>
+					<text class="offline-sub" v-else>请在微信内打开。通关数据会同步到研学记录。不合格可以再玩。</text>
+				</view>
+				<view class="cta" @click="openGame">
+					<text class="cta-txt">{{ gameCtaLabel }}</text>
+				</view>
+				<view class="skip" v-if="gameBrowseOnly" @click="openGame">
+					<text class="skip-txt">继续浏览（不计更高分）</text>
+				</view>
+				<view class="skip" v-if="canSkip && !gameBrowseOnly" @click="skipCurrent">
+					<text class="skip-txt">跳过小游戏 · 没有积分</text>
+				</view>
+			</view>
+
+			<!-- 关卡已齐：自动结算（不再扫整站研学码） -->
+			<view class="stage uni-column" v-if="phase === 'settle'">
+				<text class="stage-kicker">SETTLING</text>
+				<text class="stage-h">本站内容已完成</text>
+				<text class="stage-p">正在自动结算本站积分、点亮拼图碎片；站点卡券将直达「我的卡券」。无需再扫整站研学码。</text>
+				<view class="offline-card uni-column">
+					<text class="offline-kicker">自动通关</text>
+					<text class="offline-name">{{ checkBusy ? '结算中…' : '即将完成本站' }}</text>
+				</view>
+				<view class="skip" v-if="browseGameStepId.length > 0" @click="browseExhaustedGame">
+					<text class="skip-txt">继续浏览小游戏（不计更高分）</text>
+				</view>
+				<view class="cta" @click="autoSettleStation">
+					<text class="cta-txt">{{ checkBusy ? '结算中…' : '立即结算本站' }}</text>
+				</view>
+			</view>
+
+			<!-- 完成 -->
+			<view class="stage uni-column" v-if="phase === 'done'">
+				<text class="stage-kicker">DONE</text>
+				<text class="stage-h">本站研学已完成</text>
+				<text class="stage-p">回到地图，还可继续走其他站点。</text>
+				<view class="shard uni-column">
+					<image src="/static/icon-puzzle.svg" class="shard-ico" mode="aspectFit"></image>
+					<text class="shard-name">{{ pointTitle }}</text>
+					<text class="shard-ok">拼图碎片 · 已收集</text>
+				</view>
+				<view class="prize-card uni-column" v-if="gotPrizeName.length > 0">
+					<text class="prize-kicker">本站奖品卡券</text>
+					<text class="prize-name">{{ gotPrizeName }}</text>
+					<text class="prize-sub">已放入「我的卡券」，可免费兑换对应文创（非导览内兑换）</text>
+					<view class="prize-link" @click="goMyCoupons"><text class="prize-link-txt">去我的卡券</text></view>
+				</view>
+				<view class="pts-done" v-if="lastSettlePts.length > 0">
+					<text class="pts-done-txt">{{ lastSettlePts }}</text>
+				</view>
+				<view class="cta" @click="goBack">
+					<text class="cta-txt">返回导览地图</text>
+				</view>
+			</view>
+
+			<view class="body-pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { checkInStudyRoutePoint, completeStudyStationStep, fetchStudyExploreSession, fetchStudyRoutePointKnowledgeTask, startStudyStationGamePlay } from '../../utils/study-projects.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const projectId = ref('')
+	const routePointId = ref('')
+	const bookingId = ref('')
+	const pointTitle = ref('站点')
+	const funTitle = ref('到站见闻')
+	const funBody = ref('按顺序完成本站内容。现场任务需扫本站研学码确认；全部完成后自动结算通关。')
+	const coverIcon = ref('/static/icon-building.svg')
+	const checkDone = ref(false)
+	const checkBusy = ref(false)
+	const settleAttempted = ref(false)
+	const steps = ref<any[]>([])
+	const doneIds = ref<string[]>([])
+	const skippedIds = ref<string[]>([])
+	const exhaustedIds = ref<string[]>([])
+	const stationPoints = ref(0)
+	const lastSettlePts = ref('')
+	const browseGameStepId = ref('')
+	const questions = ref<any[]>([])
+	const answers = ref<any[]>([])
+	const selectedIndexes = ref<number[]>([])
+	const qIndex = ref(0)
+	const lastWrong = ref(-1)
+	const lastCorrect = ref(-1)
+	const answering = ref(false)
+	const quizReviewing = ref(false)
+	const quizReviewRows = ref<any[]>([])
+	const quizReviewSummary = ref('')
+	const quizReviewRes = ref<any>(null)
+	const rewardChips = ref<any[]>([])
+	const gotPrizeName = ref('')
+	const stationNo = ref('ST-01')
+	const busy = ref(false)
+	const lastGameScore = ref('')
+	const gameRetry = ref(false)
+	const stationGames = ref<any>({})
+
+	function isFinished(id: string): boolean {
+		if (doneIds.value.indexOf(id) >= 0 || skippedIds.value.indexOf(id) >= 0 || exhaustedIds.value.indexOf(id) >= 0) return true
+		const games = stationGames.value
+		if (games != null) {
+			const rec = games[id]
+			if (rec != null && (rec.exhausted === true || rec.scoreLocked === true)) return true
+		}
+		return false
+	}
+	const current = computed((): any => {
+		const list = steps.value
+		for (let i = 0; i < list.length; i++) {
+			const id = String(list[i].id || '')
+			if (id.length > 0 && !isFinished(id)) return list[i]
+		}
+		return null
+	})
+	const canSkip = computed((): boolean => {
+		const cur = current.value
+		if (cur == null) return false
+		return cur.skippable !== false
+	})
+	const phase = computed((): string => {
+		if (checkDone.value) return 'done'
+		const cur = current.value
+		if (cur == null) return 'settle'
+		return String(cur.type || 'task')
+	})
+	const progressLabel = computed((): string => {
+		if (checkDone.value) return '本站已完成'
+		const total = steps.value.length
+		let idx = steps.value.length
+		const cur = current.value
+		if (cur != null) {
+			for (let i = 0; i < steps.value.length; i++) {
+				if (String(steps.value[i].id) === String(cur.id)) { idx = i; break }
+			}
+		}
+		const names: any = { video: '讲解', quiz: '答题', task: '任务', game: '小游戏' }
+		if (cur == null) return total > 0 ? '关卡已齐 · 自动结算' : '本站结算中'
+		const label = names[String(cur.type)] != null ? String(names[String(cur.type)]) : '研学'
+		const denom = total > 0 ? total.toString() : '1'
+		return '第 ' + (idx + 1).toString() + ' / ' + denom + ' 项 · ' + label
+	})
+	const currentTitle = computed((): string => {
+		const cur = current.value
+		return cur != null ? String(cur.title || '本站内容') : ''
+	})
+	const currentVideoUrl = computed((): string => {
+		const cur = current.value
+		return cur != null ? String(cur.videoUrl || '') : ''
+	})
+	const isAudioUrl = computed((): boolean => {
+		const u = currentVideoUrl.value.toLowerCase()
+		return u.indexOf('.mp3') >= 0 || u.indexOf('.m4a') >= 0 || u.indexOf('.aac') >= 0 || u.indexOf('.wav') >= 0
+	})
+	const currentTaskBody = computed((): string => {
+		const cur = current.value
+		return cur != null ? String(cur.taskBody || '') : ''
+	})
+	const gameBrowseOnly = computed((): boolean => {
+		const cur = current.value
+		if (cur == null) return false
+		const games = stationGames.value
+		if (games == null) return false
+		const rec = games[String(cur.id)]
+		return rec != null && (rec.exhausted === true || rec.browseOnly === true || rec.scoreLocked === true) && rec.passed !== true
+	})
+	const gameCtaLabel = computed((): string => {
+		if (gameBrowseOnly.value) return '继续浏览'
+		if (gameRetry.value) return '再试一次'
+		return '开始小游戏'
+	})
+	const gameHint = computed((): string => {
+		const cur = current.value
+		const pass = cur != null ? cur.passScore : null
+		const maxR = cur != null && cur.maxRetries != null ? Number(cur.maxRetries) : 0
+		const games = stationGames.value
+		let attempts = 0
+		let exhausted = false
+		if (cur != null && games != null) {
+			const rec = games[String(cur.id)]
+			if (rec != null) {
+				attempts = Number(rec.attempts || 0)
+				exhausted = rec.exhausted === true || rec.scoreLocked === true
+			}
+		}
+		if (exhausted || gameBrowseOnly.value) {
+			return '次数已用尽，可继续浏览小游戏，但分数不再升高；本项已算完成，可继续后续关卡。'
+		}
+		let retryTxt = '次数不限'
+		if (maxR > 0) {
+			const left = maxR - attempts
+			retryTxt = left > 0 ? ('还可试 ' + left.toString() + ' 次') : '次数将用尽'
+		}
+		if (gameRetry.value) {
+			if (pass != null && String(pass).length > 0) return '还没达到 ' + String(pass) + ' 分，' + retryTxt + '。'
+			return '还没通关，' + retryTxt + '。'
+		}
+		if (cur == null) return '进入小游戏，通关后会同步分数并返回本站。'
+		let tierHint = ''
+		const tiers = cur.scoreTiers != null ? cur.scoreTiers as any[] : []
+		if (tiers.length > 0) {
+			tierHint = ' 得分可按档位换本站积分。'
+		}
+		if (pass != null && String(pass).length > 0) return '需达到 ' + String(pass) + ' 分。' + retryTxt + '。' + tierHint
+		return '进入小游戏，通关后会同步分数。' + retryTxt + '。' + tierHint
+	})
+	const currentQuestions = computed((): any[] => {
+		const cur = current.value
+		if (cur == null || cur.questions == null) return []
+		return cur.questions as any[]
+	})
+	const currentQuestionItem = computed((): any => {
+		const qs = currentQuestions.value
+		if (qs.length === 0 || qIndex.value < 0 || qIndex.value >= qs.length) return null
+		return qs[qIndex.value]
+	})
+	const currentQuestion = computed((): string => {
+		const q = currentQuestionItem.value
+		return q != null ? String(q.question || '') : ''
+	})
+	const currentMultiSelect = computed((): boolean => {
+		const q = currentQuestionItem.value
+		return q != null && q.multiSelect === true
+	})
+	const currentPartialMode = computed((): string => {
+		const q = currentQuestionItem.value
+		const mode = q != null ? String(q.partialMode || 'none') : 'none'
+		if (mode === 'ratio' || mode === 'fixed') return mode
+		return 'none'
+	})
+	const quizRuleLabel = computed((): string => {
+		let copy = '全对得分'
+		if (currentPartialMode.value === 'ratio') copy = '按正确比例计分'
+		if (currentPartialMode.value === 'fixed') copy = '半对给固定分'
+		const q = currentQuestionItem.value
+		const points = q != null && q.points != null ? Number(q.points) : 0
+		const pointsCopy = points > 0 ? (' · 本题 ' + points.toString() + ' 分') : ''
+		return (currentMultiSelect.value ? '可多选 · ' : '单选 · ') + copy + pointsCopy
+	})
+	const quizInstruction = computed((): string => {
+		if (currentMultiSelect.value) return '可多选：点选答案后点「下一题」；最后一题点「提交答题」。'
+		return '单选：点选答案后点「下一题」；最后一题点「提交答题」。点选不会直接提交。'
+	})
+	const currentOptions = computed((): string[] => {
+		const qs = currentQuestions.value
+		if (qs.length === 0) return []
+		const q = qs[qIndex.value]
+		if (q == null || q.options == null) return []
+		const opts: string[] = []
+		const arr = q.options as any[]
+		for (let i = 0; i < arr.length; i++) opts.push(String(arr[i]))
+		return opts
+	})
+
+	function goBack() { uni.navigateBack({}) }
+	function goMyCoupons() { uni.navigateTo({ url: '/pages/mine/my-coupons' }) }
+	function openBackpack() {
+		uni.navigateTo({ url: '/pages/appointment/tour-backpack?projectId=' + encodeURIComponent(projectId.value) })
+	}
+	function letterOf(i: number): string {
+		const letters = ['A', 'B', 'C', 'D', 'E', 'F']
+		if (i >= 0 && i < letters.length) return letters[i]
+		return (i + 1).toString()
+	}
+	function isOptionSelected(oi: number): boolean {
+		return selectedIndexes.value.indexOf(oi) >= 0
+	}
+	function optClass(oi: number): string {
+		if (oi === lastCorrect.value) return 'correct'
+		if (oi === lastWrong.value) return 'wrong'
+		if (isOptionSelected(oi)) return 'selected'
+		return ''
+	}
+	function errMsg(e: any, fallback: string): string {
+		if (e != null && e.message != null && String(e.message).length > 0) return String(e.message)
+		return fallback
+	}
+
+	function applyPoint(p: any, idx: number) {
+		if (p == null) return
+		pointTitle.value = String(p.title || pointTitle.value)
+		if (p.funTitle != null && String(p.funTitle).length > 0) funTitle.value = String(p.funTitle)
+		if (p.funBody != null && String(p.funBody).length > 0) funBody.value = String(p.funBody)
+		if (p.coverIcon != null && String(p.coverIcon).length > 0) coverIcon.value = String(p.coverIcon)
+		checkDone.value = p.checkedIn === true
+		if (p.checkedIn === true) settleAttempted.value = true
+		else settleAttempted.value = false
+		stationNo.value = 'ST-' + ((idx + 1) < 10 ? '0' : '') + (idx + 1).toString()
+		const list: any[] = []
+		const raw = p.stationSteps != null ? p.stationSteps as any[] : []
+		if (raw.length > 0) {
+			for (let i = 0; i < raw.length; i++) list.push(raw[i])
+		} else {
+			if (p.knowledgeVideoUrl != null && String(p.knowledgeVideoUrl).length > 0) {
+				list.push({ id: 'legacy_video', type: 'video', title: String(p.knowledgeVideoTitle || '本站讲解'), videoUrl: String(p.knowledgeVideoUrl), questions: [], taskBody: '', gameUrl: '' })
+			}
+			const qs = (p.knowledgeQuestions != null) ? p.knowledgeQuestions as any[] : []
+			if (p.knowledgeEnabled === true && qs.length > 0) {
+				list.push({ id: 'legacy_quiz', type: 'quiz', title: '趣味答题', videoUrl: '', questions: qs, taskBody: '', gameUrl: '' })
+			}
+			if (p.offlineTaskBody != null && String(p.offlineTaskBody).length > 0) {
+				list.push({ id: 'legacy_task', type: 'task', title: String(p.offlineTaskTitle || '现场趣味任务'), videoUrl: '', questions: [], taskBody: String(p.offlineTaskBody), gameUrl: '' })
+			}
+		}
+		steps.value = list
+		const done: string[] = []
+		const ids = p.stationDoneIds != null ? p.stationDoneIds as any[] : []
+		for (let i = 0; i < ids.length; i++) done.push(String(ids[i]))
+		if (checkDone.value) {
+			for (let i = 0; i < list.length; i++) done.push(String(list[i].id || ''))
+		}
+		doneIds.value = done
+		const skipped: string[] = []
+		const sid = p.stationSkippedIds != null ? p.stationSkippedIds as any[] : []
+		for (let i = 0; i < sid.length; i++) skipped.push(String(sid[i]))
+		skippedIds.value = skipped
+		const exhausted: string[] = []
+		const eid = p.stationExhaustedIds != null ? p.stationExhaustedIds as any[] : []
+		for (let i = 0; i < eid.length; i++) exhausted.push(String(eid[i]))
+		stationGames.value = (p.stationGames != null) ? p.stationGames : {}
+		const gamesObj = stationGames.value
+		if (gamesObj != null) {
+			for (let i = 0; i < list.length; i++) {
+				const sid = String(list[i].id || '')
+				const rec = gamesObj[sid]
+				if (rec != null && (rec.exhausted === true || rec.scoreLocked === true) && exhausted.indexOf(sid) < 0) exhausted.push(sid)
+			}
+		}
+		exhaustedIds.value = exhausted
+		browseGameStepId.value = ''
+		for (let i = 0; i < list.length; i++) {
+			const sid = String(list[i].id || '')
+			if (String(list[i].type) !== 'game') continue
+			if (exhausted.indexOf(sid) >= 0) {
+				const rec = gamesObj != null ? gamesObj[sid] : null
+				if (rec == null || rec.passed !== true) { browseGameStepId.value = sid; break }
+			}
+		}
+		stationPoints.value = p.stationPoints != null ? Number(p.stationPoints) : 0
+		refreshGameScore()
+		const chips: any[] = []
+		const rw = p.rewards
+		const cfg = p.stationRewardConfig
+		if (cfg != null && cfg.enabled === true) {
+			chips.push({ id: 'r0', label: '积分兑卡券' })
+			const tiers = cfg.tiers != null ? cfg.tiers as any[] : []
+			for (let i = 0; i < tiers.length && i < 3; i++) {
+				const t = tiers[i]
+				const title = String((t && t.title) || '奖品券')
+				chips.push({ id: 't' + i.toString(), label: title + ' · ' + String((t && t.minPoints) || 0) + '分' })
+			}
+		} else if (rw != null) {
+			if (rw.checkInPrize === true) {
+				let n = String(rw.checkInPrizeName || '打卡奖品')
+				if (n.length === 0) n = '打卡奖品'
+				chips.push({ id: 'p1', label: '研学 · ' + n })
+			}
+			if (rw.knowledgePrize === true) {
+				let n2 = String(rw.knowledgePrizeName || '答题奖品')
+				if (n2.length === 0) n2 = '答题奖品'
+				chips.push({ id: 'p2', label: '答题 · ' + n2 })
+			}
+		}
+		if (p.stationReward != null && p.stationReward.productName != null) {
+			gotPrizeName.value = String(p.stationReward.productName)
+		} else if (p.checkedIn === true && rw != null && rw.checkInPrizeName != null) {
+			gotPrizeName.value = String(rw.checkInPrizeName)
+		}
+		rewardChips.value = chips
+		qIndex.value = 0
+		answers.value = []
+		selectedIndexes.value = []
+		quizReviewing.value = false
+		quizReviewRows.value = []
+		quizReviewRes.value = null
+		quizReviewSummary.value = ''
+	}
+
+	async function loadPoint() {
+		try {
+			const ses = await fetchStudyExploreSession(projectId.value, 0, 0, routePointId.value)
+			const list = (ses.myPoints != null ? ses.myPoints : (ses.points != null ? ses.points : [])) as any[]
+			let hit: any = null
+			let hitIdx = 0
+			for (let i = 0; i < list.length; i++) {
+				if (String(list[i].id) === routePointId.value) {
+					hit = list[i]
+					hitIdx = i
+					break
+				}
+			}
+			if (hit == null && ses.activeScene != null) hit = ses.activeScene
+			applyPoint(hit, hitIdx)
+		} catch (_e) {}
+		try {
+			const task = await fetchStudyRoutePointKnowledgeTask(projectId.value, routePointId.value)
+			// Only mark legacy knowledge quiz done — never mark every quiz step done (that auto-settled the station).
+			if (task != null && task.completed === true) {
+				const list = steps.value
+				const nextDone = doneIds.value.slice()
+				for (let i = 0; i < list.length; i++) {
+					const id = String(list[i].id)
+					if (String(list[i].type) === 'quiz' && (id === 'legacy_quiz' || id.indexOf('legacy') === 0) && nextDone.indexOf(id) < 0) nextDone.push(id)
+				}
+				doneIds.value = nextDone
+			}
+		} catch (_e) {}
+		// Auto-settle only when station has steps and all are finished (or empty content after real progress/entrance — BE enforces entrance).
+		if (!checkDone.value && current.value == null && !settleAttempted.value) {
+			const hasSteps = steps.value.length > 0
+			const allDone = hasSteps && doneIds.value.length + skippedIds.value.length + exhaustedIds.value.length >= steps.value.length
+			if (allDone || (!hasSteps && stationPoints.value > 0)) {
+				settleAttempted.value = true
+				setTimeout(() => { autoSettleStation() }, 200)
+			} else if (!hasSteps) {
+				// Empty content station: do not auto-settle on mere enter; user taps settle/check-in after entrance.
+				settleAttempted.value = false
+			}
+		}
+	}
+
+	function applyStationSettle(res: any): boolean {
+		if (res == null) return false
+		const settled = res.stationSettled === true || res.puzzlePiece != null || res.alreadyCheckedIn === true || (res.checkedInAt != null && String(res.checkedInAt).length > 0)
+		if (!settled) return false
+		checkDone.value = true
+		const toast = res.couponToast
+		if (toast != null && toast.productName != null && String(toast.productName).length > 0) {
+			gotPrizeName.value = String(toast.productName)
+		} else if (res.stationReward != null && res.stationReward.productName != null) {
+			gotPrizeName.value = String(res.stationReward.productName)
+		} else if (res.prize != null && res.prize.product != null && res.prize.product.name != null) {
+			gotPrizeName.value = String(res.prize.product.name)
+		}
+		const tp = res.tourPoints
+		if (tp != null) {
+			const st = Number(tp.stationPoints != null ? tp.stationPoints : stationPoints.value)
+			stationPoints.value = st
+			lastSettlePts.value = '本站 ' + st.toString() + ' 分 · 导览累计 ' + String(tp.totalPoints || 0) + ' 分'
+		} else if (res.pointsEarned != null) {
+			stationPoints.value = Number(res.pointsEarned)
+		}
+		const piece = res.puzzlePiece
+		let pieceTip = ''
+		if (piece != null && piece.title != null) pieceTip = ' · 拼图「' + String(piece.title) + '」'
+		let tip = '本站已完成' + pieceTip
+		if (toast != null) {
+			const cname = String(toast.productName || gotPrizeName.value || '卡券')
+			const cmsg = String(toast.message || '已发放到「我的卡券」')
+			tip = cname + ' · ' + cmsg
+		} else if (gotPrizeName.value.length > 0) {
+			tip = '本站完成 · ' + gotPrizeName.value + ' 已放入我的卡券'
+		}
+		uni.showToast({ title: tip, icon: 'success', duration: 2500 })
+		const completion = res.completion
+		if (completion != null && (completion.allStudyDone === true || completion.puzzleComplete === true || completion.graduated === true)) {
+			setTimeout(() => {
+				uni.showModal({
+					title: '拼图集齐 · 结业成功',
+					content: String(completion.message || '证书已生成，积分商城已解锁兑换'),
+					confirmText: '回导览',
+					showCancel: false,
+					success: (_r) => { goBack() }
+				})
+			}, 600)
+		}
+		return true
+	}
+
+	async function skipCurrent() {
+		const cur = current.value
+		if (cur == null || busy.value) return
+		busy.value = true
+		try {
+			const res = await completeStudyStationStep(projectId.value, routePointId.value, String(cur.id), { skip: true })
+			const next = skippedIds.value.slice()
+			next.push(String(cur.id))
+			skippedIds.value = next
+			if (res != null && res.pointsEarned != null) stationPoints.value = Number(res.pointsEarned)
+			if (!applyStationSettle(res)) {
+				uni.showToast({ title: '已跳过，本关没有积分', icon: 'none' })
+			}
+		} catch (e) {
+			uni.showToast({ title: errMsg(e, '不能跳过'), icon: 'none' })
+		} finally {
+			busy.value = false
+		}
+	}
+
+	async function completeCurrent() {
+		const cur = current.value
+		if (cur == null || busy.value) return
+		if (String(cur.type || '') === 'task') {
+			scanTaskQr()
+			return
+		}
+		busy.value = true
+		try {
+			const res = await completeStudyStationStep(projectId.value, routePointId.value, String(cur.id), {})
+			const next = doneIds.value.slice()
+			if (next.indexOf(String(cur.id)) < 0) next.push(String(cur.id))
+			doneIds.value = next
+			if (res != null && res.pointsEarned != null) stationPoints.value = Number(res.pointsEarned)
+			qIndex.value = 0
+			answers.value = []
+			selectedIndexes.value = []
+			applyStationSettle(res)
+		} catch (e) {
+			uni.showToast({ title: errMsg(e, '提交失败'), icon: 'none' })
+		} finally {
+			busy.value = false
+		}
+	}
+
+	function refreshGameScore() {
+		lastGameScore.value = ''
+		gameRetry.value = false
+		const cur = current.value
+		if (cur == null) return
+		const games = stationGames.value
+		if (games == null) return
+		const rec = games[String(cur.id)]
+		if (rec == null) return
+		let t = ''
+		if (rec.score != null) t = '得分 ' + String(rec.score)
+		if (rec.bestScore != null && String(rec.bestScore) !== String(rec.score)) {
+			if (t.length > 0) t = t + ' · '
+			t = t + '最好 ' + String(rec.bestScore)
+		}
+		const tries = rec.attempts != null ? Number(rec.attempts) : 0
+		if (rec.passed === true) {
+			t = t.length > 0 ? (t + ' · 已合格') : '已合格'
+		} else if (tries > 0) {
+			gameRetry.value = true
+			t = t.length > 0 ? ('未合格 · ' + t) : '未合格'
+			t = t + ' · 第 ' + tries.toString() + ' 次'
+		}
+		lastGameScore.value = t
+	}
+
+	async function openGame() {
+		const cur = current.value
+		if (cur == null || busy.value) return
+		let url = String(cur.gameUrl || '')
+		uni.setStorageSync('mqlt_game_result', '')
+		uni.setStorageSync('mqlt_game_complete', '')
+		busy.value = true
+		try {
+			const play = await startStudyStationGamePlay(projectId.value, routePointId.value, String(cur.id))
+			if (play != null && play.playUrl != null && String(play.playUrl).length > 0) url = String(play.playUrl)
+		} catch (e) {
+			if (url.length === 0) {
+				busy.value = false
+				uni.showToast({ title: errMsg(e, '小游戏未配置'), icon: 'none' })
+				return
+			}
+		}
+		busy.value = false
+		if (url.length === 0) {
+			uni.showToast({ title: '小游戏未配置', icon: 'none' })
+			return
+		}
+		const meta: any = {
+			stepId: String(cur.id),
+			maxRetries: cur.maxRetries,
+			skippable: cur.skippable !== false,
+			scoreTiers: cur.scoreTiers,
+			passScore: cur.passScore,
+			browseOnly: gameBrowseOnly.value
+		}
+		try { uni.setStorageSync('mqlt_game_meta', JSON.stringify(meta)) } catch (_e) {}
+		uni.setStorageSync('mqlt_game_url', url)
+		uni.navigateTo({
+			url: '/pages/appointment/station-game?stepId=' + encodeURIComponent(String(cur.id)) + '&projectId=' + encodeURIComponent(projectId.value) + '&routePointId=' + encodeURIComponent(routePointId.value)
+		})
+	}
+
+	async function browseExhaustedGame() {
+		const sid = browseGameStepId.value
+		if (sid.length === 0) return
+		let url = ''
+		const list = steps.value
+		for (let i = 0; i < list.length; i++) {
+			if (String(list[i].id) === sid) { url = String(list[i].gameUrl || ''); break }
+		}
+		busy.value = true
+		try {
+			const play = await startStudyStationGamePlay(projectId.value, routePointId.value, sid)
+			if (play != null && play.playUrl != null && String(play.playUrl).length > 0) url = String(play.playUrl)
+		} catch (_e) {}
+		busy.value = false
+		if (url.length === 0) {
+			uni.showToast({ title: '小游戏未配置', icon: 'none' })
+			return
+		}
+		try { uni.setStorageSync('mqlt_game_meta', JSON.stringify({ stepId: sid, browseOnly: true })) } catch (_e2) {}
+		uni.setStorageSync('mqlt_game_url', url)
+		uni.navigateTo({
+			url: '/pages/appointment/station-game?stepId=' + encodeURIComponent(sid) + '&projectId=' + encodeURIComponent(projectId.value) + '&routePointId=' + encodeURIComponent(routePointId.value)
+		})
+	}
+
+	async function submitStoredGame(raw: string, stepId: string) {
+		let body: any = { event: 'complete', passed: true }
+		try {
+			const parsed = JSON.parse(raw)
+			if (parsed != null) {
+				const sid = String(parsed.stepId || '')
+				if (sid.length > 0 && sid !== stepId) return
+				body = {
+					event: String(parsed.event || 'complete'),
+					score: parsed.score,
+					passed: parsed.passed,
+					durationMs: parsed.durationMs,
+					payload: parsed.payload
+				}
+			}
+		} catch (_e) {}
+		if (busy.value) return
+		busy.value = true
+		try {
+			const res = await completeStudyStationStep(projectId.value, routePointId.value, stepId, body)
+			if (res != null && res.pointsEarned != null) stationPoints.value = Number(res.pointsEarned)
+			if (res != null && res.exhausted === true) {
+				const nextEx = exhaustedIds.value.slice()
+				if (nextEx.indexOf(stepId) < 0) nextEx.push(stepId)
+				exhaustedIds.value = nextEx
+				browseGameStepId.value = stepId
+				uni.showToast({ title: res.message != null ? String(res.message) : '次数用尽，可浏览但分数锁定', icon: 'none' })
+			} else if (res != null && res.completed === false) {
+				const msg = res.message != null ? String(res.message) : '未达到通关条件'
+				uni.showToast({ title: msg, icon: 'none' })
+			} else if (res != null && res.completed === true) {
+				const next = doneIds.value.slice()
+				if (next.indexOf(stepId) < 0 && res.passed === true) next.push(stepId)
+				doneIds.value = next
+			}
+			if (res != null && res.exhaustedIds != null) {
+				const arr = res.exhaustedIds as any[]
+				const mapped: string[] = []
+				for (let i = 0; i < arr.length; i++) mapped.push(String(arr[i]))
+				exhaustedIds.value = mapped
+			}
+			if (!applyStationSettle(res)) {
+				await loadPoint()
+			}
+		} catch (e) {
+			uni.showToast({ title: errMsg(e, '成绩同步失败'), icon: 'none' })
+		} finally {
+			busy.value = false
+		}
+	}
+
+	function toggleMultiAnswer(oi: number) {
+		const next = selectedIndexes.value.slice()
+		const at = next.indexOf(oi)
+		if (at >= 0) next.splice(at, 1)
+		else next.push(oi)
+		next.sort((a: number, b: number): number => a - b)
+		selectedIndexes.value = next
+	}
+
+	function selectOption(oi: number) {
+		if (answering.value || quizReviewing.value) return
+		lastWrong.value = -1
+		lastCorrect.value = -1
+		if (currentMultiSelect.value) {
+			toggleMultiAnswer(oi)
+			return
+		}
+		selectedIndexes.value = [oi]
+	}
+
+	function saveCurrentSelection() {
+		const indexes = selectedIndexes.value.slice()
+		if (indexes.length === 0) return false
+		const nextAnswers: any[] = []
+		for (let i = 0; i < answers.value.length; i++) nextAnswers.push(answers.value[i])
+		while (nextAnswers.length < qIndex.value) nextAnswers.push([])
+		nextAnswers[qIndex.value] = indexes
+		answers.value = nextAnswers
+		return true
+	}
+
+	function goPrevQuestion() {
+		if (answering.value || quizReviewing.value) return
+		if (qIndex.value <= 0) return
+		saveCurrentSelection()
+		qIndex.value = qIndex.value - 1
+		const prev = answers.value[qIndex.value]
+		selectedIndexes.value = Array.isArray(prev) ? (prev as number[]).slice() : []
+		lastWrong.value = -1
+		lastCorrect.value = -1
+	}
+
+	function goNextQuestion() {
+		if (answering.value || quizReviewing.value) return
+		if (selectedIndexes.value.length === 0) {
+			uni.showToast({ title: '请先选择答案', icon: 'none' })
+			return
+		}
+		if (!saveCurrentSelection()) return
+		const qs = currentQuestions.value
+		if (qIndex.value < qs.length - 1) {
+			qIndex.value = qIndex.value + 1
+			const next = answers.value[qIndex.value]
+			selectedIndexes.value = Array.isArray(next) ? (next as number[]).slice() : []
+			lastWrong.value = -1
+			lastCorrect.value = -1
+			return
+		}
+		submitQuizAttempt()
+	}
+
+	function reviewOptClass(rq: any, oi: number): string {
+		const correct = rq != null && Array.isArray(rq.correctIndexes) ? rq.correctIndexes as number[] : []
+		const picked = rq != null && Array.isArray(rq.userIndexes) ? rq.userIndexes as number[] : []
+		const isCorrect = correct.indexOf(oi) >= 0
+		const isPicked = picked.indexOf(oi) >= 0
+		if (isCorrect) return 'correct'
+		if (isPicked && !isCorrect) return 'wrong'
+		return ''
+	}
+
+	function finishQuizReview() {
+		const res = quizReviewRes.value
+		quizReviewing.value = false
+		quizReviewRows.value = []
+		quizReviewRes.value = null
+		const cur = current.value
+		if (cur != null) {
+			const next = doneIds.value.slice()
+			if (next.indexOf(String(cur.id)) < 0) next.push(String(cur.id))
+			doneIds.value = next
+		}
+		qIndex.value = 0
+		answers.value = []
+		selectedIndexes.value = []
+		const exact = res != null && res.correct === true
+		if (!applyStationSettle(res)) {
+			uni.showToast({ title: quizFeedback(res, true), icon: exact ? 'success' : 'none' })
+		}
+	}
+
+	function quizFeedback(res: any, completed: boolean): string {
+		let msg = res != null && res.message != null ? String(res.message) : ''
+		if (msg.length === 0) {
+			if (!completed) msg = '答案还不对，请从第一题再试一次'
+			else if (res != null && res.correct === true) msg = '全部答对，答题完成'
+			else msg = '已提交，按规则计入部分得分'
+		}
+		if (res != null && res.perQuestion != null) {
+			const rows = res.perQuestion as any[]
+			let exact = 0
+			for (let i = 0; i < rows.length; i++) {
+				if (rows[i] != null && rows[i].exact === true) exact = exact + 1
+			}
+			if (rows.length > 0) msg = msg + ' · 答对 ' + exact.toString() + '/' + rows.length.toString() + ' 题'
+		}
+		if (res != null && res.quizScore != null) {
+			msg = msg + ' · 本次得 ' + String(res.quizScore) + ' 分'
+		} else if (res != null && res.earnedPoints != null) {
+			msg = msg + ' · 本次得 ' + String(res.earnedPoints) + ' 分'
+		} else if (res != null && res.pointsEarned != null) {
+			msg = msg + ' · 本站累计 ' + String(res.pointsEarned) + ' 分'
+		}
+		return msg
+	}
+
+	async function submitQuizAttempt() {
+		if (answering.value) return
+		const qs = currentQuestions.value
+		const nextAnswers: any[] = []
+		for (let i = 0; i < answers.value.length; i++) nextAnswers.push(answers.value[i])
+		while (nextAnswers.length < qs.length) nextAnswers.push([])
+		for (let i = 0; i < qs.length; i++) {
+			const row = nextAnswers[i]
+			if (!Array.isArray(row) || row.length === 0) {
+				qIndex.value = i
+				selectedIndexes.value = []
+				uni.showToast({ title: '还有题目未作答', icon: 'none' })
+				return
+			}
+		}
+		const cur = current.value
+		if (cur == null) return
+		answering.value = true
+		try {
+			const res = await completeStudyStationStep(projectId.value, routePointId.value, String(cur.id), { answerIndexes: nextAnswers })
+			if (res != null && res.pointsEarned != null) stationPoints.value = Number(res.pointsEarned)
+			const rows: any[] = []
+			const per = (res != null && res.perQuestion != null) ? (res.perQuestion as any[]) : []
+			for (let i = 0; i < qs.length; i++) {
+				const q = qs[i]
+				const opts: string[] = []
+				const rawOpts = q != null && q.options != null ? (q.options as any[]) : []
+				for (let j = 0; j < rawOpts.length; j++) opts.push(String(rawOpts[j]))
+				const userIdx = Array.isArray(nextAnswers[i]) ? (nextAnswers[i] as number[]).slice() : []
+				let correctIdx: number[] = []
+				if (q != null && Array.isArray(q.answerIndexes)) {
+					for (let k = 0; k < q.answerIndexes.length; k++) correctIdx.push(Number(q.answerIndexes[k]))
+				} else if (q != null && q.answerIndex != null) {
+					correctIdx = [Number(q.answerIndex)]
+				}
+				const p = i < per.length ? per[i] : null
+				rows.push({
+					question: q != null ? String(q.question || q.title || ('第' + (i + 1).toString() + '题')) : ('第' + (i + 1).toString() + '题'),
+					options: opts,
+					userIndexes: userIdx,
+					correctIndexes: correctIdx,
+					exact: p != null ? p.exact === true : false,
+					earned: p != null ? Number(p.earned || 0) : 0,
+					max: p != null ? Number(p.max || 0) : 0,
+				})
+			}
+			let exactCount = 0
+			for (let i = 0; i < rows.length; i++) if (rows[i].exact) exactCount = exactCount + 1
+			const score = res != null && res.quizScore != null ? Number(res.quizScore) : (res != null && res.earnedPoints != null ? Number(res.earnedPoints) : 0)
+			quizReviewSummary.value = '答对 ' + exactCount.toString() + '/' + rows.length.toString() + ' 题 · 本次得分 ' + score.toString()
+			quizReviewRows.value = rows
+			quizReviewRes.value = res
+			quizReviewing.value = true
+		} catch (e) {
+			uni.showToast({ title: errMsg(e, '提交失败'), icon: 'none' })
+		} finally {
+			answering.value = false
+		}
+	}
+
+	function scanTaskQr() {
+		const cur = current.value
+		if (cur == null || checkDone.value || checkBusy.value || busy.value) return
+		if (String(cur.type || '') !== 'task') return
+		uni.scanCode({
+			onlyFromCamera: false,
+			success: (res) => {
+				const raw = res.result != null ? res.result.toString() : ''
+				if (raw.length === 0) {
+					uni.showToast({ title: '未识别到研学码', icon: 'none' })
+					return
+				}
+				completeTaskWithQr(raw)
+			},
+			fail: (_err) => {
+				uni.showToast({ title: '已取消扫码', icon: 'none' })
+			}
+		})
+	}
+
+	async function completeTaskWithQr(raw: string) {
+		const cur = current.value
+		if (cur == null || checkDone.value || checkBusy.value) return
+		checkBusy.value = true
+		busy.value = true
+		uni.showLoading({ title: '确认任务', mask: true })
+		try {
+			const res = await completeStudyStationStep(projectId.value, routePointId.value, String(cur.id), { raw: raw })
+			const next = doneIds.value.slice()
+			if (next.indexOf(String(cur.id)) < 0) next.push(String(cur.id))
+			doneIds.value = next
+			if (res != null && res.pointsEarned != null) stationPoints.value = Number(res.pointsEarned)
+			uni.hideLoading()
+			if (!applyStationSettle(res)) {
+				uni.showToast({ title: '现场任务已确认', icon: 'success' })
+			}
+		} catch (e) {
+			uni.hideLoading()
+			uni.showToast({ title: errMsg(e, '确认失败，请扫描本站研学码'), icon: 'none' })
+		} finally {
+			checkBusy.value = false
+			busy.value = false
+		}
+	}
+
+	async function autoSettleStation() {
+		if (checkDone.value || checkBusy.value) return
+		checkBusy.value = true
+		uni.showLoading({ title: '结算中', mask: true })
+		try {
+			const res = await checkInStudyRoutePoint(projectId.value, routePointId.value, {})
+			uni.hideLoading()
+			applyStationSettle(res)
+		} catch (e) {
+			uni.hideLoading()
+			uni.showToast({ title: errMsg(e, '自动结算失败，请稍后重试'), icon: 'none' })
+		} finally {
+			checkBusy.value = false
+		}
+	}
+
+	onShow(() => {
+		loadPoint()
+		const cur = current.value
+		if (cur == null || String(cur.type) !== 'game') return
+		const raw = uni.getStorageSync('mqlt_game_result')
+		if (raw != null && String(raw).length > 0) {
+			uni.setStorageSync('mqlt_game_result', '')
+			submitStoredGame(String(raw), String(cur.id))
+			return
+		}
+		const done = uni.getStorageSync('mqlt_game_complete')
+		if (done != null && String(done) === String(cur.id)) {
+			uni.setStorageSync('mqlt_game_complete', '')
+			completeCurrent()
+		}
+	})
+
+	onLoad((query: any) => {
+		projectId.value = query != null && query.projectId != null ? String(query.projectId) : ''
+		routePointId.value = query != null && query.routePointId != null ? String(query.routePointId) : ''
+		bookingId.value = query != null && query.bookingId != null ? String(query.bookingId) : ''
+		pointTitle.value = query != null && query.title != null ? decodeURIComponent(String(query.title)) : '站点'
+		loadPoint()
+	})
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; height: 100%; background-color: #F5F7FB; }
+	.hud {
+		flex-direction: row; align-items: center;
+		padding-left: 12px; padding-right: 96px; padding-bottom: 10px;
+		background-color: #1A73E8;
+	}
+	.hud-back {
+		height: 32px; padding: 0 12px; border-radius: 16px;
+		background-color: rgba(255,248,238,.12);
+		align-items: center; justify-content: center; flex-shrink: 0;
+	}
+	.hud-back-txt { color: #FFFFFF; font-size: 13px; font-weight: 700; }
+	.hud-title { flex: 1; color: #FFFFFF; font-size: 15px; font-weight: 700; margin-left: 10px; }
+
+	.body { flex: 1; }
+	.ticket {
+		margin: 14px 16px 8px 16px; padding: 16px 16px 14px 16px;
+		background-color: #FFFFFF; border-radius: 18px; overflow: hidden; position: relative;
+	}
+	.ticket-gold { position: absolute; left: 0; right: 0; top: 0; height: 3px; background-color: #1A73E8; }
+	.ticket-top { align-items: center; margin-bottom: 12px; }
+	.ticket-kicker { font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1.4px; }
+	.ticket-no { font-size: 11px; font-weight: 800; color: #374151; }
+	.ticket-hero { align-items: center; margin-bottom: 10px; }
+	.ticket-seal {
+		width: 56px; height: 56px; border-radius: 28px; background-color: #1A73E8;
+		align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;
+	}
+	.ticket-icon { width: 30px; height: 30px; }
+	.ticket-copy { flex: 1; min-width: 0; }
+	.ticket-title { font-size: 20px; font-weight: 800; color: #1A1A1A; }
+	.ticket-fun { font-size: 12px; color: #374151; margin-top: 4px; }
+	.ticket-body { font-size: 13px; color: #374151; line-height: 20px; }
+	.chip-row { flex-direction: row; flex-wrap: wrap; margin-top: 10px; }
+	.r-chip { padding: 4px 8px; border-radius: 10px; background-color: #FFFFFF; margin-right: 6px; margin-bottom: 6px; }
+	.r-chip-txt { font-size: 11px; font-weight: 700; color: #1A1A1A; }
+
+	.prog { padding: 4px 18px 2px 18px; justify-content: space-between; align-items: center; }
+	.prog-txt { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+	.prog-pts { font-size: 12px; font-weight: 800; color: #1A73E8; }
+	.prog-sub { padding: 0 18px 10px 18px; justify-content: space-between; align-items: center; }
+	.prog-sub-txt { flex: 1; font-size: 10px; color: #374151; }
+	.prog-link { font-size: 11px; font-weight: 800; color: #1A1A1A; padding: 4px 8px; background-color: #1A73E8; border-radius: 10px; }
+	.pts-done { margin-bottom: 10px; padding: 10px 12px; border-radius: 12px; background-color: #FFFFFF; }
+	.pts-done-txt { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+	.prize-link { margin-top: 8px; align-self: flex-start; padding: 6px 10px; border-radius: 10px; background-color: #1A73E8; }
+	.prize-link-txt { font-size: 12px; font-weight: 800; color: #FFFFFF; }
+	.skip { margin-top: 10px; height: 40px; border-radius: 14px; align-items: center; justify-content: center; background-color: rgba(32, 33, 36,0.06); }
+	.skip-txt { font-size: 13px; font-weight: 700; color: #374151; }
+
+	.stage { padding: 4px 16px 8px 16px; }
+	.stage-kicker { font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1.2px; margin-bottom: 6px; }
+	.stage-h { font-size: 22px; font-weight: 800; color: #1A1A1A; }
+	.stage-p { font-size: 13px; color: #374151; margin-top: 6px; line-height: 20px; margin-bottom: 16px; }
+
+	.lecture {
+		width: 100%; height: 196px; border-radius: 16px; background-color: #1A73E8; margin-bottom: 14px;
+	}
+
+	.note {
+		background-color: #FFFFFF; border-radius: 16px; padding: 16px 14px 10px 14px;
+		border-width: 1px; border-style: solid; border-color: #E5E7EB;
+	}
+	.note-rule { height: 3px; background-color: #1A73E8; margin-bottom: 12px; border-radius: 2px; }
+	.note-q { font-size: 16px; font-weight: 800; color: #1A1A1A; line-height: 24px; margin-bottom: 8px; }
+	.quiz-rule { font-size: 11px; font-weight: 700; color: #1A73E8; margin-bottom: 12px; }
+	.opt {
+		flex-direction: row; align-items: center; margin-bottom: 8px; padding: 10px 12px;
+		border-radius: 14px; background-color: #F5F7FB;
+	}
+	.opt.correct { background-color: #1A73E8; }
+	.opt.wrong { background-color: #F8E8E0; }
+	.opt.selected { background-color: #E5E7EB; border-width: 1px; border-style: solid; border-color: #1A73E8; }
+	.opt-letter {
+		width: 26px; height: 26px; border-radius: 13px; background-color: #1A73E8;
+		align-items: center; justify-content: center; margin-right: 10px; flex-shrink: 0;
+	}
+	.opt.correct .opt-letter { background-color: #1A73E8; }
+	.opt.selected .opt-letter { background-color: #1A73E8; }
+	.opt-letter-txt{ font-size: 12px; font-weight: 800; color: #FFFFFF; }
+	.opt.correct .opt-letter-txt { color: #1A1A1A; }
+	.opt-txt { flex: 1; font-size: 14px; font-weight: 600; color: #1A1A1A; }
+	.opt.correct .opt-txt { color: #FFFFFF; }
+	.opt-check { width: 22px; font-size: 18px; font-weight: 900; color: #1A1A1A; text-align: center; }
+	.quiz-confirm { margin-top: 8px; }
+	.quiz-nav { margin-top: 12px; gap: 8px; }
+	.quiz-nav-btn { flex: 1; }
+	.quiz-nav-btn.disabled { opacity: 0.45; }
+	.quiz-confirm.disabled { opacity: 0.45; }
+
+	.offline-card {
+		padding: 16px 14px; border-radius: 16px; background-color: #1A73E8; margin-bottom: 14px;
+	}
+	.offline-kicker { font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1px; }
+	.offline-name { font-size: 16px; font-weight: 800; color: #FFFFFF; margin-top: 8px; }
+	.offline-sub { font-size: 12px; color: #E5E7EB; margin-top: 6px; line-height: 18px; }
+
+	.shard {
+		align-items: center; padding: 22px 16px; margin-bottom: 12px;
+		background-color: #1A73E8; border-radius: 18px;
+	}
+	.shard-ico { width: 48px; height: 48px; margin-bottom: 10px; }
+	.shard-name { font-size: 18px; font-weight: 800; color: #FFFFFF; }
+	.shard-ok { font-size: 12px; color: #1A73E8; margin-top: 6px; font-weight: 700; }
+	.prize-card {
+		padding: 14px; border-radius: 14px; background-color: #FFFFFF; margin-bottom: 12px;
+		border-width: 1px; border-style: solid; border-color: #1A1A1A;
+	}
+	.prize-kicker { font-size: 10px; font-weight: 800; color: #1A73E8; letter-spacing: 1px; }
+	.prize-name { font-size: 16px; font-weight: 800; color: #1A1A1A; margin-top: 4px; }
+	.prize-sub { font-size: 12px; color: #374151; margin-top: 4px; }
+
+	.cta {
+		height: 48px; border-radius: 16px; background-color: #1A73E8;
+		align-items: center; justify-content: center; margin-top: 4px;
+	}
+	.cta-txt { color: #FFFFFF; font-size: 15px; font-weight: 800; }
+	.body-pad { height: 28px; }
+</style>

@@ -1,0 +1,20 @@
+export type LayoutWindowInfo = {
+	statusBarHeight: number
+	windowWidth: number
+	windowHeight: number
+	screenHeight: number
+}
+
+export function getLayoutWindowInfo(): LayoutWindowInfo {
+	const win = uni.getWindowInfo()
+	return {
+		statusBarHeight: win.statusBarHeight,
+		windowWidth: win.windowWidth,
+		windowHeight: win.windowHeight,
+		screenHeight: win.screenHeight
+	}
+}
+
+export function getStatusBarHeight(): number {
+	return uni.getWindowInfo().statusBarHeight
+}

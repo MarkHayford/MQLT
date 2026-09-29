@@ -1,0 +1,410 @@
+<template>
+	<view class="page-wrapper uni-column" :style="pageStyle">
+		<!-- 导航栏 -->
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">我的地址</text>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="scroll-inner">
+				<view v-for="(item, index) in addresses" :key="item.id" class="address-card" @click="handleEdit(index)">
+					<view class="card-row uni-row">
+						<view class="receiver-info uni-column">
+							<view class="receiver-line uni-row">
+								<text class="receiver-name">{{ item.name }}</text>
+								<text class="receiver-phone">{{ maskPhone(item.phone) }}</text>
+								<view v-if="item.isDefault" class="default-tag">
+									<text class="default-tag-text">默认</text>
+								</view>
+							</view>
+							<text class="address-text">{{ item.region }} {{ item.detail }}</text>
+							<view v-if="item.tag.length > 0" class="addr-tag-row">
+								<view class="addr-tag">
+									<text class="addr-tag-text">{{ item.tag }}</text>
+								</view>
+							</view>
+						</view>
+						<text class="edit-arrow">›</text>
+					</view>
+
+					<view class="card-actions uni-row">
+						<view class="action-cell" @click.stop="toggleDefault(index)">
+							<view :class="['radio-circle', item.isDefault ? 'radio-circle-active' : '']">
+								<view v-if="item.isDefault" class="radio-dot"></view>
+							</view>
+							<text :class="['action-cell-text', item.isDefault ? 'action-cell-text-active' : '']">设为默认</text>
+						</view>
+						<view class="action-cell" @click.stop="handleEdit(index)">
+							<image src="/static/icon-edit.svg" class="action-cell-icon" mode="aspectFit"></image>
+							<text class="action-cell-text">编辑</text>
+						</view>
+						<view class="action-cell" @click.stop="handleDelete(index)">
+							<image src="/static/func-trash.svg" class="action-cell-icon" mode="aspectFit"></image>
+							<text class="action-cell-text action-cell-text-danger">删除</text>
+						</view>
+					</view>
+				</view>
+
+				<view v-if="addresses.length === 0" class="empty-state uni-column">
+					<image src="/static/icon-empty-inbox.svg" class="empty-icon" mode="aspectFit"></image>
+					<text class="empty-title">暂无收货地址</text>
+					<text class="empty-desc">添加常用地址，研学物料更快送达</text>
+				</view>
+
+				<view class="bottom-spacer"></view>
+			</view>
+		</scroll-view>
+
+		<!-- 底部新增 -->
+		<view class="bottom-action-bar">
+			<view class="add-btn" @click="goAdd">
+				<text class="add-btn-text">+ 新增收货地址</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { deleteAddress, fetchAddresses, updateAddress } from '../../utils/user-services.uts'
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const screenHeight = layout.screenHeight
+	const pageStyle = 'height: ' + screenHeight + 'px;'
+
+	type Address = {
+		id: string
+		name: string
+		phone: string
+		region: string
+		detail: string
+		tag: string
+		isDefault: boolean
+	}
+
+	type ApiAddress = {
+		id: string
+		receiver: string
+		phone: string
+		province: string
+		city: string
+		district: string
+		detail: string
+		isDefault: boolean
+	}
+
+	const addresses = ref<Address[]>([])
+
+	const maskPhone = (phone: string): string => {
+		if (phone.length === 11) {
+			return phone.substring(0, 3) + ' **** ' + phone.substring(7)
+		}
+		return phone
+	}
+
+	const loadAddresses = () => {
+		fetchAddresses<ApiAddress>().then((list) => {
+			const mapped: Address[] = []
+			for (let i = 0; i < list.length; i++) {
+				const item = list[i]
+				mapped.push({
+					id: item.id,
+					name: item.receiver,
+					phone: item.phone,
+					region: item.province + ' ' + item.city + ' ' + item.district,
+					detail: item.detail,
+					tag: '',
+					isDefault: item.isDefault
+				})
+			}
+			addresses.value = mapped
+		}).catch((_err) => {
+			addresses.value = []
+			uni.showToast({ title: '地址加载失败', icon: 'none' })
+		})
+	}
+
+	const toggleDefault = (index: number) => {
+		const target = addresses.value[index]
+		if (target == null) return
+		if (target.isDefault) return
+		for (let i = 0; i < addresses.value.length; i++) {
+			addresses.value[i].isDefault = false
+		}
+		target.isDefault = true
+		updateAddress<ApiAddress>(target.id, { isDefault: true }).then((_res) => {
+			loadAddresses()
+			uni.showToast({ title: '已设为默认', icon: 'success' })
+		}).catch((_err) => {
+			loadAddresses()
+			uni.showToast({ title: '设置默认失败', icon: 'none' })
+		})
+	}
+
+	const handleDelete = (index: number) => {
+		const target = addresses.value[index]
+		if (target == null) return
+		uni.showModal({
+			title: '删除地址',
+			content: '确定要删除该收货地址吗？',
+			confirmText: '删除',
+			confirmColor: '#DC2626',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) {
+					deleteAddress(target.id).then((_res) => {
+						loadAddresses()
+						uni.showToast({ title: '已删除', icon: 'success' })
+					}).catch((err) => {
+						const message = err != null && err.message != null ? err.message.toString() : '删除失败'
+						uni.showToast({ title: message.length > 0 ? message : '删除失败', icon: 'none' })
+					})
+				}
+			}
+		})
+	}
+
+	const handleEdit = (index: number) => {
+		const target = addresses.value[index]
+		if (target == null) return
+		uni.navigateTo({ url: '/pages/mine/address-edit?id=' + target.id })
+	}
+
+	const goAdd = () => {
+		uni.navigateTo({ url: '/pages/mine/address-edit' })
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	onShow(() => {
+		loadAddresses()
+	})
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+	}
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		background-color: #FFFFFF;
+		position: relative;
+		border-bottom-width: 0.5px;
+		border-bottom-color: rgba(0, 0, 0, 0.08);
+	}
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.main-scroll {
+		flex: 1;
+		width: 100%;
+	}
+	.scroll-inner {
+		padding: 16px;
+	}
+
+	.address-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px 16px 12px 16px;
+		margin-bottom: 12px;
+		border: 1px solid rgba(0, 0, 0, 0.04);
+	}
+	.card-row {
+		align-items: center;
+		padding-bottom: 12px;
+	}
+	.receiver-info {
+		flex: 1;
+	}
+	.receiver-line {
+		align-items: center;
+		margin-bottom: 6px;
+	}
+	.receiver-name {
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-right: 12px;
+	}
+	.receiver-phone {
+		font-size: 13px;
+		color: #374151;
+		margin-right: 8px;
+	}
+	.default-tag {
+		background-color: #1A73E8;
+		padding: 2px 8px;
+		border-radius: 6px;
+	}
+	.default-tag-text {
+		color: #FFFFFF;
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.address-text {
+		font-size: 14px;
+		color: #374151;
+		line-height: 22px;
+	}
+	.addr-tag-row {
+		flex-direction: row;
+		margin-top: 6px;
+	}
+	.addr-tag {
+		padding: 2px 8px;
+		background-color: #EFF6FF;
+		border-radius: 6px;
+	}
+	.addr-tag-text {
+		font-size: 11px;
+		color: #1A1A1A;
+		font-weight: 600;
+	}
+	.edit-arrow {
+		font-size: 22px;
+		color: #E5E7EB;
+		margin-left: 12px;
+	}
+
+	.card-actions {
+		justify-content: space-around;
+		padding-top: 12px;
+		border-top-width: 0.5px;
+		border-top-color: #FFFFFF;
+	}
+	.action-cell {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		padding: 6px 0;
+	}
+	.radio-circle {
+		width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		border: 1.5px solid #E5E7EB;
+		align-items: center;
+		justify-content: center;
+		margin-right: 6px;
+	}
+	.radio-circle-active {
+		border-color: #1A1A1A;
+	}
+	.radio-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 4px;
+		background-color: #1A73E8;
+	}
+	.action-cell-icon {
+		font-size: 13px;
+		margin-right: 4px;
+	}
+	.action-cell-text {
+		font-size: 13px;
+		color: #374151;
+		font-weight: 500;
+	}
+	.action-cell-text-active {
+		color: #1A1A1A;
+		font-weight: 700;
+	}
+	.action-cell-text-danger {
+		color: #DC2626;
+	}
+
+	.empty-state {
+		padding-top: 100px;
+		align-items: center;
+	}
+	.empty-icon {
+		font-size: 56px;
+		margin-bottom: 14px;
+	}
+	.empty-title {
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+		margin-bottom: 6px;
+	}
+	.empty-desc {
+		font-size: 13px;
+		color: #9CA3AF;
+	}
+
+	.bottom-spacer {
+		height: 100px;
+	}
+
+	.bottom-action-bar {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 12px 16px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+		background-color: #FFFFFF;
+		border-top-width: 0.5px;
+		border-top-color: rgba(0, 0, 0, 0.1);
+	}
+	.add-btn {
+		height: 50px;
+		background-image: linear-gradient(135deg, #1A1A1A 0%, #374151 100%);
+		border-radius: 25px;
+		align-items: center;
+		justify-content: center;
+	}
+	.add-btn-text {
+		color: #FFFFFF;
+		font-size: 16px;
+		font-weight: 700;
+	}
+</style>

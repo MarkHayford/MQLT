@@ -1,0 +1,343 @@
+<template>
+	<view class="page-wrapper uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">项目拼图</text>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view v-if="project != null" class="detail-body">
+				<view
+					class="hero-card uni-column"
+					:style="'background-image: linear-gradient(145deg, ' + project.gradientStart + ' 0%, ' + project.gradientEnd + ' 100%)'"
+				>
+					<text class="hero-title">{{ project.title }}</text>
+					<text class="hero-subtitle">{{ project.subtitle }}</text>
+					<text class="hero-grid-tag">{{ gridLabel }} 共 {{ project.pieces.length }} 块</text>
+					<view class="hero-bar-bg">
+						<view class="hero-bar-fill" :style="'width:' + progressPercent + '%'"></view>
+					</view>
+					<text class="hero-progress">已收集 {{ collectedCount }}/{{ project.pieces.length }}</text>
+				</view>
+
+				<view class="board-card">
+					<text class="board-title">完整拼图盘</text>
+					<text class="board-hint">点击单块拼图查看详情</text>
+					<view class="board-grid" :style="boardGridStyle">
+						<view
+							v-for="piece in project.pieces"
+							:key="project.id + '-' + piece.id"
+							:class="['board-cell', piece.collected ? 'cell-collected' : 'cell-locked']"
+							:style="cellStyle"
+							@click="goPieceDetail(piece.id)"
+						>
+							<image v-if="piece.collected" :src="piece.icon" class="cell-image" mode="aspectFill"></image>
+							<view v-else class="cell-lock-tile">
+								<image src="/static/icon-lock.svg" class="cell-lock-icon" mode="aspectFit"></image>
+							</view>
+						</view>
+					</view>
+					<view class="piece-status-list uni-column">
+						<view
+							v-for="piece in project.pieces"
+							:key="project.id + '-' + piece.id + '-status'"
+							class="piece-status-row uni-row"
+							@click="goPieceDetail(piece.id)"
+						>
+							<view :class="['piece-status-dot', piece.collected ? 'piece-status-dot-on' : '']"></view>
+							<text :class="['piece-status-name', piece.collected ? 'piece-status-name-on' : '']">{{ piece.name }}</text>
+							<text class="piece-status-state">{{ piece.collected ? '已收集' : '未收集' }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view class="complete-banner" v-if="isAllCollected">
+					<image src="/static/icon-trophy.svg" class="complete-icon" mode="aspectFit"></image>
+					<text class="complete-txt">恭喜！本项目拼图已全部集齐</text>
+				</view>
+
+				<view class="action-btn action-btn-achievement" v-if="isAllCollected" @click="goProjectAchievement">
+					<text class="action-btn-achievement-text">我的成果</text>
+				</view>
+				<view class="action-btn" :style="actionBtnStyle" @click="goStudyProject">
+					<text class="action-btn-text">查看研学项目详情</text>
+				</view>
+			</view>
+
+			<view v-else class="empty-state uni-column">
+				<image src="/static/icon-puzzle.svg" class="empty-svg" mode="aspectFit"></image>
+				<text class="empty-txt">项目拼图不存在</text>
+			</view>
+
+			<view style="height: 40px;"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { StorageKeys } from '../../utils/storage-keys.uts'
+	import {
+		fetchProjectPuzzles,
+		getProjectCollected,
+		getGridLabel,
+		type ProjectPuzzle
+	} from '../../utils/puzzle-data.uts'
+
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const windowWidth = uni.getWindowInfo().windowWidth
+	const boardMaxWidth = windowWidth - 66 > 320 ? 320 : (windowWidth - 66 > 240 ? windowWidth - 66 : 240)
+	const project = ref<ProjectPuzzle | null>(null)
+	const projectId = ref('')
+
+	const collectedCount = computed((): number => {
+		const p = project.value
+		if (p == null) return 0
+		return getProjectCollected(p)
+	})
+
+	const progressPercent = computed((): number => {
+		const p = project.value
+		if (p == null || p.pieces.length === 0) return 0
+		return collectedCount.value / p.pieces.length * 100
+	})
+
+	const gridLabel = computed((): string => {
+		const p = project.value
+		if (p == null) return ''
+		return getGridLabel(p)
+	})
+
+	const isAllCollected = computed((): boolean => {
+		const p = project.value
+		if (p == null) return false
+		return collectedCount.value === p.pieces.length
+	})
+
+	const boardGridStyle = computed((): string => {
+		const p = project.value
+		if (p == null || p.gridCols === 0 || p.gridRows === 0) return 'width: ' + boardMaxWidth + 'px; height: ' + boardMaxWidth + 'px;'
+		const cellSize = Math.floor(boardMaxWidth / p.gridCols)
+		return 'width: ' + cellSize * p.gridCols + 'px; height: ' + cellSize * p.gridRows + 'px;'
+	})
+
+	const cellStyle = computed((): string => {
+		const p = project.value
+		if (p == null || p.gridCols === 0) return 'width: ' + boardMaxWidth + 'px; height: ' + boardMaxWidth + 'px;'
+		const cellSize = Math.floor(boardMaxWidth / p.gridCols)
+		return 'width: ' + cellSize + 'px; height: ' + cellSize + 'px;'
+	})
+
+	const actionBtnStyle = computed((): string => {
+		const p = project.value
+		if (p == null) return ''
+		return 'background-image: linear-gradient(135deg, ' + p.gradientStart + ' 0%, ' + p.gradientEnd + ' 100%)'
+	})
+
+	onLoad((options: OnLoadOptions) => {
+		const idParam = options['id']
+		const id = idParam != null ? idParam.toString() : ''
+		projectId.value = id
+		loadProject()
+	})
+
+	onShow(() => {
+		loadProject()
+	})
+
+	const loadProject = () => {
+		if (projectId.value.length === 0) return
+		const token = uni.getStorageSync(StorageKeys.authToken)
+		if (token == null || token.toString().length === 0) {
+			project.value = null
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			return
+		}
+		fetchProjectPuzzles().then((list) => {
+			let found: ProjectPuzzle | null = null
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].id === projectId.value) {
+					found = list[i]
+					break
+				}
+			}
+			project.value = found
+		}).catch((_err) => {
+			project.value = null
+			uni.showToast({ title: '拼图数据加载失败', icon: 'none' })
+		})
+	}
+
+	const goPieceDetail = (pieceId: string) => {
+		const p = project.value
+		if (p == null) return
+		uni.navigateTo({ url: '/pages/mine/puzzle-detail?projectId=' + p.id + '&pieceId=' + pieceId })
+	}
+
+	const goProjectAchievement = () => {
+		const p = project.value
+		if (p == null) return
+		uni.navigateTo({ url: '/pages/mine/puzzle-project-achievement?id=' + p.id })
+	}
+
+	const goStudyProject = () => {
+		const p = project.value
+		if (p == null) return
+		uni.navigateTo({ url: '/pages/appointment/project-detail?id=' + p.id })
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+</script>
+
+<style>
+	.page-wrapper { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+		background-color: #FFFFFF;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.nav-back { flex-direction: row; align-items: center; z-index: 1; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { font-size: 16px; color: #1A1A1A; font-weight: 500; }
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.main-scroll { flex: 1; width: 100%; }
+	.detail-body { padding: 16px; }
+
+	.hero-card {
+		border-radius: 20px;
+		padding: 24px 20px;
+		align-items: center;
+		margin-bottom: 16px;
+	}
+	.hero-title { font-size: 20px; font-weight: 800; color: #FFFFFF; margin-bottom: 6px; text-align: center; }
+	.hero-subtitle { font-size: 13px; color: #FFFFFF; margin-bottom: 8px; }
+	.hero-grid-tag { font-size: 12px; color: rgba(255, 255, 255, 0.7); margin-bottom: 14px; }
+	.hero-bar-bg {
+		width: 100%;
+		height: 8px;
+		background-color: rgba(255, 255, 255, 0.2);
+		border-radius: 4px;
+		overflow: hidden;
+		margin-bottom: 8px;
+	}
+	.hero-bar-fill { height: 100%; border-radius: 4px; background-color: #FFFFFF; }
+	.hero-progress { font-size: 14px; font-weight: 600; color: #FFFFFF; }
+
+	.board-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 16px;
+		border: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.board-title { font-size: 17px; font-weight: 700; color: #1A1A1A; margin-bottom: 4px; }
+	.board-hint { font-size: 12px; color: #9CA3AF; margin-bottom: 14px; }
+	.board-grid {
+		align-self: center;
+		flex-direction: row;
+		flex-wrap: wrap;
+		overflow: hidden;
+		border-radius: 10px;
+		background-color: #E5E7EB;
+	}
+	.board-cell {
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+	.cell-collected { background-color: #BCBCBC; }
+	.cell-locked { background-color: #E5E7EB; }
+	.cell-image { width: 100%; height: 100%; }
+	.cell-lock-tile {
+		width: 100%;
+		height: 100%;
+		align-items: center;
+		justify-content: center;
+		background-color: #E5E7EB;
+	}
+	.cell-lock-icon { width: 30px; height: 30px; opacity: 0.48; }
+
+	.piece-status-list { margin-top: 14px; }
+	.piece-status-row {
+		align-items: center;
+		min-height: 30px;
+		padding: 4px 0;
+	}
+	.piece-status-dot {
+		width: 7px;
+		height: 7px;
+		margin-right: 7px;
+		border-radius: 999px;
+		background-color: #C5CECA;
+	}
+	.piece-status-dot-on { background-color: #34C759; }
+	.piece-status-name {
+		flex: 1;
+		font-size: 12px;
+		color: #374151;
+		font-weight: 600;
+		lines: 1;
+		overflow: hidden;
+	}
+	.piece-status-name-on { color: #1A1A1A; }
+	.piece-status-state {
+		font-size: 11px;
+		color: #9CA3AF;
+		font-weight: 600;
+	}
+
+	.complete-banner {
+		padding: 14px;
+		background-color: #F0FDF4;
+		border-radius: 12px;
+		margin-bottom: 12px;
+		align-items: center;
+		flex-direction: row;
+		justify-content: center;
+	}
+	.complete-icon { width: 22px; height: 22px; margin-right: 8px; }
+	.complete-txt { font-size: 14px; color: #34C759; font-weight: 600; }
+
+	.action-btn {
+		height: 50px;
+		border-radius: 25px;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 10px;
+	}
+	.action-btn-achievement {
+		background-color: #FFFFFF;
+		border: 1.5px solid #34C759;
+	}
+	.action-btn-achievement-text { font-size: 16px; font-weight: 700; color: #34C759; }
+	.action-btn-text { font-size: 16px; font-weight: 600; color: #FFFFFF; }
+
+	.empty-state { padding-top: 80px; align-items: center; }
+	.empty-svg { width: 56px; height: 56px; margin-bottom: 12px; opacity: 0.45; }
+	.empty-txt { font-size: 15px; color: #9CA3AF; }
+</style>

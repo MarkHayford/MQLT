@@ -1,0 +1,459 @@
+import { ApiEndpoints, endpointWithId, studyProjectDocumentEndpoint, studyExploreSessionEndpoint, studyRoutePointCheckInEndpoint, studyRoutePointKnowledgeTaskEndpoint, studyRoutePointKnowledgeCompleteEndpoint, studyRoutePointStationStepCompleteEndpoint, studyRoutePointStationStepGamePlayEndpoint, studyBookingEarlyExitEndpoint, studyBookingTourPauseEndpoint, studyBookingTourResumeEndpoint, studyTourMallEndpoint, studyTourMallRedeemEndpoint } from './api-endpoints.uts'
+import { getApi, postApi, requestApi } from './api-client.uts'
+
+export type StudyProjectContact = {
+	id: string
+	name: string
+	phone: string
+	wechat: string
+	role: string
+	sort: number
+}
+
+export type AudienceSpotTemplate = {
+	id: string
+	name: string
+	audience: string
+	audienceLabel: string
+	description: string
+	zoneKey: string
+	pace: string
+	needCar: string
+	spotIds: string[]
+	enabled: boolean
+	sortOrder: number
+}
+
+export type StudyProjectMeta = {
+	id: string
+	title: string
+	subtitle: string
+	price: string
+	status: string
+	enrolled: number
+	maxCapacity: number
+	bookableDays: number
+	dayOps: any
+	scheduleDays: any[]
+	scheduleMeta: any
+	audienceTemplates: AudienceSpotTemplate[]
+	tags: string[]
+	gradientStart: string
+	gradientEnd: string
+	category: string
+	date: string
+	location: string
+	locationLatitude: number | null
+	locationLongitude: number | null
+	documents: StudyProjectDocument[]
+	contactPhone: string
+	contactServiceTime: string
+	contactWechat: string
+	contacts: StudyProjectContact[]
+	dutyContact: StudyProjectContact | null
+	mediaColors: string[]
+	openDate: string
+	startTime: number | null
+	endTime: number | null
+	enterpriseId: string
+	enterpriseName: string
+	routePoints: any[]
+	routeZones: any[]
+}
+
+export type StudyProjectDocument = {
+	title: string
+	size: string
+	url: string
+}
+
+export type StudyProjectDocumentSection = {
+	heading: string
+	paragraphs: string[]
+	bullets: string[]
+}
+
+export type StudyProjectDocumentDetail = {
+	projectId: string
+	projectTitle: string
+	title: string
+	subtitle: string
+	updatedAt: string
+	sections: StudyProjectDocumentSection[]
+}
+
+export type StudyBookingRecord = {
+	id: string
+	projectId: string
+	bookingGroupId: string
+	bookerId: string
+	isBooker: boolean
+	participantCount: number
+	participants: StudyBookingParticipant[]
+	status: string
+	amount: string
+	personalAmount: string
+	paidAt: string | null
+	cancelledAt: string | null
+	completedAt: string | null
+	checkedInAt: string | null
+	checkedInById: string | null
+	userDeletedAt: string | null
+	pendingReady: boolean
+	payable: boolean
+	confirmable: boolean
+	cancellable: boolean
+	createdAt: string
+	updatedAt: string
+	project: StudyProjectMeta
+	tripPlan: any
+	rental: any
+	pickup: any
+	routePointIds: string[]
+	entranceCheckedIn: boolean
+}
+
+export type StudyBookingParticipant = {
+	bookingId: string
+	userId: string
+	name: string
+	phone: string
+	idCard: string
+	role: string
+	status: string
+	isBooker: boolean
+	isCurrentUser: boolean
+	verificationStatus: string
+	verificationLabel: string
+	verificationMessage: string
+	registered: boolean
+	realNameVerified: boolean
+	verified: boolean
+	canVerify: boolean
+	checkedInAt: string | null
+	checkedInById: string
+}
+
+export type StudyCheckInResult = {
+	booking: StudyBookingRecord
+	checkedInAt: string | null
+	alreadyCheckedIn: boolean
+	participantName: string
+	studyNo: string
+	projectId: string
+	projectTitle: string
+}
+
+export function fetchStudyProjects(): Promise<StudyProjectMeta[]> {
+	return getApi<StudyProjectMeta[]>(ApiEndpoints.studyProjects, false)
+}
+
+export function fetchStudyProjectDetail(id: string): Promise<StudyProjectMeta | null> {
+	return getApi<StudyProjectMeta>(endpointWithId(ApiEndpoints.studyProjectDetail, id), false)
+}
+
+export function fetchStudyProjectRoutePoints(id: string): Promise<any> {
+	return getApi<any>(endpointWithId(ApiEndpoints.studyProjectRoutePoints, id), false)
+}
+
+export function fetchStudyProjectDocumentDetail(projectId: string, docIndex: string): Promise<StudyProjectDocumentDetail | null> {
+	return getApi<StudyProjectDocumentDetail>(studyProjectDocumentEndpoint(projectId, docIndex), false)
+}
+
+export type StudyProjectAdminAccess = {
+	projectId: string
+	isProjectAdmin: boolean
+	isProjectOrganizer: boolean
+}
+
+export function fetchStudyProjectAdminAccess(id: string): Promise<StudyProjectAdminAccess> {
+	return getApi<StudyProjectAdminAccess>(endpointWithId(ApiEndpoints.studyProjectAdminAccess, id), true)
+}
+
+export function fetchStudyBookings(): Promise<StudyBookingRecord[]> {
+	return getApi<StudyBookingRecord[]>(ApiEndpoints.studyBookings, true)
+}
+
+export function fetchStudyBookingDetail(id: string): Promise<StudyBookingRecord> {
+	return getApi<StudyBookingRecord>(endpointWithId(ApiEndpoints.studyBookingDetail, id), true)
+}
+
+export type RentalDriver = {
+	id: string
+	name: string
+	vehicleType: string
+	vehicleName: string
+	seats: number
+	plateNo: string
+	phone: string
+	wechat: string
+	city: string
+	price: number
+	priceText: string
+	status: string
+	statusLabel: string
+	available: boolean
+	distanceKm: number | null
+	leave: boolean
+	rented: boolean
+	note: string
+}
+
+export type RentalDriversResult = {
+	vehicleType: string
+	date: string | null
+	pickup: any | null
+	enterprise: any | null
+	radiusKm: number
+	city: string
+	matching: any | null
+	drivers: RentalDriver[]
+	total: number
+	availableCount: number
+}
+
+/** 查询当前可约司机：人数区间车型 + 定位所在城市 */
+export function fetchRentalDrivers(params: any): Promise<RentalDriversResult> {
+	const vehicleType = params != null && params['vehicleType'] != null ? params['vehicleType'].toString() : 'van7'
+	const pickupLat = params != null && params['pickupLat'] != null ? Number(params['pickupLat']) : 0
+	const pickupLng = params != null && params['pickupLng'] != null ? Number(params['pickupLng']) : 0
+	const projectId = params != null && params['projectId'] != null ? params['projectId'].toString() : ''
+	const date = params != null && params['date'] != null ? params['date'].toString() : ''
+	const city = params != null && params['city'] != null ? params['city'].toString() : ''
+	let url = ApiEndpoints.studyRentalDrivers + '?vehicleType=' + encodeURIComponent(vehicleType)
+	if (pickupLat != 0 && pickupLng != 0) {
+		url = url + '&pickupLat=' + encodeURIComponent(pickupLat.toFixed(6)) + '&pickupLng=' + encodeURIComponent(pickupLng.toFixed(6))
+	}
+	if (projectId.length > 0) url = url + '&projectId=' + encodeURIComponent(projectId)
+	if (date.length > 0) url = url + '&date=' + encodeURIComponent(date)
+	if (city.length > 0) url = url + '&city=' + encodeURIComponent(city)
+	return getApi<RentalDriversResult>(url, true)
+}
+
+
+
+export type StudyAiPlanDay = {
+	dayKey: string
+	spotIds: string[]
+	titles: string[]
+}
+
+export type StudyAiPlanResult = {
+	reply: string
+	isPlan: boolean
+	model: string
+	zonePref: string
+	pace: string
+	needCar: string
+	rentalId: string
+	rentalName: string
+	days: StudyAiPlanDay[]
+	source: string
+}
+
+export type StudyAiPlanSpotInput = {
+	id: string
+	title: string
+	zoneKey: string
+	zoneLabel: string
+	durationMin: number
+	desc: string
+}
+
+export type StudyAiPlanHistoryItem = {
+	role: string
+	content: string
+}
+
+/** 服务端代理 DeepSeek（deepseek-flash）做多日行程规划 */
+export function fetchStudyAiPlan(
+	projectId: string,
+	message: string,
+	dayKeys: string[],
+	people: number,
+	spots: StudyAiPlanSpotInput[],
+	history: StudyAiPlanHistoryItem[],
+	prefs: any
+): Promise<StudyAiPlanResult> {
+	return requestApi<StudyAiPlanResult>({
+		method: 'POST',
+		url: ApiEndpoints.studyAiPlan,
+		data: {
+			projectId: projectId,
+			message: message,
+			dayKeys: dayKeys,
+			people: people,
+			spots: spots,
+			history: history,
+			prefs: prefs
+		},
+		requireAuth: true,
+		timeoutMs: 60000
+	})
+}
+
+export function createStudyBooking(projectId: string, travelerIds: string[] = [], rentalOptionId: string = '', rentalFee: number = 0, routePointIds: string[] = [], rentalDriverId: string = '', extra: any = null): Promise<StudyBookingRecord> {
+	// 显式字段，避免编译后丢 tripPlan / 租车元数据
+	const payload: any = {
+		projectId: projectId,
+		travelerIds: travelerIds,
+		rentalOptionId: rentalOptionId.length > 0 ? rentalOptionId : 'none',
+		vehicleType: rentalOptionId.length > 0 ? rentalOptionId : 'none',
+		rentalFee: rentalFee,
+		rentalDriverId: rentalDriverId,
+		routePointIds: routePointIds
+	}
+	if (extra != null) {
+		if (extra.tripPlan != null) payload.tripPlan = extra.tripPlan
+		if (extra.pickupAddress != null) payload.pickupAddress = extra.pickupAddress
+		if (extra.pickupLatitude != null) {
+			payload.pickupLatitude = extra.pickupLatitude
+			payload.pickupLat = extra.pickupLatitude
+		}
+		if (extra.pickupLongitude != null) {
+			payload.pickupLongitude = extra.pickupLongitude
+			payload.pickupLng = extra.pickupLongitude
+		}
+		if (extra.rentalDriverName != null) {
+			payload.rentalDriverName = extra.rentalDriverName
+			payload.driverName = extra.rentalDriverName
+		}
+		if (extra.rentalDriverPhone != null) {
+			payload.rentalDriverPhone = extra.rentalDriverPhone
+			payload.driverPhone = extra.rentalDriverPhone
+		}
+		if (extra.rentalDriverWechat != null) {
+			payload.rentalDriverWechat = extra.rentalDriverWechat
+			payload.driverWechat = extra.rentalDriverWechat
+		}
+		if (extra.rentalVehicleName != null) {
+			payload.rentalVehicleName = extra.rentalVehicleName
+			payload.vehicleName = extra.rentalVehicleName
+		}
+		if (extra.rentalPlateNo != null) {
+			payload.rentalPlateNo = extra.rentalPlateNo
+			payload.plateNo = extra.rentalPlateNo
+		}
+	}
+	// 无 tripPlan 时用 routePointIds 兜底成单日行程，后端也能识别
+	if (payload.tripPlan == null && routePointIds.length > 0) {
+		payload.tripPlan = {
+			dayKeys: ['day1'],
+			days: [{ dayKey: 'day1', spotIds: routePointIds }]
+		}
+	}
+	return postApi<StudyBookingRecord>(ApiEndpoints.studyBookings, payload, true)
+}
+
+export function verifyStudyBooking(id: string): Promise<StudyBookingRecord> {
+	return postApi<StudyBookingRecord>(endpointWithId(ApiEndpoints.studyBookingVerify, id), {}, true)
+}
+
+export type StudyCheckInDayTicket = {
+	dayKey: string
+	label: string
+	state: string
+	stateLabel: string
+	hint: string
+	payload: string
+}
+
+export type StudyCheckInTicket = {
+	bookingId: string
+	today: string
+	days: StudyCheckInDayTicket[]
+}
+
+export function fetchStudyCheckInTicket(id: string): Promise<StudyCheckInTicket> {
+	return getApi<StudyCheckInTicket>(endpointWithId(ApiEndpoints.studyBookingCheckInTicket, id), true)
+}
+
+export function redeemStudyCheckIn(raw: string): Promise<StudyBookingRecord> {
+	return postApi<StudyBookingRecord>(ApiEndpoints.studyBookingRedeemCheckIn, { raw: raw }, true)
+}
+
+export function confirmStudyBooking(id: string): Promise<StudyBookingRecord> {
+	return postApi<StudyBookingRecord>(endpointWithId(ApiEndpoints.studyBookingConfirm, id), {}, true)
+}
+
+export function addStudyBookingParticipant(id: string, data: any): Promise<StudyBookingRecord> {
+	return postApi<StudyBookingRecord>(endpointWithId(ApiEndpoints.studyBookingParticipants, id), data, true)
+}
+
+export function removeStudyBookingParticipant(id: string, participantBookingId: string): Promise<StudyBookingRecord> {
+	const endpoint = endpointWithId(ApiEndpoints.studyBookingParticipantDelete, id).replace('{participantBookingId}', participantBookingId)
+	return postApi<StudyBookingRecord>(endpoint, {}, true)
+}
+
+export function payStudyBooking(id: string): Promise<StudyBookingRecord> {
+	return postApi<StudyBookingRecord>(endpointWithId(ApiEndpoints.studyBookingPay, id), {}, true)
+}
+
+export function cancelStudyBooking(id: string): Promise<StudyBookingRecord> {
+	return postApi<StudyBookingRecord>(endpointWithId(ApiEndpoints.studyBookingCancel, id), {}, true)
+}
+
+export function deleteStudyBooking(id: string): Promise<any> {
+	return postApi<any>(endpointWithId(ApiEndpoints.studyBookingDelete, id), {}, true)
+}
+
+
+export function fetchStudyExploreSession(projectId: string, lat: number = 0, lng: number = 0, activePointId: string = '', bookingId: string = ''): Promise<any> {
+	let url = studyExploreSessionEndpoint(projectId) + '?'
+	if (lat != 0) url += 'lat=' + encodeURIComponent('' + lat) + '&'
+	if (lng != 0) url += 'lng=' + encodeURIComponent('' + lng) + '&'
+	if (activePointId.length > 0) url += 'activePointId=' + encodeURIComponent(activePointId) + '&'
+	if (bookingId.length > 0) url += 'bookingId=' + encodeURIComponent(bookingId) + '&'
+	return getApi<any>(url, true)
+}
+
+export function checkInStudyRoutePoint(projectId: string, routePointId: string, body: any = null): Promise<any> {
+	const payload = body != null ? body : {}
+	return postApi<any>(studyRoutePointCheckInEndpoint(projectId, routePointId), payload, true)
+}
+
+export function fetchStudyRoutePointKnowledgeTask(projectId: string, routePointId: string): Promise<any> {
+	return getApi<any>(studyRoutePointKnowledgeTaskEndpoint(projectId, routePointId), true)
+}
+
+export function completeStudyRoutePointKnowledgeTask(projectId: string, routePointId: string, answerIndexes: number[]): Promise<any> {
+	return postApi<any>(studyRoutePointKnowledgeCompleteEndpoint(projectId, routePointId), { answerIndexes: answerIndexes }, true)
+}
+
+export function completeStudyStationStep(projectId: string, routePointId: string, stepId: string, body: any = null): Promise<any> {
+	const payload = body != null ? body : {}
+	return postApi<any>(studyRoutePointStationStepCompleteEndpoint(projectId, routePointId, stepId), payload, true)
+}
+
+export function startStudyStationGamePlay(projectId: string, routePointId: string, stepId: string): Promise<any> {
+	return postApi<any>(studyRoutePointStationStepGamePlayEndpoint(projectId, routePointId, stepId), {}, true)
+}
+
+export function earlyExitStudyTour(bookingId: string): Promise<any> {
+	return postApi<any>(studyBookingEarlyExitEndpoint(bookingId), {}, true)
+}
+
+export function pauseStudyTour(bookingId: string): Promise<any> {
+	return postApi<any>(studyBookingTourPauseEndpoint(bookingId), {}, true)
+}
+
+export function resumeStudyTour(bookingId: string): Promise<any> {
+	return postApi<any>(studyBookingTourResumeEndpoint(bookingId), {}, true)
+}
+
+/** Phase34 导览积分商城：结业前可浏览，结业后兑换；预约日 24h */
+export function fetchStudyTourMall(projectId: string): Promise<any> {
+	return getApi<any>(studyTourMallEndpoint(projectId), true)
+}
+
+export function redeemStudyTourMall(projectId: string, skuId: string): Promise<any> {
+	return postApi<any>(studyTourMallRedeemEndpoint(projectId), { skuId: skuId }, true)
+}
+
+export function fetchProjectSchedule(id: string, from: string = "", to: string = ""): Promise<any> {
+	const parts: string[] = []
+	if (from.length > 0) parts.push("from=" + encodeURIComponent(from))
+	if (to.length > 0) parts.push("to=" + encodeURIComponent(to))
+	const q = parts.length > 0 ? ("?" + parts.join("&")) : ""
+	return getApi<any>("/study/projects/" + encodeURIComponent(id) + "/schedule" + q, false)
+}

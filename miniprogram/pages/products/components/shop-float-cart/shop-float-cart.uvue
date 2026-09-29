@@ -1,0 +1,252 @@
+<template>
+	<view :class="open ? 'dock dock-on' : 'dock'" :style="wrapStyle">
+		<view :class="open ? 'menu menu-on' : 'menu'">
+			<view class="item" @click="goOrders">
+				<image src="/static/shop-nav-orders.svg" class="item-icon" mode="aspectFit"></image>
+				<text class="item-txt">订单</text>
+			</view>
+			<view class="item" @click="goCart">
+				<image src="/static/shop-nav-cart.svg" class="item-icon" mode="aspectFit"></image>
+				<text class="item-txt">购物车</text>
+				<view v-if="count > 0" class="item-badge">
+					<text class="item-badge-txt">{{ badgeText }}</text>
+				</view>
+			</view>
+		</view>
+		<view
+			class="handle"
+			@touchstart="onTouchStart"
+			@touchmove.stop.prevent="onTouchMove"
+			@touchend="onTouchEnd"
+			@touchcancel="onTouchEnd"
+			@click="onTap"
+		>
+			<view :class="open ? 'chev-box chev-open' : 'chev-box'">
+				<image src="/static/shop-edge-chevron.svg" class="chev" mode="aspectFit"></image>
+			</view>
+			<view v-if="!open && count > 0" class="handle-dot"></view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, onMounted, ref } from 'vue'
+	import { getLayoutWindowInfo } from '../../../../utils/system-layout.uts'
+	import { StorageKeys } from '../../../../utils/storage-keys.uts'
+
+	const props = defineProps({
+		count: {
+			type: Number,
+			default: 0
+		},
+		bottomReserve: {
+			type: Number,
+			default: 24
+		}
+	})
+
+	const SIZE = 48
+	const layout = getLayoutWindowInfo()
+	const windowHeight = layout.windowHeight
+	const minTop = layout.statusBarHeight + 52
+
+	const open = ref(false)
+	const top = ref(Math.floor(windowHeight * 0.58))
+	let dragging = false
+	let didDrag = false
+	let startY = 0
+	let originTop = 0
+	let lastDragAt = 0
+
+	const maxTop = (): number => {
+		const reserve = props.bottomReserve > 24 ? props.bottomReserve : 24
+		const limit = windowHeight - SIZE - reserve
+		if (limit < minTop) return minTop
+		return limit
+	}
+
+	const clampTop = (value: number): number => {
+		const hi = maxTop()
+		if (value < minTop) return minTop
+		if (value > hi) return hi
+		return value
+	}
+
+	const loadSavedTop = () => {
+		const saved = uni.getStorageSync(StorageKeys.mallFloatCartY)
+		if (saved == null) {
+			top.value = clampTop(top.value)
+			return
+		}
+		const raw = saved.toString()
+		if (raw.length === 0) {
+			top.value = clampTop(top.value)
+			return
+		}
+		top.value = clampTop(parseInt(raw))
+	}
+
+	const persistTop = () => {
+		uni.setStorageSync(StorageKeys.mallFloatCartY, top.value.toString())
+	}
+
+	onMounted(() => {
+		loadSavedTop()
+	})
+
+	const wrapStyle = computed((): string => {
+		return 'top: ' + top.value.toString() + 'px;'
+	})
+
+	const badgeText = computed((): string => {
+		if (props.count > 99) return '99+'
+		return props.count.toString()
+	})
+
+	const onTouchStart = (e: UniTouchEvent) => {
+		if (e.touches.length === 0) return
+		dragging = true
+		didDrag = false
+		startY = e.touches[0].clientY
+		originTop = top.value
+	}
+
+	const onTouchMove = (e: UniTouchEvent) => {
+		if (!dragging || e.touches.length === 0) return
+		const dy = e.touches[0].clientY - startY
+		if (dy > 6 || dy < -6) didDrag = true
+		top.value = clampTop(originTop + Math.floor(dy))
+	}
+
+	const onTouchEnd = () => {
+		dragging = false
+		if (didDrag) {
+			lastDragAt = Date.now()
+			persistTop()
+		}
+	}
+
+	const onTap = () => {
+		if (didDrag) return
+		if (Date.now() - lastDragAt < 280) return
+		open.value = !open.value
+	}
+
+	const closePanel = () => {
+		open.value = false
+	}
+
+	const goCart = () => {
+		if (didDrag) return
+		closePanel()
+		uni.navigateTo({ url: '/pages/products/cart' })
+	}
+
+	const goOrders = () => {
+		if (didDrag) return
+		closePanel()
+		uni.navigateTo({ url: '/pages/mine/my-orders?status=all' })
+	}
+</script>
+
+<style>
+	.dock {
+		position: fixed;
+		right: 0;
+		height: 48px;
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-end;
+		background-color: #1A73E8;
+		border-top-left-radius: 24px;
+		border-bottom-left-radius: 24px;
+		z-index: 1200;
+		overflow: hidden;
+	}
+	.menu {
+		flex-direction: row;
+		align-items: center;
+		height: 48px;
+		width: 0px;
+		overflow: hidden;
+		transition-property: width;
+		transition-duration: 0.4s;
+		transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+	}
+	.menu-on {
+		width: 176px;
+	}
+	.item {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		height: 32px;
+		padding: 0 12px;
+		margin-left: 8px;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		flex-shrink: 0;
+	}
+	.item-icon {
+		width: 14px;
+		height: 14px;
+		margin-right: 4px;
+		flex-shrink: 0;
+	}
+	.item-txt {
+		font-size: 12px;
+		font-weight: 800;
+		color: #1A1A1A;
+		lines: 1;
+	}
+	.item-badge {
+		min-width: 14px;
+		height: 14px;
+		padding: 0 3px;
+		margin-left: 4px;
+		border-radius: 7px;
+		background-color: #1A73E8;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.item-badge-txt {
+		font-size: 9px;
+		font-weight: 800;
+		color: #FFFFFF;
+		line-height: 11px;
+	}
+	.handle {
+		width: 40px;
+		height: 48px;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+	}
+	.chev-box {
+		width: 18px;
+		height: 18px;
+		align-items: center;
+		justify-content: center;
+		transition-property: transform;
+		transition-duration: 0.4s;
+		transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+	}
+	.chev-open {
+		transform: rotate(180deg);
+	}
+	.chev {
+		width: 16px;
+		height: 16px;
+	}
+	.handle-dot {
+		position: absolute;
+		top: 10px;
+		left: 10px;
+		width: 6px;
+		height: 6px;
+		border-radius: 3px;
+		background-color: #1A73E8;
+	}
+</style>

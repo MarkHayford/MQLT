@@ -1,0 +1,803 @@
+{
+  "pages": [
+    {
+      "path": "pages/tabs/appointment",
+      "style": {
+        "navigationBarTitleText": "开启研学之路",
+        "navigationStyle": "custom",
+        "backgroundColorContent": "#F5F7FB",
+        "backgroundColor": "#F5F7FB",
+        "backgroundColorBottom": "#F5F7FB",
+        "backgroundColorTop": "#F5F7FB",
+        "renderer": "skyline",
+        "componentFramework": "glass-easel",
+        "glassEaselWebview": true
+      }
+    },
+    {
+      "path": "pages/tabs/index",
+      "style": {
+        "navigationBarTitleText": "资讯",
+        "navigationStyle": "custom",
+        "backgroundColorContent": "#F5F7FB",
+        "backgroundColor": "#F5F7FB",
+        "backgroundColorBottom": "#F5F7FB",
+        "backgroundColorTop": "#F5F7FB",
+        "renderer": "skyline",
+        "componentFramework": "glass-easel",
+        "glassEaselWebview": true
+      }
+    },
+    {
+      "path": "pages/tabs/mine",
+      "style": {
+        "navigationBarTitleText": "我的",
+        "navigationStyle": "custom",
+        "backgroundColorContent": "#F5F7FB",
+        "backgroundColor": "#F5F7FB",
+        "backgroundColorBottom": "#F5F7FB",
+        "backgroundColorTop": "#F5F7FB",
+        "renderer": "skyline",
+        "componentFramework": "glass-easel",
+        "glassEaselWebview": true
+      }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pages/appointment",
+      "name": "study",
+      "pages": [
+        {
+          "path": "project-detail",
+          "style": {
+            "navigationBarTitleText": "研学详情",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "booking-create",
+          "style": {
+            "navigationBarTitleText": "填写预约",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "audience-plans",
+          "style": {
+            "navigationBarTitleText": "分层点位",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "route-list",
+          "style": {
+            "navigationBarTitleText": "研学路径",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "booking-detail",
+          "style": {
+            "navigationBarTitleText": "订单处理",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "rental-create",
+          "style": {
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "navigationBarTitleText": "发租车需求",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "rental-detail",
+          "style": {
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "navigationBarTitleText": "租车详情",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "rental-negotiate",
+          "style": {
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "navigationBarTitleText": "租车协商",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "tour-live",
+          "style": {
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "navigationBarTitleText": "研学进行中",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "tour-point",
+          "style": {
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "navigationBarTitleText": "本站研学",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "station-game",
+          "style": {
+            "navigationBarTitleText": "研学小游戏",
+            "backgroundColor": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "tour-mall",
+          "style": {
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "navigationBarTitleText": "积分商城",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "tour-backpack",
+          "style": {
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "navigationBarTitleText": "导览卡券背包",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/index",
+      "name": "feed",
+      "pages": [
+        {
+          "path": "notice-list",
+          "style": {
+            "navigationBarTitleText": "动态列表",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "post-compose",
+          "style": {
+            "navigationBarTitleText": "发文章",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#FFFFFF",
+            "backgroundColor": "#FFFFFF",
+            "backgroundColorBottom": "#FFFFFF",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "post-detail",
+          "style": {
+            "navigationBarTitleText": "资讯详情",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#FFFFFF",
+            "backgroundColor": "#FFFFFF",
+            "backgroundColorBottom": "#FFFFFF",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "notice-detail",
+          "style": {
+            "navigationBarTitleText": "动态详情",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "post-drafts",
+          "style": {
+            "navigationBarTitleText": "草稿箱",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#FFFFFF",
+            "backgroundColor": "#FFFFFF",
+            "backgroundColorBottom": "#FFFFFF",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "post-mine",
+          "style": {
+            "navigationBarTitleText": "我的文章",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#FFFFFF",
+            "backgroundColor": "#FFFFFF",
+            "backgroundColorBottom": "#FFFFFF",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/mine",
+      "name": "user",
+      "pages": [
+        {
+          "path": "wechat-register",
+          "style": {
+            "navigationBarTitleText": "完善资料",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "my-coupons",
+          "style": {
+            "navigationBarTitleText": "我的卡券",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "my-puzzle",
+          "style": {
+            "navigationBarTitleText": "我的成果",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "puzzle-detail",
+          "style": {
+            "navigationBarTitleText": "拼图详情",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "puzzle-project-board",
+          "style": {
+            "navigationBarTitleText": "项目拼图",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "puzzle-project-achievement",
+          "style": {
+            "navigationBarTitleText": "我的成果",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "my-orders",
+          "style": {
+            "navigationBarTitleText": "我的订单",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "order-detail",
+          "style": {
+            "navigationBarTitleText": "订单详情",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "settings",
+          "style": {
+            "navigationBarTitleText": "设置",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "legal",
+          "style": {
+            "navigationBarTitleText": "法律协议",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "user-profile",
+          "style": {
+            "navigationBarTitleText": "个人信息",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "travelers-list",
+          "style": {
+            "navigationBarTitleText": "常用游客",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "batch-add-travelers",
+          "style": {
+            "navigationBarTitleText": "批量添加",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "add-traveler",
+          "style": {
+            "navigationBarTitleText": "编辑游客",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "invoice",
+          "style": {
+            "navigationBarTitleText": "电子发票",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "invoice-apply",
+          "style": {
+            "navigationBarTitleText": "申请开发票",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "invoice-form",
+          "style": {
+            "navigationBarTitleText": "填写发票信息",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "customer-service",
+          "style": {
+            "navigationBarTitleText": "联系客服",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "feedback",
+          "style": {
+            "navigationBarTitleText": "反馈与建议",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#FFFFFF",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "feedback-list",
+          "style": {
+            "navigationBarTitleText": "我的反馈",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "address-list",
+          "style": {
+            "navigationBarTitleText": "我的地址",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "address-edit",
+          "style": {
+            "navigationBarTitleText": "编辑地址",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "invoice-titles",
+          "style": {
+            "navigationBarTitleText": "发票抬头",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/products",
+      "name": "mall",
+      "pages": [
+        {
+          "path": "products",
+          "style": {
+            "navigationBarTitleText": "文创商城",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "product-detail",
+          "style": {
+            "navigationBarTitleText": "商品详情",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#FFFFFF",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "cart",
+          "style": {
+            "navigationBarTitleText": "购物车",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "order-confirm",
+          "style": {
+            "navigationBarTitleText": "确认订单",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#FFFFFF",
+            "backgroundColorTop": "#FFFFFF",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/commerce",
+      "name": "driver",
+      "pages": [
+        {
+          "path": "driver-home",
+          "style": {
+            "navigationBarTitleText": "司机入口",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        },
+        {
+          "path": "driver-withdraw",
+          "style": {
+            "navigationBarTitleText": "提现",
+            "navigationStyle": "custom",
+            "backgroundColorContent": "#F5F7FB",
+            "backgroundColor": "#F5F7FB",
+            "backgroundColorBottom": "#F5F7FB",
+            "backgroundColorTop": "#F5F7FB",
+            "renderer": "skyline",
+            "componentFramework": "glass-easel",
+            "glassEaselWebview": true
+          }
+        }
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/tabs/appointment": {
+      "network": "all",
+      "packages": [
+        "study"
+      ]
+    },
+    "pages/tabs/index": {
+      "network": "all",
+      "packages": [
+        "feed"
+      ]
+    },
+    "pages/tabs/mine": {
+      "network": "all",
+      "packages": [
+        "user"
+      ]
+    },
+    "pages/appointment/project-detail": {
+      "network": "wifi",
+      "packages": [
+        "mall"
+      ]
+    }
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "uni-app x",
+    "navigationBarBackgroundColor": "#F5F7FB",
+    "backgroundColor": "#F5F7FB",
+    "navigationStyle": "custom",
+    "renderer": "skyline",
+    "componentFramework": "glass-easel",
+    "glassEaselWebview": true
+  },
+  "tabBar": {
+    "color": "#374151",
+    "selectedColor": "#1A73E8",
+    "borderStyle": "white",
+    "backgroundColor": "#FFFFFF",
+    "list": [
+      {
+        "pagePath": "pages/tabs/index",
+        "text": "资讯"
+      },
+      {
+        "pagePath": "pages/tabs/appointment",
+        "text": "开启研学之路"
+      },
+      {
+        "pagePath": "pages/tabs/mine",
+        "text": "我的"
+      }
+    ]
+  },
+  "uniIdRouter": {}
+}

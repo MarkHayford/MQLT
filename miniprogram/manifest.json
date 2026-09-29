@@ -1,0 +1,99 @@
+{
+    "name" : "Test_1",
+    "appid" : "__UNI__605E5FF",
+    "description" : "",
+    "versionName" : "1.0.0",
+    "versionCode" : "100",
+    "uni-app-x" : {
+        "styleIsolationVersion" : "2"
+    },
+    /* 快应用特有相关 */
+    "quickapp" : {},
+    /* 小程序特有相关 */
+    "mp-weixin" : {
+        "appid" : "wx38f1bdc8a75c53df",
+        "setting" : {
+            "urlCheck" : false,
+            "es6" : true,
+            "postcss" : true,
+            "minified" : true,
+            "minifyWXSS" : true
+        },
+        "permission" : {
+            "scope.userLocation" : {
+                "desc" : "用于研学实时位置、路线导航、打卡，以及租车上车地点选择"
+            }
+        },
+        "requiredPrivateInfos" : [
+            "getLocation",
+            "chooseLocation",
+            "startLocationUpdate",
+            "onLocationChange"
+        ],
+        "usingComponents" : true,
+        "lazyCodeLoading" : "requiredComponents",
+        "renderer" : "skyline",
+        "componentFramework" : "glass-easel",
+        "rendererOptions" : {
+            "skyline" : {
+                "defaultDisplayBlock" : true,
+                "defaultContentBox" : true,
+                "tagNameStyleIsolation" : "legacy",
+                "enableScrollViewAutoSize" : true,
+                "keyframeStyleIsolation" : "legacy",
+                "disableABTest" : true,
+                "sdkVersionBegin" : "3.0.1",
+                "sdkVersionEnd" : "15.255.255"
+            }
+        },
+        "optimization" : {
+            "subPackages" : true
+        }
+    },
+    "mp-alipay" : {
+        "usingComponents" : true
+    },
+    "mp-baidu" : {
+        "usingComponents" : true
+    },
+    "mp-toutiao" : {
+        "usingComponents" : true
+    },
+    "uniStatistics" : {
+        "enable" : false
+    },
+    "vueVersion" : "3",
+    "app" : {
+        "distribute" : {
+            "icons" : {
+                "android" : {
+                    "hdpi" : "",
+                    "xhdpi" : "",
+                    "xxhdpi" : "",
+                    "xxxhdpi" : ""
+                }
+            }
+        }
+    },
+    "app-android" : {
+        "distribute" : {
+            "modules" : {},
+            "icons" : {
+                "hdpi" : "",
+                "xhdpi" : "",
+                "xxhdpi" : "",
+                "xxxhdpi" : ""
+            },
+            "splashScreens" : {
+                "default" : {}
+            }
+        }
+    },
+    "app-ios" : {
+        "distribute" : {
+            "modules" : {},
+            "icons" : {},
+            "splashScreens" : {}
+        }
+    }
+}

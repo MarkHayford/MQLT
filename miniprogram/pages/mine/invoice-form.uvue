@@ -1,0 +1,574 @@
+<template>
+	<view class="page-wrapper" :style="pageStyle">
+		<view class="fixed-header">
+			<view class="status-bar" :style="statusBarStyle"></view>
+			<view class="nav-bar">
+				<view class="nav-back" @click="goBack">
+					<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+					<text class="nav-back-text">返回</text>
+				</view>
+				<text class="nav-title">填写发票信息</text>
+			</view>
+		</view>
+
+		<scroll-view class="main-scroll" :style="mainScrollStyle" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view class="amount-section">
+				<text class="amount-label">开票金额（电子普票）</text>
+				<text class="amount-value">¥{{ invoiceAmount }}</text>
+			</view>
+
+			<view class="form-section">
+				<view class="section-header uni-row">
+					<text class="section-title">选择已保存抬头</text>
+					<text class="section-action" @click="goTitles">管理</text>
+				</view>
+				<view v-if="savedTitles.length === 0" class="quiet">暂无抬头，请手动填写或先去添加</view>
+				<view v-else class="title-pick-list">
+					<view
+						v-for="(t, idx) in savedTitles"
+						:key="t.id"
+						:class="['title-pick', selectedTitleId === t.id ? 'title-pick-on' : '']"
+						@click="pickSavedTitle(t)"
+					>
+						<text class="title-pick-name">{{ t.name }}{{ t.isDefault ? '（默认）' : '' }}</text>
+						<text class="title-pick-meta">{{ t.type === 'company' ? '企业' : '个人' }}{{ t.taxNo.length > 0 ? ' · ' + t.taxNo : '' }}</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="form-section">
+				<text class="section-title">发票抬头</text>
+				<view class="header-type-group">
+					<view :class="['type-btn', headerType === 'personal' ? 'type-btn-active' : '']" @click="switchHeaderType('personal')">
+						<text :class="['type-btn-text', headerType === 'personal' ? 'type-btn-text-active' : '']">个人</text>
+					</view>
+					<view :class="['type-btn', headerType === 'company' ? 'type-btn-active' : '']" @click="switchHeaderType('company')">
+						<text :class="['type-btn-text', headerType === 'company' ? 'type-btn-text-active' : '']">企业</text>
+					</view>
+				</view>
+
+				<view v-if="headerType === 'personal'" class="form-group">
+					<view class="form-item">
+						<text class="form-label">姓名</text>
+						<input class="form-input" type="text" placeholder="请输入姓名" v-model="personalName" @input="onManualEdit" />
+					</view>
+				</view>
+
+				<view v-if="headerType === 'company'" class="form-group">
+					<view class="form-item">
+						<text class="form-label">企业名称</text>
+						<input class="form-input" type="text" placeholder="请输入企业名称" v-model="companyName" @input="onManualEdit" />
+					</view>
+					<view class="form-item">
+						<text class="form-label">纳税人识别号</text>
+						<input class="form-input" type="text" placeholder="请输入纳税人识别号" v-model="taxNo" @input="onManualEdit" />
+					</view>
+				</view>
+			</view>
+
+			<view class="form-section">
+				<text class="section-title">接收邮箱</text>
+				<view class="form-group">
+					<view class="form-item">
+						<text class="form-label">邮箱地址</text>
+						<input class="form-input" type="text" placeholder="请输入邮箱地址" v-model="email" />
+					</view>
+				</view>
+				<text class="hint">开票完成后可在小程序内查看/下载 PDF；邮件发送视平台配置</text>
+			</view>
+
+			<view class="bottom-spacer"></view>
+		</scroll-view>
+
+		<view class="bottom-action-bar">
+			<view :class="['submit-btn', submitting ? 'submit-btn-disabled' : '']" @click="submitInvoice">
+				<text class="submit-btn-text">{{ submitting ? '提交中…' : '提交申请' }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getLayoutWindowInfo } from '../../utils/system-layout.uts'
+	import { fetchInvoiceTitles, submitInvoiceRequest } from '../../utils/user-services.uts'
+
+	const layout = getLayoutWindowInfo()
+	const statusBarHeight = layout.statusBarHeight
+	const windowHeight = layout.windowHeight
+	const screenHeight = layout.screenHeight
+	const navBarHeight = 44
+	const headerTotalHeight = statusBarHeight + navBarHeight
+
+	const pageStyle = 'height: ' + screenHeight + 'px;'
+	const statusBarStyle = 'height: ' + statusBarHeight + 'px;'
+	const mainScrollStyle = 'top: ' + headerTotalHeight + 'px; height: ' + (windowHeight - headerTotalHeight) + 'px;'
+
+	type SavedTitle = {
+		id: string
+		type: string
+		name: string
+		taxNo: string
+		email: string
+		phone: string
+		isDefault: boolean
+	}
+
+	const invoiceAmount = ref('0.00')
+	const itemsRaw = ref('')
+	const submitting = ref(false)
+
+	const headerType = ref('personal')
+	const personalName = ref('')
+	const companyName = ref('')
+	const taxNo = ref('')
+	const email = ref('')
+	const selectedTitleId = ref('')
+	const savedTitles = ref<SavedTitle[]>([])
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+
+	const goTitles = () => {
+		uni.navigateTo({ url: '/pages/mine/invoice-titles' })
+	}
+
+	const onManualEdit = () => {
+		selectedTitleId.value = ''
+	}
+
+	const switchHeaderType = (type: string) => {
+		headerType.value = type
+		selectedTitleId.value = ''
+	}
+
+	const pickSavedTitle = (t: SavedTitle) => {
+		selectedTitleId.value = t.id
+		headerType.value = t.type === 'company' ? 'company' : 'personal'
+		if (headerType.value === 'company') {
+			companyName.value = t.name
+			taxNo.value = t.taxNo
+			personalName.value = ''
+		} else {
+			personalName.value = t.name
+			companyName.value = ''
+			taxNo.value = ''
+		}
+		if (t.email.length > 0) email.value = t.email
+	}
+
+	const loadTitles = () => {
+		fetchInvoiceTitles<any>().then((list) => {
+			const mapped: SavedTitle[] = []
+			let defaultOne: SavedTitle | null = null
+			for (let i = 0; i < list.length; i++) {
+				const item = list[i]
+				const row: SavedTitle = {
+					id: item['id'] as string,
+					type: item['type'] != null ? (item['type'] as string) : 'personal',
+					name: item['name'] != null ? (item['name'] as string) : '',
+					taxNo: item['taxNo'] != null ? (item['taxNo'] as string) : '',
+					email: item['email'] != null ? (item['email'] as string) : '',
+					phone: item['phone'] != null ? (item['phone'] as string) : '',
+					isDefault: item['isDefault'] as boolean
+				}
+				mapped.push(row)
+				if (row.isDefault) defaultOne = row
+			}
+			savedTitles.value = mapped
+			if (selectedTitleId.value.length === 0 && defaultOne != null) {
+				pickSavedTitle(defaultOne)
+			}
+		}).catch((_err) => {
+			savedTitles.value = []
+		})
+	}
+
+	const validateForm = (): boolean => {
+		if (headerType.value === 'personal') {
+			if (personalName.value.trim().length === 0) {
+				uni.showToast({ title: '请输入姓名', icon: 'none' })
+				return false
+			}
+		} else {
+			if (companyName.value.trim().length === 0) {
+				uni.showToast({ title: '请输入企业名称', icon: 'none' })
+				return false
+			}
+			const tax = taxNo.value.trim().toUpperCase().replace(/\s+/g, '')
+			if (tax.length === 0) {
+				uni.showToast({ title: '请输入纳税人识别号', icon: 'none' })
+				return false
+			}
+			if (!(tax.length === 15 || tax.length === 17 || tax.length === 18 || tax.length === 20)) {
+				uni.showToast({ title: '税号需为15/17/18/20位', icon: 'none' })
+				return false
+			}
+			const taxRe = /^[0-9A-Z]+$/
+			if (!taxRe.test(tax)) {
+				uni.showToast({ title: '税号仅支持字母数字', icon: 'none' })
+				return false
+			}
+			taxNo.value = tax
+		}
+		if (email.value.trim().length === 0) {
+			uni.showToast({ title: '请输入邮箱地址', icon: 'none' })
+			return false
+		}
+		if (itemsRaw.value.trim().length === 0) {
+			uni.showToast({ title: '缺少开票订单', icon: 'none' })
+			return false
+		}
+		return true
+	}
+
+	const buildItems = (): any[] => {
+		const parts = itemsRaw.value.split(',')
+		const out: any[] = []
+		for (let i = 0; i < parts.length; i++) {
+			const part = parts[i].trim()
+			if (part.length === 0) continue
+			const idx = part.indexOf(':')
+			if (idx <= 0) continue
+			const sourceType = part.substring(0, idx)
+			const sourceId = part.substring(idx + 1)
+			if (sourceType.length === 0 || sourceId.length === 0) continue
+			out.push({ sourceType, sourceId })
+		}
+		return out
+	}
+
+	const submitInvoice = () => {
+		if (submitting.value) return
+		if (!validateForm()) return
+		const items = buildItems()
+		if (items.length === 0) {
+			uni.showToast({ title: '开票订单无效', icon: 'none' })
+			return
+		}
+		const payload: any = {
+			email: email.value.trim(),
+			items
+		}
+		if (selectedTitleId.value.length > 0) {
+			payload['titleId'] = selectedTitleId.value
+		} else {
+			payload['titleType'] = headerType.value
+			payload['titleName'] = headerType.value === 'company' ? companyName.value.trim() : personalName.value.trim()
+			if (headerType.value === 'company') payload['taxNo'] = taxNo.value.trim()
+		}
+		submitting.value = true
+		submitInvoiceRequest<any>(payload).then((_res) => {
+			submitting.value = false
+			uni.showToast({ title: '申请已提交', icon: 'success' })
+			setTimeout(() => {
+				uni.navigateBack({ delta: 2 })
+			}, 500)
+		}).catch((err) => {
+			submitting.value = false
+			const msg = err != null && err.message != null ? err.message.toString() : '提交失败'
+			uni.showToast({ title: msg, icon: 'none' })
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		if (options != null) {
+			const amt = options['amount']
+			const items = options['items']
+			const legacyIds = options['orderIds']
+			if (amt != null) invoiceAmount.value = amt.toString()
+			if (items != null) {
+				itemsRaw.value = decodeURIComponent(items.toString())
+			} else if (legacyIds != null) {
+				const ids = legacyIds.toString().split(',')
+				const mapped: string[] = []
+				for (let i = 0; i < ids.length; i++) {
+					const id = ids[i].trim()
+					if (id.length > 0) mapped.push('MALL_ORDER:' + id)
+				}
+				itemsRaw.value = mapped.join(',')
+			}
+		}
+		loadTitles()
+	})
+
+	onShow(() => {
+		loadTitles()
+	})
+</script>
+
+<style>
+	.page-wrapper {
+		border-width: 0;
+		border-color: #FFFFFF;
+		flex: 1;
+		background-color: #F5F7FB;
+		position: relative;
+	}
+
+	.fixed-header {
+		border-width: 0;
+		border-color: #FFFFFF;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1000;
+		background-color: #F5F7FB;
+	}
+
+	.status-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		width: 100%;
+		background-color: #FFFFFF;
+	}
+
+	.nav-bar {
+		background-color: #FFFFFF;
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+	}
+
+	.nav-back {
+		flex-direction: row;
+		align-items: center;
+		z-index: 1;
+	}
+
+	.nav-back-icon {
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+	}
+
+	.nav-back-text {
+		font-size: 16px;
+		color: #1A1A1A;
+		font-weight: 500;
+	}
+
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.main-scroll {
+		position: absolute;
+		left: 0;
+		right: 0;
+	}
+
+	.amount-section {
+		margin: 16px 16px 14px 16px;
+		padding: 22px 20px 18px 20px;
+		background-color: #1A73E8;
+		border-radius: 16px;
+		border-width: 0;
+		border-color: #1A73E8;
+	}
+
+	.amount-label {
+		font-size: 12px;
+		color: rgba(255, 248, 238, 0.72);
+		margin-bottom: 6px;
+	}
+
+	.amount-value {
+		font-size: 32px;
+		color: #1A73E8;
+		font-weight: 800;
+	}
+
+	.form-section {
+		margin: 0 16px 12px 16px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.section-header {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+
+	.section-title {
+		font-size: 13px;
+		color: #1A1A1A;
+		font-weight: 800;
+		margin-bottom: 12px;
+	}
+
+	.section-action {
+		font-size: 13px;
+		color: #1A73E8;
+		font-weight: 700;
+		margin-bottom: 12px;
+	}
+
+	.quiet {
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.title-pick-list {
+		flex-direction: column;
+	}
+
+	.title-pick {
+		padding: 12px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+		margin-bottom: 8px;
+	}
+
+	.title-pick-on {
+		background-color: #1A73E8;
+	}
+
+	.title-pick-name {
+		font-size: 15px;
+		color: #1A1A1A;
+		font-weight: 700;
+		margin-bottom: 4px;
+	}
+
+	.title-pick-on .title-pick-name {
+		color: #1A73E8;
+	}
+
+	.title-pick-meta {
+		font-size: 12px;
+		color: #374151;
+	}
+
+	.title-pick-on .title-pick-meta {
+		color: rgba(26, 115, 232, 0.85);
+	}
+
+	.header-type-group {
+		flex-direction: row;
+		margin-bottom: 16px;
+	}
+
+	.type-btn {
+		flex: 1;
+		height: 40px;
+		background-color: #E8EEF8;
+		border-radius: 16px;
+		align-items: center;
+		justify-content: center;
+		margin-right: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C5D0E0;
+}
+
+	.type-btn:last-child {
+		margin-right: 0;
+	}
+
+	.type-btn-active {
+		background-color: #1A73E8;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #1A73E8;
+}
+
+	.type-btn-text {
+		font-size: 14px;
+		color: #1A1A1A;
+		font-weight: 700;
+	}
+
+	.type-btn-text-active {
+		color: #FFFFFF;
+		font-weight: 800;
+	}
+
+	.form-group {
+		flex-direction: column;
+	}
+
+	.form-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 12px 0;
+		border-bottom-width: 0.5px;
+		border-bottom-color: rgba(0, 0, 0, 0.1);
+	}
+
+	.form-item:last-child {
+		border-bottom-width: 0;
+	}
+
+	.form-label {
+		width: 100px;
+		font-size: 15px;
+		color: #1A1A1A;
+		font-weight: 500;
+		flex-shrink: 0;
+	}
+
+	.form-input {
+		flex: 1;
+		font-size: 15px;
+		color: #1A1A1A;
+		text-align: right;
+	}
+
+	.hint {
+		margin-top: 10px;
+		font-size: 12px;
+		color: #374151;
+	}
+
+	.bottom-spacer {
+		height: 100px;
+	}
+
+	.bottom-action-bar {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 12px 16px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+		background-color: #F5F7FB;
+		z-index: 999;
+	}
+
+	.submit-btn {
+		height: 48px;
+		background-color: #1A73E8;
+		border-radius: 24px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.submit-btn-disabled {
+		background-color: #E5E7EB;
+	}
+
+	.submit-btn-text{
+		font-size: 16px;
+		color: #FFFFFF;
+		font-weight: 800;
+	}
+</style>

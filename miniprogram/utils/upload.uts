@@ -1,0 +1,122 @@
+import { ApiEndpoints } from './api-endpoints.uts'
+import { postApi } from './api-client.uts'
+
+export type PresignFormField = {
+	name: string
+	value: string
+}
+
+export type PresignUploadResult = {
+	method: string
+	uploadUrl: string
+	formFields: PresignFormField[]
+	key: string
+	publicUrl: string
+	expiresIn: number
+	maxBytes: number
+	contentType: string
+	purpose: string
+}
+
+export type DirectUploadResult = {
+	publicUrl: string
+	key: string
+	contentType: string
+	purpose: string
+}
+
+function guessContentType(filePath: string, fallback: string = 'image/jpeg'): string {
+	const path = filePath != null ? filePath.toString().toLowerCase() : ''
+	if (path.indexOf('.png') >= 0) return 'image/png'
+	if (path.indexOf('.webp') >= 0) return 'image/webp'
+	if (path.indexOf('.gif') >= 0) return 'image/gif'
+	if (path.indexOf('.jpg') >= 0 || path.indexOf('.jpeg') >= 0) return 'image/jpeg'
+	if (path.indexOf('.mp4') >= 0) return 'video/mp4'
+	if (path.indexOf('.mov') >= 0) return 'video/quicktime'
+	if (path.indexOf('.webm') >= 0) return 'video/webm'
+	if (path.indexOf('.m4v') >= 0) return 'video/mp4'
+	return fallback
+}
+
+export function requestUploadPresign(purpose: string, contentType: string, maxBytes: number = 0): Promise<PresignUploadResult> {
+	const data: any = {
+		purpose: purpose,
+		contentType: contentType
+	}
+	if (maxBytes > 0) {
+		data.maxBytes = maxBytes
+	}
+	return postApi<PresignUploadResult>(ApiEndpoints.uploadsPresign, data, true)
+}
+
+function uploadToPresignedPost(presign: PresignUploadResult, filePath: string): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		const formData: any = {}
+		const fields = presign.formFields
+		if (fields != null) {
+			for (let i = 0; i < fields.length; i++) {
+				const item = fields[i]
+				if (item != null && item.name != null) {
+					formData[item.name] = item.value
+				}
+			}
+		}
+		if (formData['Content-Type'] == null && presign.contentType != null && presign.contentType.length > 0) {
+			formData['Content-Type'] = presign.contentType
+		}
+
+		uni.uploadFile({
+			url: presign.uploadUrl,
+			filePath: filePath,
+			name: 'file',
+			formData: formData,
+			success: (res) => {
+				const code = res.statusCode
+				if (code >= 200 && code < 300) {
+					resolve()
+					return
+				}
+				let detail = ''
+				try {
+					detail = res.data != null ? res.data.toString() : ''
+				} catch (_e) {
+					detail = ''
+				}
+				if (detail.length > 180) {
+					detail = detail.substring(0, 180)
+				}
+				reject(new Error('对象存储上传失败 HTTP ' + code.toString() + (detail.length > 0 ? (' ' + detail) : '')))
+			},
+			fail: (err) => {
+				const message = err != null && err.errMsg != null ? err.errMsg.toString() : 'uploadFile:fail'
+				if (message.indexOf('url not in domain list') >= 0) {
+					reject(new Error('请把 s3.ap-northeast-1.wasabisys.com 配进 uploadFile 合法域名'))
+					return
+				}
+				reject(new Error(message))
+			}
+		})
+	})
+}
+
+export function uploadFileDirect(purpose: string, filePath: string, contentType: string = '', maxBytes: number = 0): Promise<DirectUploadResult> {
+	const ct = contentType.length > 0 ? contentType : guessContentType(filePath)
+	return requestUploadPresign(purpose, ct, maxBytes).then((presign: PresignUploadResult) => {
+		return uploadToPresignedPost(presign, filePath).then(() => {
+			const result: DirectUploadResult = {
+				publicUrl: presign.publicUrl,
+				key: presign.key,
+				contentType: presign.contentType,
+				purpose: presign.purpose
+			}
+			return result
+		})
+	})
+}
+
+export function completeUserAvatar(publicUrl: string): Promise<any> {
+	const data: any = {
+		publicUrl: publicUrl
+	}
+	return postApi<any>(ApiEndpoints.userAvatarComplete, data, true)
+}

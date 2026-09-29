@@ -1,0 +1,156 @@
+<template>
+	<view class="page uni-column">
+		<view class="hud" :style="{ paddingTop: (statusBarHeight + 8) + 'px' }">
+			<view class="hud-back" @click="goBack"><text class="hud-back-txt">返回</text></view>
+			<text class="hud-title">导览卡券背包</text>
+		</view>
+
+		<scroll-view class="body" scroll-y="true" :show-scrollbar="false">
+			<view class="tip-card uni-column">
+				<text class="tip-h">本场站点奖品</text>
+				<text class="tip-p">站点扫码发放的卡券已直达「我的卡券」。此处汇总本场进度；商城兑换券同样进入全局卡券包。</text>
+			</view>
+
+			<view class="sec">
+				<view class="sec-head uni-row">
+					<text class="sec-title">本场站点券</text>
+					<text class="sec-count">{{ gotCount.toString() }}/{{ rewards.length.toString() }}</text>
+				</view>
+				<view v-for="rw in rewards" :key="rw.id" class="row uni-row">
+					<view :class="['dot', rw.got ? 'on' : '']"></view>
+					<view class="main uni-column">
+						<text class="name">{{ rw.name }}</text>
+						<text class="from">{{ rw.from }}</text>
+					</view>
+					<text :class="['state', rw.got ? 'got' : '']">{{ rw.got ? '已获得' : '未获得' }}</text>
+				</view>
+				<text v-if="rewards.length === 0" class="empty">本场次暂未配置站点奖品</text>
+			</view>
+
+			<view class="sec">
+				<text class="sec-title">全局卡券</text>
+				<text class="sec-p">查看与使用全部卡券（含站点礼品券、商城兑换券）请前往「我的卡券」。</text>
+				<view class="cta" @click="goMyCoupons">
+					<text class="cta-txt">打开我的卡券</text>
+				</view>
+			</view>
+			<view class="body-pad"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+	import { fetchStudyExploreSession } from '../../utils/study-projects.uts'
+
+	type RewardItem = {
+		id: string
+		name: string
+		from: string
+		got: boolean
+	}
+
+	const statusBarHeight = getStatusBarHeight()
+	const projectId = ref('')
+	const rewards = ref<RewardItem[]>([])
+
+	const gotCount = computed((): number => {
+		let n = 0
+		const list = rewards.value
+		for (let i = 0; i < list.length; i++) {
+			if (list[i].got) n++
+		}
+		return n
+	})
+
+	function goBack() { uni.navigateBack({}) }
+	function goMyCoupons() {
+		uni.navigateTo({ url: '/pages/mine/my-coupons' })
+	}
+
+	async function load() {
+		if (projectId.value.length === 0) return
+		try {
+			const ses = await fetchStudyExploreSession(projectId.value, 0, 0, '')
+			const list = (ses.myPoints != null ? ses.myPoints : (ses.points != null ? ses.points : [])) as any[]
+			const rws: RewardItem[] = []
+			for (let i = 0; i < list.length; i++) {
+				const p = list[i]
+				const id = String(p.id)
+				const rw = p.rewards
+				const title = String(p.title || '点位')
+				if (rw != null) {
+					if (rw.checkInPrize === true) {
+						let pname = String(rw.checkInPrizeName || '打卡奖品')
+						if (pname.length === 0) pname = '打卡奖品'
+						rws.push({ id: id + '-prize', name: pname, from: title + ' · 到站打卡', got: p.checkedIn === true })
+					}
+					if (rw.knowledgePrize === true) {
+						let kname = String(rw.knowledgePrizeName || '答题奖品')
+						if (kname.length === 0) kname = '答题奖品'
+						rws.push({ id: id + '-know', name: kname, from: title + ' · 知识答题', got: p.knowledgeDone === true })
+					}
+				}
+				if (p.stationReward != null && p.stationReward.productName != null) {
+					rws.push({
+						id: id + '-sr',
+						name: String(p.stationReward.productName),
+						from: title + ' · 本站积分奖',
+						got: true
+					})
+				}
+			}
+			rewards.value = rws
+		} catch (_e) {}
+	}
+
+	onLoad((query: any) => {
+		projectId.value = query != null && query.projectId != null ? String(query.projectId) : ''
+	})
+	onShow(() => { load() })
+</script>
+
+<style>
+	.page { border-width: 0; border-color: #FFFFFF; flex: 1; height: 100%; background-color: #F5F7FB; }
+	.hud {
+		flex-direction: row; align-items: center;
+		padding-left: 12px; padding-right: 96px; padding-bottom: 10px;
+		background-color: #1A73E8;
+	}
+	.hud-back {
+		height: 32px; padding: 0 12px; border-radius: 16px;
+		background-color: rgba(255,248,238,.12);
+		align-items: center; justify-content: center; flex-shrink: 0;
+	}
+	.hud-back-txt { color: #FFFFFF; font-size: 13px; font-weight: 700; }
+	.hud-title { flex: 1; color: #FFFFFF; font-size: 15px; font-weight: 700; margin-left: 10px; }
+	.body { flex: 1; }
+	.tip-card {
+		margin: 14px 16px 8px 16px; padding: 14px; border-radius: 16px;
+		background-color: #1A73E8;
+	}
+	.tip-h { font-size: 15px; font-weight: 800; color: #FFFFFF; }
+	.tip-p { font-size: 12px; color: #E5E7EB; margin-top: 6px; line-height: 18px; }
+	.sec { padding: 8px 16px 14px 16px; }
+	.sec-head { align-items: center; margin-bottom: 8px; }
+	.sec-title { flex: 1; font-size: 15px; font-weight: 800; color: #1A1A1A; }
+	.sec-count { font-size: 13px; font-weight: 800; color: #1A73E8; }
+	.sec-p { font-size: 12px; color: #374151; line-height: 18px; margin: 6px 0 12px 0; }
+	.row { align-items: center; padding: 10px 12px; margin-bottom: 8px; border-radius: 14px; background-color: #FFFFFF; }
+	.dot { width: 10px; height: 10px; border-radius: 5px; background-color: #E5E7EB; margin-right: 10px; flex-shrink: 0; }
+	.dot.on { background-color: #1A73E8; }
+	.main { flex: 1; min-width: 0; }
+	.name { font-size: 13px; font-weight: 700; color: #1A1A1A; }
+	.from { font-size: 11px; color: #374151; margin-top: 2px; }
+	.state { font-size: 12px; font-weight: 700; color: #374151; }
+	.state.got { color: #1A73E8; }
+	.empty { font-size: 12px; color: #374151; padding: 8px 0; }
+	.cta {
+		height: 46px; border-radius: 14px; background-color: #1A73E8;
+		align-items: center; justify-content: center;
+	}
+	.cta-txt { color: #FFFFFF; font-size: 14px; font-weight: 800; }
+	.body-pad { height: 28px; }
+</style>

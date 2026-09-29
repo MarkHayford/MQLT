@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>点亮金印 · 测试小游戏</title>
+  <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+  <script src="http://127.0.0.1:3000/api/v1/study/h5/sdk.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0F3F3A; color: #FFF8EE; font-family: -apple-system, "PingFang SC", sans-serif; overflow: hidden; touch-action: manipulation; }
+    .top { position: relative; z-index: 2; padding: 18px 18px 10px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .kicker { font-size: 11px; letter-spacing: .18em; color: #E8C56B; }
+    h1 { margin: 4px 0 0; font-size: 20px; }
+    .hud { display: flex; gap: 8px; }
+    .chip { min-width: 64px; padding: 8px 10px; border-radius: 14px; background: rgba(255,248,238,.1); text-align: center; }
+    .chip b { display: block; font-size: 20px; color: #E8C56B; }
+    .chip span { font-size: 11px; color: rgba(255,248,238,.7); }
+    .hint { margin: 0 18px; font-size: 13px; color: rgba(255,248,238,.78); }
+    #field { position: absolute; left: 0; right: 0; top: 108px; bottom: 0; }
+    .seal {
+      position: absolute; width: 72px; height: 72px; margin: -36px 0 0 -36px;
+      border-radius: 50%; border: 3px solid #E8C56B; background: #C9A227;
+      color: #0F3F3A; font-weight: 800; font-size: 22px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 20px rgba(0,0,0,.28);
+      animation: pop .18s ease-out;
+    }
+    @keyframes pop { from { transform: scale(.6); opacity: .4; } to { transform: scale(1); opacity: 1; } }
+    .mask {
+      position: absolute; inset: 0; z-index: 5; display: none;
+      background: rgba(8, 28, 26, .86); align-items: center; justify-content: center; flex-direction: column;
+      text-align: center; padding: 24px;
+    }
+    .mask.on { display: flex; }
+    .mask .big { font-size: 56px; font-weight: 800; color: #E8C56B; margin: 8px 0 6px; }
+    .mask p { margin: 0 0 18px; color: rgba(255,248,238,.8); }
+    .row { display: flex; gap: 10px; width: min(320px, 100%); }
+    button {
+      flex: 1; height: 48px; border: 0; border-radius: 16px;
+      font-size: 16px; font-weight: 800;
+    }
+    .ok { background: #E8C56B; color: #0F3F3A; }
+    .ghost { background: rgba(255,248,238,.12); color: #FFF8EE; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="kicker">MQLT DEMO</div>
+      <h1>点亮金印</h1>
+    </div>
+    <div class="hud">
+      <div class="chip"><b id="time">10</b><span>秒</span></div>
+      <div class="chip"><b id="score">0</b><span>分</span></div>
+    </div>
+  </div>
+  <p class="hint">10 秒内点金色印章。默认 60 分通关，控制台设了及格分会按那个算。</p>
+  <div id="field"></div>
+  <div class="mask" id="start">
+    <div class="kicker">测试小游戏</div>
+    <div class="big">印</div>
+    <p>点出现的金印得分。准备好了就开始。</p>
+    <div class="row"><button class="ok" type="button" id="go">开始</button></div>
+  </div>
+  <div class="mask" id="end">
+    <div class="kicker" id="endKicker">本局结束</div>
+    <div class="big" id="endScore">0</div>
+    <p id="endMsg">可以提交成绩，或再玩一局。</p>
+    <div class="row">
+      <button class="ghost" type="button" id="again">再试一次</button>
+      <button class="ok" type="button" id="submit">提交成绩</button>
+    </div>
+  </div>
+  <script>
+    var field = document.getElementById('field');
+    var timeEl = document.getElementById('time');
+    var scoreEl = document.getElementById('score');
+    var startEl = document.getElementById('start');
+    var endEl = document.getElementById('end');
+    var startedAt = 0;
+    var left = 10;
+    var score = 0;
+    var timer = null;
+    var spawner = null;
+    var playing = false;
+    var submitted = false;
+
+    function need() {
+      var n = window.MQLT && MQLT.config ? MQLT.config.passScore : null;
+      if (n != null && isFinite(Number(n))) return Number(n);
+      return 60;
+    }
+    function passed() { return score >= need(); }
+    function clearSeals() {
+      var nodes = field.querySelectorAll('.seal');
+      for (var i = 0; i < nodes.length; i++) nodes[i].remove();
+    }
+    function spawn() {
+      if (!playing) return;
+      var el = document.createElement('button');
+      el.className = 'seal';
+      el.type = 'button';
+      el.textContent = '印';
+      var x = 18 + Math.random() * 64;
+      var y = 18 + Math.random() * 64;
+      el.style.left = x + '%';
+      el.style.top = y + '%';
+      el.onclick = function (e) {
+        e.preventDefault();
+        if (!playing) return;
+        score += 10;
+        scoreEl.textContent = String(score);
+        el.remove();
+        if (window.MQLT) MQLT.progress({ score: score, payload: { taps: score / 10 } });
+      };
+      field.appendChild(el);
+      setTimeout(function () { if (el.parentNode) el.remove(); }, 1200);
+    }
+    function stopTimers() {
+      playing = false;
+      if (timer) clearInterval(timer);
+      if (spawner) clearInterval(spawner);
+      timer = null;
+      spawner = null;
+      clearSeals();
+    }
+    function finish() {
+      stopTimers();
+      document.getElementById('endScore').textContent = String(score);
+      document.getElementById('endKicker').textContent = passed() ? '通关' : '未合格';
+      document.getElementById('endMsg').textContent = passed()
+        ? ('达到 ' + need() + ' 分。提交后返回本站研学。')
+        : ('需要 ' + need() + ' 分。可以再玩，或提交本局。');
+      endEl.className = 'mask on';
+    }
+    function startGame() {
+      stopTimers();
+      submitted = false;
+      score = 0;
+      left = 10;
+      startedAt = Date.now();
+      scoreEl.textContent = '0';
+      timeEl.textContent = '10';
+      startEl.className = 'mask';
+      endEl.className = 'mask';
+      playing = true;
+      spawn();
+      spawner = setInterval(spawn, 700);
+      timer = setInterval(function () {
+        left -= 1;
+        if (left < 0) left = 0;
+        timeEl.textContent = String(left);
+        if (left <= 0) finish();
+      }, 1000);
+    }
+    function submit() {
+      if (submitted) return;
+      submitted = true;
+      var body = {
+        score: score,
+        passed: passed(),
+        durationMs: Date.now() - startedAt,
+        payload: { demo: 'tap-seal', taps: score / 10, need: need() }
+      };
+      if (!window.MQLT) { alert('成绩 ' + score); return; }
+      if (passed()) MQLT.complete(body);
+      else MQLT.fail(body);
+    }
+    document.getElementById('go').onclick = startGame;
+    document.getElementById('again').onclick = startGame;
+    document.getElementById('submit').onclick = submit;
+    startEl.className = 'mask on';
+  </script>
+</body>
+</html>

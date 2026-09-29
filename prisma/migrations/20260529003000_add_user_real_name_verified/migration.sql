@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "realNameVerified" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "realNameVerifiedAt" TIMESTAMP(3);

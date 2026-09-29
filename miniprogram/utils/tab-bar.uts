@@ -1,0 +1,13 @@
+let nativeTabBarHidden = false
+
+/** 隐藏原生 tabBar（自定义 floating-tab-bar），全局只调用一次，避免 onShow 重复触发导致工具超时 */
+export function ensureNativeTabBarHidden(): void {
+	if (nativeTabBarHidden) return
+	nativeTabBarHidden = true
+	uni.hideTabBar({
+		animation: false,
+		fail: (_err) => {
+			nativeTabBarHidden = false
+		}
+	})
+}

@@ -1,0 +1,412 @@
+<template>
+	<view class="page-wrapper uni-column">
+		<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nav-bar">
+			<view class="nav-back" @click="goBack">
+				<image src="/static/auth-back.svg" class="nav-back-icon" mode="aspectFit"></image>
+				<text class="nav-back-text">返回</text>
+			</view>
+			<text class="nav-title">我的成果</text>
+		</view>
+
+		<scroll-view class="main-scroll" scroll-y="true" :show-scrollbar="false" :bounces="true">
+			<view v-if="achievement != null" class="detail-body">
+				<view
+					class="hero-card uni-column"
+					:style="'background-image: linear-gradient(145deg, ' + achievement.gradientStart + ' 0%, ' + achievement.gradientEnd + ' 100%)'"
+				>
+					<image :src="achievement.badgeIcon" class="hero-badge-icon" mode="aspectFit"></image>
+					<text class="hero-title">{{ achievement.projectTitle }}</text>
+					<text class="hero-subtitle">研学项目纪念成果</text>
+					<view class="status-pill">
+						<text class="status-pill-txt">已完成</text>
+					</view>
+				</view>
+
+				<view class="info-card uni-column">
+					<view class="info-row uni-row">
+						<text class="info-label">完成时间</text>
+						<text class="info-value">{{ achievement.completedDate }}</text>
+					</view>
+					<view class="info-row uni-row">
+						<text class="info-label">证书编号</text>
+						<text class="info-value">{{ achievement.certificateNo }}</text>
+					</view>
+					<view class="cert-preview-wrap">
+						<view class="cert-preview-btn" @click="openCertPreview">
+							<text class="cert-preview-btn-text">预览电子证书</text>
+						</view>
+					</view>
+				</view>
+
+				<view class="content-card uni-column">
+					<text class="content-title">成果摘要</text>
+					<text class="content-paragraph">{{ achievement.summary }}</text>
+				</view>
+
+				<view class="content-card uni-column">
+					<text class="content-title">研学亮点</text>
+					<text
+						v-for="(line, idx) in achievement.highlights"
+						:key="'hl-' + idx"
+						class="content-line"
+					>· {{ line }}</text>
+				</view>
+
+				<view class="content-card uni-column">
+					<text class="content-title">获得奖励</text>
+					<text
+						v-for="(reward, rIdx) in achievement.rewards"
+						:key="'rw-' + rIdx"
+						class="reward-line"
+					>· {{ reward }}</text>
+				</view>
+
+				<view class="action-btn" :style="actionBtnStyle" @click="goStudyProject">
+					<text class="action-btn-text">查看研学项目详情</text>
+				</view>
+			</view>
+
+			<view v-else class="empty-state uni-column">
+				<image src="/static/icon-clipboard.svg" class="empty-svg" mode="aspectFit"></image>
+				<text class="empty-txt">暂无项目成果</text>
+			</view>
+
+			<view style="height: 40px;"></view>
+		</scroll-view>
+
+		<view v-if="showCertPreview && achievement != null" class="cert-mask uni-column" @click="closeCertPreview">
+			<view class="cert-modal uni-column" @click.stop="">
+				<view class="cert-paper-shell">
+					<view
+						class="cert-paper uni-column"
+						:style="'background-image: linear-gradient(160deg, ' + achievement.gradientStart + ' 0%, ' + achievement.gradientEnd + ' 55%, #F8FAFC 100%)'"
+					>
+					<image v-if="achievementCertBgUrl.length > 0" :src="achievementCertBgUrl" class="cert-paper-bg" mode="aspectFill"></image>
+					<view class="cert-paper-content uni-column">
+						<text class="cert-paper-tag">研学电子证书</text>
+						<text class="cert-paper-title">{{ achievement.projectTitle }}</text>
+						<text class="cert-paper-name">{{ certificateHolderName }}</text>
+						<rich-text v-if="achievementCertBodyHtml.length > 0" :nodes="achievementCertBodyHtml" class="cert-paper-rich"></rich-text>
+						<text v-else class="cert-paper-desc">{{ achievement.summary.length > 0 ? achievement.summary : '已完成本项目研学，特发此证。' }}</text>
+						<view class="cert-paper-meta uni-column">
+							<text class="cert-paper-meta-line">证书编号：{{ achievementCertificateNo }}</text>
+							<text class="cert-paper-meta-line">颁发日期：{{ achievement.completedDate }}</text>
+						</view>
+						<image v-if="achievementCertSealUrl.length > 0" :src="achievementCertSealUrl" class="cert-paper-seal-icon" mode="aspectFit"></image>
+						<image v-else src="/static/icon-medal.svg" class="cert-paper-seal-icon" mode="aspectFit"></image>
+					</view>
+				</view>
+				</view>
+				<view class="cert-modal-download" @click="downloadCertificate">
+					<text class="cert-modal-download-text">下载电子证书</text>
+				</view>
+				<view class="cert-modal-close" @click="closeCertPreview">
+					<text class="cert-modal-close-text">关闭预览</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { fetchPuzzleAchievements, type ProjectAchievement } from '../../utils/puzzle-data.uts'
+	import { downloadStudyCertificate } from './utils/study-certificate.uts'
+
+	import { getStatusBarHeight } from '../../utils/system-layout.uts'
+
+	const statusBarHeight = getStatusBarHeight()
+	const achievement = ref<ProjectAchievement | null>(null)
+	const showCertPreview = ref(false)
+
+	const actionBtnStyle = computed((): string => {
+		const a = achievement.value
+		if (a == null) return ''
+		return 'background-image: linear-gradient(135deg, ' + a.gradientStart + ' 0%, ' + a.gradientEnd + ' 100%)'
+	})
+
+	const certificateHolderName = computed((): string => {
+		const a = achievement.value
+		if (a == null || a.holderName.length === 0) return '研学学员'
+		return a.holderName
+	})
+
+	function sanitizeCertificateHtml(raw: string): string {
+		let html = raw
+		html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+		html = html.replace(/<(iframe|object|embed|form)[^>]*>[\s\S]*?<\/(iframe|object|embed|form)>/gi, '')
+		html = html.replace(/<(iframe|object|embed|form|input|button)[^>]*\/?\s*>/gi, '')
+		html = html.replace(/\son[a-z]+\s*=\s*(["'])[^"']*\1/gi, '')
+		html = html.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+		html = html.replace(/javascript\s*:/gi, '')
+		return html
+	}
+
+	const achievementCertificate = computed((): any => {
+		const a = achievement.value as any
+		if (a == null) return null
+		if (a.certificate != null) return a.certificate
+		return a
+	})
+
+	const achievementCertBodyHtml = computed((): string => {
+		const cert = achievementCertificate.value
+		if (cert == null) return ''
+		return sanitizeCertificateHtml(String(cert.bodyHtml || cert.certBodyHtml || ''))
+	})
+
+	const achievementCertBgUrl = computed((): string => {
+		const cert = achievementCertificate.value
+		return cert != null ? String(cert.bgUrl || '') : ''
+	})
+
+	const achievementCertSealUrl = computed((): string => {
+		const cert = achievementCertificate.value
+		return cert != null ? String(cert.sealUrl || '') : ''
+	})
+
+	const achievementCertificateNo = computed((): string => {
+		const cert = achievementCertificate.value
+		if (cert != null && cert.certificateNo != null && String(cert.certificateNo).length > 0) return String(cert.certificateNo)
+		const a = achievement.value
+		return a != null ? a.certificateNo : ''
+	})
+
+	onLoad((options: OnLoadOptions) => {
+		const projectId = options['id'] != null ? options['id'].toString() : ''
+		fetchPuzzleAchievements().then((list) => {
+			let found: ProjectAchievement | null = null
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].projectId === projectId) {
+					found = list[i]
+					break
+				}
+			}
+			achievement.value = found
+		}).catch((_err) => {
+			achievement.value = null
+			uni.showToast({ title: '成果数据加载失败', icon: 'none' })
+		})
+	})
+
+	const openCertPreview = () => {
+		showCertPreview.value = true
+	}
+
+	const closeCertPreview = () => {
+		showCertPreview.value = false
+	}
+
+	const downloadCertificate = () => {
+		const a = achievement.value
+		if (a == null) return
+		downloadStudyCertificate({
+			certificateNo: a.certificateNo,
+			holderName: certificateHolderName.value,
+			projectTitle: a.projectTitle,
+			summary: a.summary,
+			issuedDate: a.completedDate,
+			issuedAt: a.issuedAt
+		})
+	}
+
+	const goStudyProject = () => {
+		const a = achievement.value
+		if (a == null) return
+		uni.navigateTo({ url: '/pages/appointment/project-detail?id=' + a.projectId })
+	}
+
+	const goBack = () => {
+		uni.navigateBack()
+	}
+</script>
+
+<style>
+	.page-wrapper { border-width: 0; border-color: #FFFFFF; flex: 1; background-color: #F5F7FB; }
+	.status-bar { border-width: 0; border-color: #FFFFFF; width: 100%; background-color: #FFFFFF; }
+	.nav-bar {
+		border-width: 0;
+		border-color: #FFFFFF;
+		height: 44px;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 16px;
+		position: relative;
+		background-color: #FFFFFF;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.nav-back { flex-direction: row; align-items: center; z-index: 1; }
+	.nav-back-icon { width: 18px; height: 18px; margin-right: 4px; }
+	.nav-back-text { font-size: 16px; color: #1A1A1A; font-weight: 500; }
+	.nav-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 17px;
+		font-weight: 700;
+		color: #1A1A1A;
+	}
+
+	.main-scroll { flex: 1; width: 100%; }
+	.detail-body { padding: 16px; }
+
+	.hero-card {
+		border-radius: 20px;
+		padding: 28px 20px;
+		align-items: center;
+		margin-bottom: 16px;
+	}
+	.hero-badge-icon { width: 56px; height: 56px; margin-bottom: 12px; }
+	.hero-title { font-size: 20px; font-weight: 800; color: #FFFFFF; margin-bottom: 6px; text-align: center; }
+	.hero-subtitle { font-size: 14px; color: #FFFFFF; margin-bottom: 14px; }
+	.status-pill { padding: 4px 14px; border-radius: 14px; background-color: rgba(52, 199, 89, 0.9); }
+	.status-pill-txt { font-size: 12px; font-weight: 700; color: #FFFFFF; }
+
+	.info-card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 4px 16px;
+		margin-bottom: 12px;
+		border: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.info-row {
+		padding: 14px 0;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #FFFFFF;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.info-label { font-size: 14px; color: #9CA3AF; flex-shrink: 0; margin-right: 12px; }
+	.info-value { font-size: 14px; color: #1A1A1A; font-weight: 600; flex: 1; text-align: right; }
+	.cert-preview-wrap {
+		padding: 4px 0 14px 0;
+		border-top-width: 0.5px;
+		border-top-color: #FFFFFF;
+	}
+	.cert-preview-btn {
+		height: 40px;
+		border-radius: 20px;
+		background-color: #F0FDF4;
+		border: 1px solid rgba(52, 199, 89, 0.35);
+		align-items: center;
+		justify-content: center;
+	}
+	.cert-preview-btn-text { font-size: 14px; font-weight: 700; color: #34C759; }
+
+	.content-card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border: 1px solid rgba(0, 0, 0, 0.05);
+	}
+	.content-title { font-size: 16px; font-weight: 700; color: #1A1A1A; margin-bottom: 10px; }
+	.content-paragraph { font-size: 15px; color: #1A1A1A; line-height: 24px; }
+	.content-line { font-size: 14px; color: #374151; line-height: 22px; margin-bottom: 6px; }
+	.reward-line { font-size: 14px; color: #34C759; line-height: 22px; font-weight: 500; margin-bottom: 6px; }
+
+	.action-btn {
+		height: 50px;
+		border-radius: 25px;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 10px;
+	}
+	.action-btn-text { font-size: 16px; font-weight: 600; color: #FFFFFF; }
+
+	.empty-state { padding-top: 80px; align-items: center; }
+	.empty-svg { width: 56px; height: 56px; margin-bottom: 12px; opacity: 0.45; }
+	.empty-txt { font-size: 15px; color: #9CA3AF; }
+
+	.cert-mask {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.55);
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+		z-index: 100;
+	}
+	.cert-modal { width: 100%; max-width: 340px; align-items: center; }
+	.cert-paper-shell {
+		border-radius: 16px;
+		width: 100%;
+		position: relative;
+		overflow: visible;
+		background-color: transparent;
+		box-shadow: none;
+	}
+
+
+	.cert-paper {
+		width: 100%;
+		border-radius: 16px;
+		padding: 28px 22px 24px 22px;
+		align-items: center;
+		border: 2px solid #FFFFFF;
+		position: relative;
+		z-index: 1;
+		overflow: hidden;
+	}
+
+	.cert-paper-bg { position: absolute; left: 0; right: 0; top: 0; bottom: 0; width: 100%; height: 100%; opacity: 0.2; }
+	.cert-paper-content { width: 100%; align-items: center; position: relative; z-index: 1; }
+	.cert-paper-tag {
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.9);
+		letter-spacing: 2px;
+		margin-bottom: 10px;
+		font-weight: 600;
+	}
+	.cert-paper-title {
+		font-size: 18px;
+		font-weight: 800;
+		color: #FFFFFF;
+		text-align: center;
+		margin-bottom: 16px;
+		line-height: 26px;
+	}
+	.cert-paper-name {
+		font-size: 22px;
+		font-weight: 800;
+		color: #1A1A1A;
+		margin-bottom: 10px;
+	}
+	.cert-paper-rich { width: 100%; font-size: 13px; color: #374151; line-height: 20px; margin-bottom: 18px; }
+	.cert-paper-desc {
+		font-size: 13px;
+		color: #374151;
+		text-align: center;
+		line-height: 20px;
+		margin-bottom: 18px;
+	}
+	.cert-paper-meta { align-items: center; margin-bottom: 12px; }
+	.cert-paper-meta-line { font-size: 12px; color: #374151; line-height: 20px; }
+	.cert-paper-seal-icon { width: 40px; height: 40px; }
+	.cert-modal-download {
+		margin-top: 16px;
+		width: 100%;
+		height: 44px;
+		border-radius: 22px;
+		background-color: #34C759;
+		align-items: center;
+		justify-content: center;
+	}
+	.cert-modal-download-text { font-size: 15px; font-weight: 700; color: #FFFFFF; }
+	.cert-modal-close {
+		margin-top: 10px;
+		width: 100%;
+		height: 44px;
+		border-radius: 22px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+	}
+	.cert-modal-close-text { font-size: 15px; font-weight: 600; color: #1A1A1A; }
+</style>
